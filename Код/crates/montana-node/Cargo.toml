@@ -1,0 +1,30 @@
+[package]
+name = "montana-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "montana-node"
+path = "src/main.rs"
+
+[dependencies]
+mt-account = { path = "../mt-account" }
+mt-codec = { path = "../mt-codec" }
+mt-consensus = { path = "../mt-consensus" }
+mt-crypto = { path = "../mt-crypto" }
+mt-entry = { path = "../mt-entry" }
+mt-genesis = { path = "../mt-genesis" }
+mt-lottery = { path = "../mt-lottery" }
+mt-merkle = { path = "../mt-merkle" }
+mt-mnemonic = { path = "../mt-mnemonic" }
+mt-timechain = { path = "../mt-timechain" }
+mt-state = { path = "../mt-state" }
+mt-store = { path = "../mt-store" }
+getrandom = { workspace = true }
+libc = "=0.2.169"

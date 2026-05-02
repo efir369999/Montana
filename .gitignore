@@ -1,0 +1,30 @@
+# Rust build artifacts
+target/
+**/target/
+bench/target/
+Cargo.lock.bak
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Secrets (defence-in-depth — нет в репозитории, держим для будущего)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.p8
+*.mobileprovision
+id_rsa*
+credentials.json
+secrets.toml
+
+# Rust temp
+*.swp
+*~
