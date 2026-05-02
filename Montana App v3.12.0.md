@@ -3336,6 +3336,81 @@ Keypair аккаунта невосстановим. Аккаунт потеря
 
 ---
 
+### 26.7 Privacy Tier mapping для пользователя
+
+Light-Node-at-Home + Tor entry + Noise_PQ — это **Tier 2 Recommended** в общей tiered модели Montana network privacy (см. Montana Network spec § Privacy Scope).
+
+#### Что Light-Node-at-Home закрывает полностью
+
+- **Hosting third-party metadata**: никакой третьей стороны нет, queries / activity / content sovereignty полная.
+- **Long-term data retention attacks**: всё локально на узле, никакая платформа не имеет access.
+- **App creator surveillance**: Junona AI на own node (local LLM либо operator-chosen cloud), не на app creator infrastructure.
+- **Cloud sync compromise**: нет cloud sync — backup mnemonic + own node — единственная recovery path.
+
+#### Что Light-Node-at-Home **не** закрывает автоматически
+
+- **IP visibility**: узел подключается к интернету, peers видят его IP. Backbone-наблюдатель видит «IP X = Montana node». Закрывается через **Tor entry** (Tier 2 расширение).
+- **Government legal request to ISP**: если IP идентифицирован, legal request даёт identity. Закрывается через **physical anonymity** (Tor / VPN / residential proxy).
+- **Backbone GPS-precision timing-correlation**: open research problem; Montana ослабляет через canonical aggregation (10⁶-10⁸ message threshold), но не absolute closure.
+- **Quantum store-now-decrypt-later**: до Noise_PQ migration TLS handshake уязвим. Закрывается **Noise_PQ deployment** (mainnet milestone).
+- **Endpoint compromise (RAT)**: out of scope; см. damage containment ниже.
+
+#### Endpoint compromise damage containment (unique Montana property)
+
+Network protocol не может prevent endpoint compromise. Но Light-Node-at-Home **архитектурно ограничивает damage**:
+
+- **Trust domain split**: master_seed на home node, phone имеет только ephemeral session keys. Compromise phone ≠ compromise master.
+- **VDF-anchored ephemeral session rotation per τ₁** (= 60 сек): session_key_W = `HKDF(master_seed, current_window || "session-W")`. Maximum exposure window = 60 секунд.
+- **Junona local pre-processing**: AI на home node делает decryption + summarization, phone receives только filtered summaries. Phone никогда не имеет full content в memory.
+- **Sub-account hierarchy через Block Lattice**: phone использует daily-spend sub-account ($X/day limit) выведенный из master. Savings / high-value операции — только через home node.
+- **Hardware-backed enclave**: master_seed в iOS Secure Enclave / Android StrongBox при наличии (не в normal memory).
+
+**Сравнение endpoint compromise impact:**
+
+| System | Endpoint compromise loss |
+|--------|--------------------------|
+| Signal | Full chat history forever (single trust domain) |
+| WhatsApp | Full history + cloud sync |
+| Telegram | Full history + cloud + saved messages |
+| **Montana с Light-Node-at-Home** | `sub_account_limit × 60_sec_window_content` (multi-domain trust + rotation) |
+
+#### Maximum practical privacy stack — четыре слоя одновременно
+
+Для security-conscious пользователей (журналисты, активисты, исследователи) рекомендуется четырёхуровневый stack:
+
+```
+1. Own node (Light-Node-at-Home) — нет hosting third-party
+2. Tor entry для узла — ISP не видит «Montana traffic», bypass legal request to ISP
+3. Noise_PQ handshake — quantum-resistant peer auth + key exchange
+4. Canonical cover traffic + Mempool buffering — temporal unlinkability
+```
+
+Latency: <2 сек для most operations при tier 2; до 60-120 сек при добавлении canonical Mempool buffering (tier 3). Bandwidth: ~50-100 KB/sec sustained — приемлемо для phone clients подключённых к home node.
+
+#### Honest scope statement в onboarding
+
+Перед первым запуском пользователь видит:
+
+```
+Montana защита приватности:
+
+✓ Содержание всех сообщений и данных (encrypted)
+✓ Защита от провайдера и слежки сетевого трафика
+✓ Защита от хостящих сервисов (если используется свой узел)
+✓ Защита от мелких атак на сеть и квантовых компьютеров
+
+✗ Балансы и переводы публичны — это намеренное свойство Montana
+   для совместимости с регуляторами и аудитом
+✗ Глобальный наблюдатель магистральных кабелей интернета — open
+   research problem всей области; Montana ослабляет на порядки
+   сильнее существующих анон-сетей, но не absolute closure
+✗ Взлом самого устройства (RAT) — out of scope любого протокола;
+   Montana ограничивает ущерб через разделение телефон/домашний-узел
+
+Для maximum защиты — Light-Node-at-Home + Tor entry. См. § 26.
+```
+
+
 ## 27. Категории клиентов и реализация [I-17]
 
 Клиенты Монтаны распространяются по трём категориям с разными каналами дистрибуции и разными операционными threat models. Инвариант [I-17] (публичная аудиторская поверхность клиентского бинарника, главная спека) применяется ко всем категориям, обеспечивая разную глубину защиты в зависимости от контроля пользователя над каналом установки.
