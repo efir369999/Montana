@@ -1,8 +1,11 @@
 # Version
 
 **Implementation:** `0.0.0` (M0..M5 closed; M1-F production audit-ready 7/7 findings + 5/5 audit package findings closed; M2 audit-ready 60 determinism invariants; M3-M5 internal-tested не аудированы внешне; M6+ TODO)
-**Spec target:** Montana v35.24.0 (2026-05-02)
-**Spec path:** `../Montana v35.24.0.md`
+**Spec target:** Montana Protocol v35.25.0 + Montana Network v1.0.0 + Montana App v3.12.0 (2026-05-02)
+**Spec paths:**
+- Protocol: `../Montana Protocol v35.25.0.md`
+- Network:  `../Montana Network v1.0.0.md`
+- App:      `../Montana App v3.12.0.md`
 
 ## Policy
 
