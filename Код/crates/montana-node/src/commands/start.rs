@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use mt_account::{apply_proposal, ProposalSettle};
+use mt_codec::CanonicalEncode;
 use mt_consensus::{proposal_hash, ProposalHeader};
+use mt_net::{MsgType, ProtocolMessage};
 use mt_crypto::{sign, Hash32, Signature, SIGNATURE_SIZE};
 use mt_entry::{
     apply_candidate_expiry, apply_noderegistrations_batch, apply_selection_event,
@@ -54,10 +56,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // Network событийный loop отделён от consensus loop (VDF compute) —
     // separate OS thread предотвращает блокировку async задач CPU-heavy
     // операциями подсчёта VDF.
+    let mut network_handle: Option<NetworkHandle> = None;
     if let (Some(listen_str), Some(manifest_path)) =
         (&args.listen_multiaddr, &args.genesis_manifest)
     {
-        spawn_network_thread(&identity, listen_str, manifest_path)?;
+        network_handle = Some(spawn_network_thread(&identity, listen_str, manifest_path)?);
     }
 
     let mut state = LocalState::load_or_bootstrap(&data_dir, &identity, params)?;
@@ -153,6 +156,19 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         .map_err(|e| NodeError::InvalidArguments(format!("FsStore::open: {e:?}")))?;
 
     loop {
+        // M9: drain incoming envelopes от peer-ов (Proposal + другие), log + (Phase 2) apply
+        if let Some(ref mut handle) = network_handle {
+            while let Ok(msg) = handle.incoming_rx.try_recv() {
+                if msg.msg_type == MsgType::Proposal {
+                    eprintln!(
+                        "[consensus] inbound Proposal envelope window={} (size={} bytes)                          — M9 Phase 1 (log only; Phase 2 = apply_proposal)",
+                        msg.request_id,
+                        msg.payload.len()
+                    );
+                }
+            }
+        }
+
         if STOP.load(Ordering::SeqCst) {
             println!();
             println!("[shutdown] получен SIGINT/SIGTERM, сохраняю состояние...");
@@ -381,6 +397,27 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 header.encode_signed_scope(&mut header_scope);
                 header.signature =
                     sign(&identity.node_sk, &header_scope).map_err(NodeError::Crypto)?;
+
+                // M9 Phase 1: broadcast ProposalHeader всем connected peers через
+                // network thread. Followers получают envelope с window_index и
+                // в M9 Phase 2 будут running apply_proposal locally.
+                if let Some(ref handle) = network_handle {
+                    let mut header_bytes = Vec::with_capacity(3722);
+                    header.encode(&mut header_bytes);
+                    let envelope = ProtocolMessage::new(
+                        MsgType::Proposal,
+                        header.window_index,
+                        header_bytes,
+                    );
+                    if let Err(e) = handle.broadcast_tx.send(envelope) {
+                        eprintln!("[consensus] broadcast Proposal w={} failed: {e}", header.window_index);
+                    } else {
+                        eprintln!(
+                            "[consensus] broadcast Proposal window={} → peers",
+                            header.window_index
+                        );
+                    }
+                }
 
                 let recomputed = compute_state_root(
                     &state.nodes.root(),
@@ -614,7 +651,7 @@ fn spawn_network_thread(
     identity: &crate::identity::Identity,
     listen_str: &str,
     manifest_path: &std::path::Path,
-) -> Result<(), NodeError> {
+) -> Result<NetworkHandle, NodeError> {
     use std::str::FromStr;
 
     let manifest_text = std::fs::read_to_string(manifest_path).map_err(|e| {
@@ -632,6 +669,11 @@ fn spawn_network_thread(
     let local_keypair = identity.libp2p_keypair();
     let local_peer_id = identity.libp2p_peer_id();
     let manifest_clone = manifest.clone();
+
+    let (broadcast_tx, broadcast_rx) =
+        tokio::sync::mpsc::unbounded_channel::<mt_net::ProtocolMessage>();
+    let (incoming_tx, incoming_rx) =
+        tokio::sync::mpsc::unbounded_channel::<mt_net::ProtocolMessage>();
 
     eprintln!(
         "[main] spawning network thread, local_peer_id={local_peer_id},          listen={listen_addr}, peers={n}",
@@ -657,11 +699,22 @@ fn spawn_network_thread(
                 local_peer_id,
                 manifest_clone,
                 listen_addr,
+                broadcast_rx,
+                incoming_tx,
             )) {
                 eprintln!("[network] event loop exited with error: {e}");
             }
         })
         .map_err(|e| NodeError::Network(format!("spawn network thread: {e}")))?;
 
-    Ok(())
+    Ok(NetworkHandle { broadcast_tx, incoming_rx })
+}
+
+/// Handle к network thread. Через broadcast_tx consensus loop рассылает
+/// envelope-ы всем подключённым peer-ам. Через incoming_rx consensus loop
+/// принимает входящие envelope-ы (Proposal, BundledConfirmation, NodeRegistration,
+/// ...) от peer-ов для apply.
+pub struct NetworkHandle {
+    pub broadcast_tx: tokio::sync::mpsc::UnboundedSender<mt_net::ProtocolMessage>,
+    pub incoming_rx: tokio::sync::mpsc::UnboundedReceiver<mt_net::ProtocolMessage>,
 }

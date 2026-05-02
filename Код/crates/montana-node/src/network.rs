@@ -43,6 +43,8 @@ pub async fn run_network_loop(
     local_peer_id: PeerId,
     manifest: GenesisManifest,
     listen_addr: Multiaddr,
+    mut broadcast_rx: tokio::sync::mpsc::UnboundedReceiver<ProtocolMessage>,
+    incoming_tx: tokio::sync::mpsc::UnboundedSender<ProtocolMessage>,
 ) -> Result<(), NodeError> {
     let cfg = NetworkConfig {
         listen_addrs: vec![listen_addr.clone()],
@@ -136,7 +138,11 @@ pub async fn run_network_loop(
                             ..
                         },
                     )) => {
-                        // Reply Ping → Pong; другие сообщения консенсуса — defer M9
+                        // Ping → Pong сразу. Consensus messages (Proposal,
+                        // BundledConfirmation, NodeRegistration, ...) — отправляем в
+                        // consensus thread через incoming_tx и сразу шлём пустой Pong
+                        // (request-response требует ответа; consensus подтверждение
+                        // application — отдельный broadcast).
                         if request.msg_type == MsgType::Ping {
                             let pong = ProtocolMessage::new(MsgType::Pong, request.request_id, Vec::new());
                             if let Err(e) = swarm
@@ -146,6 +152,15 @@ pub async fn run_network_loop(
                             {
                                 eprintln!("[network] send Pong failed: {e:?}");
                             }
+                        } else {
+                            // forward в consensus thread (clone-ефемерный msg)
+                            let msg_type_dbg = request.msg_type;
+                            if let Err(e) = incoming_tx.send(request.clone()) {
+                                eprintln!("[network] forward {msg_type_dbg:?} failed: {e}");
+                            }
+                            // ack ответ — empty Pong, чтобы request-response завершился
+                            let ack = ProtocolMessage::new(MsgType::Pong, request.request_id, Vec::new());
+                            let _ = swarm.behaviour_mut().request_response.send_response(channel, ack);
                         }
                     }
                     SwarmEvent::Behaviour(MontanaBehaviourEvent::RequestResponse(
@@ -176,6 +191,19 @@ pub async fn run_network_loop(
                     );
                     swarm.behaviour_mut().request_response.send_request(&peer_id, ping);
                 }
+            }
+            Some(broadcast_msg) = broadcast_rx.recv() => {
+                // Consensus thread → broadcast всем connected peers
+                let peers: Vec<PeerId> = connected_peers.keys().copied().collect();
+                let msg_type_dbg = broadcast_msg.msg_type;
+                let peer_count = peers.len();
+                for peer_id in peers {
+                    swarm.behaviour_mut().request_response.send_request(&peer_id, broadcast_msg.clone());
+                }
+                eprintln!(
+                    "[network] broadcast {msg_type_dbg:?} request_id={rid} к {peer_count} peer(s)",
+                    rid = broadcast_msg.request_id
+                );
             }
             _ = tokio::signal::ctrl_c() => {
                 eprintln!("[network] Ctrl-C, выход");
