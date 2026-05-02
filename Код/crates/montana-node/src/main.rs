@@ -40,7 +40,7 @@ fn main() -> ExitCode {
 
 fn help_text() -> String {
     String::from(
-        "montana-node — узел Montana (singleton mode, без сетевого слоя)\n\
+        "montana-node — узел Montana (singleton либо cross-machine M8 mode)\n\
          \n\
          Использование:\n\
          \n\
@@ -55,6 +55,7 @@ fn help_text() -> String {
          \n\
            montana-node start   [--data-dir <PATH>] [--max-windows <N>]\n\
                                  [--d-test-override <N>]\n\
+                                 [--listen <multiaddr>] [--genesis-manifest <PATH>]\n\
          \n\
          Команды:\n\
          \n\
@@ -211,6 +212,8 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
     let mut data_dir: Option<PathBuf> = None;
     let mut max_windows: Option<u64> = None;
     let mut d_test_override: Option<u64> = None;
+    let mut listen_multiaddr: Option<String> = None;
+    let mut genesis_manifest: Option<PathBuf> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -234,6 +237,15 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
                 );
                 i += 2;
             },
+            "--listen" => {
+                listen_multiaddr = Some(expect_value(args, i, "--listen")?.to_string());
+                i += 2;
+            },
+            "--genesis-manifest" => {
+                genesis_manifest =
+                    Some(PathBuf::from(expect_value(args, i, "--genesis-manifest")?));
+                i += 2;
+            },
             other => {
                 return Err(NodeError::InvalidArguments(format!(
                     "неизвестный флаг для start: {other}"
@@ -241,10 +253,18 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
             },
         }
     }
+    if listen_multiaddr.is_some() != genesis_manifest.is_some() {
+        return Err(NodeError::InvalidArguments(
+            "--listen и --genesis-manifest должны указываться вместе (cross-machine mode)              либо оба отсутствовать (singleton mode)"
+                .into(),
+        ));
+    }
     Ok(start::StartArgs {
         data_dir,
         max_windows,
         d_test_override,
+        listen_multiaddr,
+        genesis_manifest,
     })
 }
 

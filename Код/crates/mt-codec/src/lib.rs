@@ -75,6 +75,10 @@ pub mod domain {
     pub const ENCRYPTION_KEY: &[u8] = b"mt-encryption-key";
     pub const APP_ENCRYPTION_KEY: &[u8] = b"mt-app-encryption-key";
     pub const PREKEYS: &[u8] = b"mt-prekeys";
+    // libp2p Ed25519 transport identity per M8 cross-machine networking.
+    // Derived из master_seed для recoverable identities (Mode A); в Mode B
+    // ephemeral Ed25519 секрет хранится напрямую в identity.bin.
+    pub const LIBP2P_TRANSPORT_KEY: &[u8] = b"mt-libp2p-transport-key";
     pub const TUNNEL_ONLINE: &[u8] = b"mt-tunnel-online";
     pub const TUNNEL_MESH: &[u8] = b"mt-tunnel-mesh";
     pub const BOOTSTRAP_POW: &[u8] = b"mt-bootstrap-pow";

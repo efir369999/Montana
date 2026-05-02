@@ -9,8 +9,8 @@ use mt_crypto::{
     PUBLIC_KEY_SIZE, SECRET_KEY_SIZE,
 };
 use mt_mnemonic::{
-    entropy_to_mnemonic, mldsa_seed_for_role, mlkem_seed_for_role, mnemonic_to_master_seed,
-    MnemonicError, MASTER_SEED_LEN,
+    ed25519_seed_for_role, entropy_to_mnemonic, mldsa_seed_for_role, mlkem_seed_for_role,
+    mnemonic_to_master_seed, MnemonicError, ED25519_SEED_LEN, MASTER_SEED_LEN,
 };
 use mt_state::{derive_account_id, derive_node_id, AccountId, NodeId};
 use zeroize::Zeroize;
@@ -38,15 +38,18 @@ const OFFSET_MLKEM_SK: usize = OFFSET_MLKEM_PK + MLKEM_PUBLIC_KEY_SIZE;
 
 pub const IDENTITY_FILE_SIZE: usize = OFFSET_MLKEM_SK + MLKEM_SECRET_KEY_SIZE;
 
-// V2 layout (Mode B — ephemeral) без master_seed:
-// magic[8] || version[1] || suite[2] || account_pk || account_sk || node_pk || node_sk || mlkem_pk || mlkem_sk
+// V2 layout (Mode B — ephemeral) без master_seed; libp2p Ed25519 secret хранится
+// напрямую (т.к. derive из master_seed невозможен — он zeroized).
+// magic[8] || version[1] || suite[2] || account_pk || account_sk || node_pk || node_sk
+// || mlkem_pk || mlkem_sk || libp2p_secret[32]
 const OFFSET_V2_ACCOUNT_PK: usize = OFFSET_MASTER_SEED;
 const OFFSET_V2_ACCOUNT_SK: usize = OFFSET_V2_ACCOUNT_PK + PUBLIC_KEY_SIZE;
 const OFFSET_V2_NODE_PK: usize = OFFSET_V2_ACCOUNT_SK + SECRET_KEY_SIZE;
 const OFFSET_V2_NODE_SK: usize = OFFSET_V2_NODE_PK + PUBLIC_KEY_SIZE;
 const OFFSET_V2_MLKEM_PK: usize = OFFSET_V2_NODE_SK + SECRET_KEY_SIZE;
 const OFFSET_V2_MLKEM_SK: usize = OFFSET_V2_MLKEM_PK + MLKEM_PUBLIC_KEY_SIZE;
-pub const IDENTITY_FILE_SIZE_V2: usize = OFFSET_V2_MLKEM_SK + MLKEM_SECRET_KEY_SIZE;
+const OFFSET_V2_LIBP2P_SK: usize = OFFSET_V2_MLKEM_SK + MLKEM_SECRET_KEY_SIZE;
+pub const IDENTITY_FILE_SIZE_V2: usize = OFFSET_V2_LIBP2P_SK + ED25519_SEED_LEN;
 
 pub struct Identity {
     pub suite_id: SuiteId,
@@ -62,6 +65,37 @@ pub struct Identity {
     pub node_sk: SecretKey,
     pub mlkem_pk: MlkemPublicKey,
     pub mlkem_sk: MlkemSecretKey,
+    /// libp2p Ed25519 transport secret (32 байта) — раздельная identity для
+    /// network уровня (PeerId), independent от ML-DSA consensus identity.
+    /// Mode A: derived из master_seed через ed25519_seed_for_role. Не хранится
+    /// в файле (rederivable). Mode B: сохраняется напрямую в V2 layout.
+    pub libp2p_secret: [u8; ED25519_SEED_LEN],
+}
+
+impl Identity {
+    /// Построить libp2p Keypair из стораного secret (Ed25519).
+    /// Используется для конструирования `libp2p::identity::Keypair` каждый
+    /// раз on-demand — Keypair не хранится в struct, чтобы избежать
+    /// drift между сериализованным состоянием и runtime-ом.
+    pub fn libp2p_keypair(&self) -> libp2p::identity::Keypair {
+        let mut bytes = self.libp2p_secret;
+        libp2p::identity::Keypair::ed25519_from_bytes(&mut bytes)
+            .expect("32-байтный Ed25519 seed всегда валиден")
+    }
+
+    /// PeerId узла на libp2p уровне (multiaddr `/p2p/<peer_id>`).
+    pub fn libp2p_peer_id(&self) -> libp2p::PeerId {
+        self.libp2p_keypair().public().to_peer_id()
+    }
+}
+
+impl Drop for Identity {
+    fn drop(&mut self) {
+        // Транспортный секрет — zeroize при drop. master_seed Mode A — также.
+        // ML-DSA / ML-KEM SK содержат собственный Drop через mt-crypto.
+        self.libp2p_secret.zeroize();
+        self.master_seed.zeroize();
+    }
 }
 
 impl Identity {
@@ -84,6 +118,7 @@ impl Identity {
         let acc_seed = mldsa_seed_for_role(&master_seed, domain::ACCOUNT_KEY);
         let node_seed = mldsa_seed_for_role(&master_seed, domain::NODE_KEY);
         let mlkem_seed = mlkem_seed_for_role(&master_seed, domain::APP_ENCRYPTION_KEY);
+        let libp2p_secret = ed25519_seed_for_role(&master_seed, domain::LIBP2P_TRANSPORT_KEY);
 
         let (account_pk, account_sk) = keypair_from_seed(&acc_seed).map_err(NodeError::Crypto)?;
         let (node_pk, node_sk) = keypair_from_seed(&node_seed).map_err(NodeError::Crypto)?;
@@ -101,6 +136,7 @@ impl Identity {
             node_sk,
             mlkem_pk,
             mlkem_sk,
+            libp2p_secret,
         })
     }
 
@@ -158,6 +194,7 @@ pub enum NodeError {
     InvalidEntropyHex,
     IdentityAlreadyExists(PathBuf),
     InvalidArguments(String),
+    Network(String),
 }
 
 impl std::fmt::Display for NodeError {
@@ -192,6 +229,7 @@ impl std::fmt::Display for NodeError {
                 p.display()
             ),
             NodeError::InvalidArguments(s) => write!(f, "неверные аргументы: {s}"),
+            NodeError::Network(s) => write!(f, "ошибка сети: {s}"),
         }
     }
 }
@@ -229,7 +267,7 @@ pub fn save_identity(
     }
 
     let buf = if identity.is_ephemeral {
-        // Mode B (v2) — без master_seed
+        // Mode B (v2) — без master_seed; libp2p_secret хранится напрямую
         let mut b = vec![0u8; IDENTITY_FILE_SIZE_V2];
         b[OFFSET_MAGIC..OFFSET_MAGIC + 8].copy_from_slice(IDENTITY_MAGIC);
         b[OFFSET_VERSION] = IDENTITY_VERSION_V2;
@@ -237,12 +275,12 @@ pub fn save_identity(
             .copy_from_slice(&(identity.suite_id as u16).to_le_bytes());
         b[OFFSET_V2_ACCOUNT_PK..OFFSET_V2_ACCOUNT_SK]
             .copy_from_slice(identity.account_pk.as_bytes());
-        b[OFFSET_V2_ACCOUNT_SK..OFFSET_V2_NODE_PK]
-            .copy_from_slice(identity.account_sk.as_bytes());
+        b[OFFSET_V2_ACCOUNT_SK..OFFSET_V2_NODE_PK].copy_from_slice(identity.account_sk.as_bytes());
         b[OFFSET_V2_NODE_PK..OFFSET_V2_NODE_SK].copy_from_slice(identity.node_pk.as_bytes());
         b[OFFSET_V2_NODE_SK..OFFSET_V2_MLKEM_PK].copy_from_slice(identity.node_sk.as_bytes());
         b[OFFSET_V2_MLKEM_PK..OFFSET_V2_MLKEM_SK].copy_from_slice(identity.mlkem_pk.as_bytes());
-        b[OFFSET_V2_MLKEM_SK..].copy_from_slice(identity.mlkem_sk.as_bytes());
+        b[OFFSET_V2_MLKEM_SK..OFFSET_V2_LIBP2P_SK].copy_from_slice(identity.mlkem_sk.as_bytes());
+        b[OFFSET_V2_LIBP2P_SK..].copy_from_slice(&identity.libp2p_secret);
         b
     } else {
         // Mode A (v1) — с master_seed
@@ -359,6 +397,8 @@ fn load_identity_v1(bytes: &[u8]) -> Result<Identity, NodeError> {
             actual: bytes.len() - OFFSET_MLKEM_SK,
         })?;
 
+    let libp2p_secret = ed25519_seed_for_role(&master_seed, domain::LIBP2P_TRANSPORT_KEY);
+
     Ok(Identity {
         suite_id,
         master_seed,
@@ -370,6 +410,7 @@ fn load_identity_v1(bytes: &[u8]) -> Result<Identity, NodeError> {
         node_sk,
         mlkem_pk,
         mlkem_sk,
+        libp2p_secret,
     })
 }
 
@@ -410,11 +451,13 @@ fn load_identity_v2(bytes: &[u8]) -> Result<Identity, NodeError> {
             expected: MLKEM_PUBLIC_KEY_SIZE,
             actual: OFFSET_V2_MLKEM_SK - OFFSET_V2_MLKEM_PK,
         })?;
-    let mlkem_sk =
-        MlkemSecretKey::from_slice(&bytes[OFFSET_V2_MLKEM_SK..]).ok_or(NodeError::CorruptedSize {
+    let mlkem_sk = MlkemSecretKey::from_slice(&bytes[OFFSET_V2_MLKEM_SK..OFFSET_V2_LIBP2P_SK])
+        .ok_or(NodeError::CorruptedSize {
             expected: MLKEM_SECRET_KEY_SIZE,
-            actual: bytes.len() - OFFSET_V2_MLKEM_SK,
+            actual: OFFSET_V2_LIBP2P_SK - OFFSET_V2_MLKEM_SK,
         })?;
+    let mut libp2p_secret = [0u8; ED25519_SEED_LEN];
+    libp2p_secret.copy_from_slice(&bytes[OFFSET_V2_LIBP2P_SK..]);
 
     Ok(Identity {
         suite_id,
@@ -427,6 +470,7 @@ fn load_identity_v2(bytes: &[u8]) -> Result<Identity, NodeError> {
         node_sk,
         mlkem_pk,
         mlkem_sk,
+        libp2p_secret,
     })
 }
 
@@ -551,7 +595,6 @@ mod tests {
         assert_eq!(mode, 0o600, "ожидался mode 0600, получили {mode:o}");
     }
 
-
     #[test]
     fn ephemeral_master_seed_is_zeroized() {
         // spec, раздел "Identity persistence modes" — Mode B
@@ -597,10 +640,7 @@ mod tests {
             recoverable.account_pk.as_bytes(),
             ephemeral.account_pk.as_bytes()
         );
-        assert_eq!(
-            recoverable.node_pk.as_bytes(),
-            ephemeral.node_pk.as_bytes()
-        );
+        assert_eq!(recoverable.node_pk.as_bytes(), ephemeral.node_pk.as_bytes());
         assert_eq!(
             recoverable.mlkem_pk.as_bytes(),
             ephemeral.mlkem_pk.as_bytes()
@@ -619,6 +659,82 @@ mod tests {
         let loaded = load_identity(&dir).unwrap();
         assert!(!loaded.is_ephemeral);
         assert_eq!(loaded.master_seed, id.master_seed);
+    }
+
+    #[test]
+    fn libp2p_secret_deterministic_from_master_seed() {
+        let entropy = [0x55u8; 32];
+        let a = Identity::from_entropy(&entropy).unwrap();
+        let b = Identity::from_entropy(&entropy).unwrap();
+        assert_eq!(a.libp2p_secret, b.libp2p_secret);
+        assert_eq!(a.libp2p_peer_id(), b.libp2p_peer_id());
+    }
+
+    #[test]
+    fn libp2p_secret_differs_from_node_seed_for_same_master() {
+        // libp2p transport identity ≠ ML-DSA node consensus identity
+        let id = Identity::from_entropy(&[0x77u8; 32]).unwrap();
+        assert_ne!(&id.libp2p_secret[..], id.node_pk.as_bytes());
+        assert_ne!(&id.libp2p_secret[..], id.account_pk.as_bytes());
+    }
+
+    #[test]
+    fn libp2p_v1_save_load_rederives_secret() {
+        // V1 не хранит libp2p_secret в файле — derive из master_seed при load
+        let dir = tempdir();
+        let original = Identity::from_entropy(&[0x88u8; 32]).unwrap();
+        save_identity(&dir, &original, false).unwrap();
+        let path = identity_path(&dir);
+        let meta = fs::metadata(&path).unwrap();
+        assert_eq!(
+            meta.len() as usize,
+            IDENTITY_FILE_SIZE,
+            "V1 file size unchanged after libp2p addition (Ed25519 derivable from master_seed)"
+        );
+        let loaded = load_identity(&dir).unwrap();
+        assert_eq!(original.libp2p_secret, loaded.libp2p_secret);
+        assert_eq!(original.libp2p_peer_id(), loaded.libp2p_peer_id());
+    }
+
+    #[test]
+    fn libp2p_v2_save_load_stores_secret() {
+        // V2 ephemeral: libp2p_secret хранится напрямую (master_seed недоступен)
+        let dir = tempdir();
+        let original = Identity::from_entropy_ephemeral(&[0x99u8; 32]).unwrap();
+        save_identity(&dir, &original, false).unwrap();
+        let path = identity_path(&dir);
+        let meta = fs::metadata(&path).unwrap();
+        assert_eq!(
+            meta.len() as usize,
+            IDENTITY_FILE_SIZE_V2,
+            "V2 file size = old + 32 байт Ed25519"
+        );
+        let loaded = load_identity(&dir).unwrap();
+        assert!(loaded.is_ephemeral);
+        assert_eq!(loaded.master_seed, [0u8; MASTER_SEED_LEN]);
+        assert_eq!(original.libp2p_secret, loaded.libp2p_secret);
+        assert_eq!(original.libp2p_peer_id(), loaded.libp2p_peer_id());
+    }
+
+    #[test]
+    fn libp2p_v1_v2_produce_byte_identical_libp2p_secrets() {
+        // тот же entropy → тот же libp2p_secret в обоих режимах
+        let entropy = [0xaau8; 32];
+        let v1 = Identity::from_entropy(&entropy).unwrap();
+        let v2 = Identity::from_entropy_ephemeral(&entropy).unwrap();
+        assert_eq!(v1.libp2p_secret, v2.libp2p_secret);
+        assert_eq!(v1.libp2p_peer_id(), v2.libp2p_peer_id());
+    }
+
+    #[test]
+    fn libp2p_keypair_constructs_valid_peer_id() {
+        // Sanity: PeerId не [0;...] и стабилен между вызовами
+        let id = Identity::from_entropy(&[0xbbu8; 32]).unwrap();
+        let p1 = id.libp2p_peer_id();
+        let p2 = id.libp2p_peer_id();
+        assert_eq!(p1, p2);
+        // PeerId — multihash; non-empty
+        assert!(!p1.to_bytes().is_empty());
     }
 
     fn tempdir() -> PathBuf {

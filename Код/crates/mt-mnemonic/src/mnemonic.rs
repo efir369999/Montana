@@ -14,6 +14,8 @@ pub const MASTER_SEED_LEN: usize = 64;
 // spec: ML-DSA-65 seed (FIPS 204 §3.1, ξ ∈ B32) — 32 байта (was Falcon 48).
 pub const MLDSA_SEED_LEN: usize = 32;
 pub const MLKEM_SEED_LEN: usize = 64;
+// libp2p Ed25519 transport identity seed (RFC 8032 Ed25519 secret = 32 байта).
+pub const ED25519_SEED_LEN: usize = 32;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum MnemonicError {
@@ -88,6 +90,16 @@ pub fn mlkem_seed_for_role(
 ) -> [u8; MLKEM_SEED_LEN] {
     let dk = hkdf_expand(master_seed, role, MLKEM_SEED_LEN);
     let mut out = [0u8; MLKEM_SEED_LEN];
+    out.copy_from_slice(&dk);
+    out
+}
+
+pub fn ed25519_seed_for_role(
+    master_seed: &[u8; MASTER_SEED_LEN],
+    role: &[u8],
+) -> [u8; ED25519_SEED_LEN] {
+    let dk = hkdf_expand(master_seed, role, ED25519_SEED_LEN);
+    let mut out = [0u8; ED25519_SEED_LEN];
     out.copy_from_slice(&dk);
     out
 }
@@ -218,5 +230,28 @@ mod tests {
     fn mldsa_seed_len_is_32() {
         // FIPS 204 §3.1: ξ ∈ B32 (ML-DSA-65 KeyGen_internal seed)
         assert_eq!(MLDSA_SEED_LEN, 32);
+    }
+
+    #[test]
+    fn ed25519_seed_len_is_32() {
+        // RFC 8032 Ed25519 secret key = 32 bytes
+        assert_eq!(ED25519_SEED_LEN, 32);
+    }
+
+    #[test]
+    fn ed25519_seed_for_role_determinism() {
+        let master = [0x77u8; 64];
+        let a = ed25519_seed_for_role(&master, domain::LIBP2P_TRANSPORT_KEY);
+        let b = ed25519_seed_for_role(&master, domain::LIBP2P_TRANSPORT_KEY);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn ed25519_seed_differs_from_mldsa_node_for_same_master() {
+        // libp2p transport identity must NOT collide with consensus node key
+        let master = [0x33u8; 64];
+        let libp2p = ed25519_seed_for_role(&master, domain::LIBP2P_TRANSPORT_KEY);
+        let node = mldsa_seed_for_role(&master, domain::NODE_KEY);
+        assert_ne!(libp2p[..], node[..]);
     }
 }

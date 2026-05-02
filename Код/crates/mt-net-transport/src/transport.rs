@@ -55,6 +55,40 @@ where
     Ok(swarm)
 }
 
+/// Сборка swarm-а с фиксированным libp2p Keypair (production-режим).
+///
+/// В отличие от `build_swarm` (генерит fresh keypair каждый запуск, для тестов),
+/// эта функция принимает готовый Ed25519 keypair, derived from operator's
+/// identity. PeerId узла стабилен между перезапусками — обязательно для
+/// genesis-cohort peer pinning через `GenesisManifest`.
+pub fn build_swarm_with_keypair<B>(
+    keypair: libp2p::identity::Keypair,
+    behaviour: B,
+    config: &NetworkConfig,
+) -> Result<Swarm<B>, TransportError>
+where
+    B: libp2p::swarm::NetworkBehaviour + Send,
+{
+    let mut swarm = SwarmBuilder::with_existing_identity(keypair)
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default(),
+            (tls::Config::new, noise::Config::new),
+            yamux::Config::default,
+        )
+        .map_err(|e| TransportError::Setup(format!("transport upgrade: {e}")))?
+        .with_behaviour(|_| behaviour)
+        .map_err(|e| TransportError::Setup(format!("behaviour: {e}")))?
+        .build();
+
+    for addr in &config.listen_addrs {
+        swarm
+            .listen_on(addr.clone())
+            .map_err(|e| TransportError::Setup(format!("listen_on {addr}: {e}")))?;
+    }
+    Ok(swarm)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

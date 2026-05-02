@@ -18,4 +18,4 @@ pub use behaviour::{MontanaBehaviour, MontanaBehaviourEvent};
 pub use codec::{MontanaCodec, MAX_PROTOCOL_PAYLOAD_BYTES, MONTANA_PROTOCOL_NAME};
 pub use error::TransportError;
 pub use ibt_upgrade::{IbtAccessLevel, IbtConfig};
-pub use transport::{build_swarm, NetworkConfig};
+pub use transport::{build_swarm, build_swarm_with_keypair, NetworkConfig};

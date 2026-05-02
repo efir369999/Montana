@@ -1,6 +1,7 @@
 pub mod clock;
 pub mod commands;
 pub mod identity;
+pub mod network;
 pub mod node_lifecycle;
 pub mod state;
 pub mod timechain_state;
