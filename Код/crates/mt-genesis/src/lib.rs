@@ -17,6 +17,35 @@ use mt_crypto::{hash, Hash32, PUBLIC_KEY_SIZE};
 // + 2×pubkey(2×1952=3904) + app_id(32) + data_hash(32) = 4094 bytes.
 pub const PARAMS_ENCODED_SIZE: usize = 4094;
 
+// === Genesis Ceremony 2026-05-02 — финализированные значения ===
+//
+// Bootstrap operator: Moscow node `montana-moscow` (176.124.208.93)
+//   account_id = 4c290c3d5d63e84b99c30c83fb4d172e04102af4492b4d56d0642711b09e2072
+//   node_id    = 75bfaf9026405c12ef36437f08cc63c040cfe1924773dedcba0abadf8c6928a1
+//
+// Genesis cohort: 3 узла (мос/фра/зел). После ceremony эти константы immutable.
+
+/// 1952 байта ML-DSA-65 публичного ключа Moscow operator account.
+pub const BOOTSTRAP_ACCOUNT_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
+    include_bytes!("../include/bootstrap-account-pk.bin");
+
+/// 1952 байта ML-DSA-65 публичного ключа Moscow consensus node.
+pub const BOOTSTRAP_NODE_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
+    include_bytes!("../include/bootstrap-node-pk.bin");
+
+/// 32 байта initial VDF target. SHA-256("mt-genesis" || account_pk || node_pk
+/// || "montana-genesis-3node-2026-05-02").
+pub const TARGET_ZERO_BYTES: [u8; 32] = [
+    0x23, 0xAE, 0x24, 0x0D, 0xBF, 0xC6, 0x04, 0x9F, 0xA4, 0xE3, 0x23, 0x0D, 0x4A, 0x05, 0x43, 0x46,
+    0xD2, 0x56, 0x29, 0x1E, 0xA0, 0x4C, 0xFE, 0xA8, 0xE4, 0x7B, 0xBC, 0xAF, 0xB9, 0x07, 0x3D, 0x97,
+];
+
+/// 32 байта хэш Genesis content. SHA-256("montana-genesis-content-2026-05-02-bootstrap").
+pub const GENESIS_CONTENT_DATA_HASH_BYTES: [u8; 32] = [
+    0xF7, 0xD8, 0xEF, 0x6F, 0x50, 0x24, 0x40, 0x1B, 0x67, 0x64, 0xA1, 0x96, 0xA3, 0x32, 0xF7, 0xA4,
+    0x8D, 0x59, 0x2D, 0xF1, 0x26, 0x59, 0xBB, 0x96, 0x60, 0x0F, 0xB2, 0x26, 0xBF, 0xA0, 0xD5, 0x36,
+];
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolParams {
     pub d0: u64,
@@ -87,7 +116,7 @@ pub fn genesis_params() -> &'static ProtocolParams {
         reserved_m0: [0u8; 8],
         tau2_windows: 20_160,
         emission_moneta: 13_000_000_000,
-        target_zero: [0u8; 32],
+        target_zero: TARGET_ZERO_BYTES,
         confirmation_quorum_num: 67,
         confirmation_quorum_den: 100,
         participation_dead_zone_low: 85,
@@ -101,10 +130,10 @@ pub fn genesis_params() -> &'static ProtocolParams {
         adaptive_vdf_threshold: 1,
         adaptive_vdf_multiplier: 100,
         pruning_idle_windows: 80_640,
-        bootstrap_account_pubkey: [0u8; PUBLIC_KEY_SIZE],
-        bootstrap_node_pubkey: [0u8; PUBLIC_KEY_SIZE],
+        bootstrap_account_pubkey: *BOOTSTRAP_ACCOUNT_PUBKEY_BYTES,
+        bootstrap_node_pubkey: *BOOTSTRAP_NODE_PUBKEY_BYTES,
         genesis_content_app_id: genesis_app_id(),
-        genesis_content_data_hash: [0u8; 32],
+        genesis_content_data_hash: GENESIS_CONTENT_DATA_HASH_BYTES,
     })
 }
 
@@ -315,20 +344,27 @@ mod tests {
     // После Genesis ceremony — bootstrap_keypairs_finalized() становится PASS,
     // и этот тест меняется на assert_eq!(true).
     #[test]
-    fn is_genesis_bootstrap_finalized_pre_ceremony_returns_false() {
+    fn is_genesis_bootstrap_finalized_post_ceremony_returns_true() {
+        // Genesis Ceremony 2026-05-02: Moscow operator pubkeys + target_zero + content hash
+        // финализированы. is_genesis_bootstrap_finalized() должен возвращать true.
         let p = genesis_params();
         assert!(
-            !is_genesis_bootstrap_finalized(p),
-            "До Genesis ceremony placeholder fields должны быть [0; N]; \
-             если этот тест fails — кто-то начал ceremony, обновите expected"
+            is_genesis_bootstrap_finalized(p),
+            "Genesis ceremony завершена 2026-05-02 — все 4 поля должны быть non-zero"
         );
     }
 
     #[test]
     fn is_genesis_bootstrap_finalized_detects_partial_finalization() {
-        // Если только часть полей финализирована — это incomplete ceremony,
-        // должно возвращать false (all-or-nothing semantic).
+        // Симулируем pre-ceremony state (все 4 поля placeholder zeros) и
+        // постепенно финализируем — проверяем all-or-nothing semantic.
         let mut p = genesis_params().clone();
+        p.bootstrap_account_pubkey = [0u8; PUBLIC_KEY_SIZE];
+        p.bootstrap_node_pubkey = [0u8; PUBLIC_KEY_SIZE];
+        p.target_zero = [0u8; 32];
+        p.genesis_content_data_hash = [0u8; 32];
+        assert!(!is_genesis_bootstrap_finalized(&p), "all zeros → not finalized");
+
         p.bootstrap_account_pubkey = [0xAB; PUBLIC_KEY_SIZE];
         assert!(!is_genesis_bootstrap_finalized(&p));
 
@@ -339,19 +375,18 @@ mod tests {
         assert!(!is_genesis_bootstrap_finalized(&p));
 
         p.genesis_content_data_hash = [0x42; 32];
-        assert!(is_genesis_bootstrap_finalized(&p));
+        assert!(is_genesis_bootstrap_finalized(&p), "all 4 non-zero → finalized");
     }
 
     #[test]
-    #[ignore = "Pending Genesis ceremony — unignore after финализации; пока возвращает false"]
     fn bootstrap_keypairs_finalized() {
+        // Post-ceremony: проверяем что bootstrap_account_pubkey/bootstrap_node_pubkey
+        // не placeholder (содержат реальные байты Moscow operator).
         let p = genesis_params();
-        assert!(
-            is_genesis_bootstrap_finalized(p),
-            "Genesis ceremony incomplete — bootstrap_account_pubkey/\
-             bootstrap_node_pubkey/target_zero/genesis_content_data_hash \
-             всё ещё placeholders [0; N]. См. AUDIT.md Known Limitations / \
-             ROADMAP Genesis ceremony plan."
-        );
+        assert!(is_genesis_bootstrap_finalized(p));
+        assert_ne!(p.bootstrap_account_pubkey[..16], [0u8; 16]);
+        assert_ne!(p.bootstrap_node_pubkey[..16], [0u8; 16]);
+        assert_ne!(p.target_zero, [0u8; 32]);
+        assert_ne!(p.genesis_content_data_hash, [0u8; 32]);
     }
 }

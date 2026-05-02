@@ -34,6 +34,6 @@ libc = "=0.2.169"
 libp2p = { version = "=0.56.0", default-features = false, features = ["ed25519", "tokio", "tcp", "tls", "noise", "yamux", "request-response", "macros"] }
 mt-net = { path = "../mt-net" }
 mt-net-transport = { path = "../mt-net-transport" }
-tokio = { version = "=1.40.0", features = ["rt-multi-thread", "macros", "signal", "net", "io-util", "time"] }
+tokio = { version = "=1.40.0", features = ["rt-multi-thread", "macros", "signal", "net", "io-util", "time", "sync"] }
 futures = "=0.3.31"
 tracing = "=0.1.41"
