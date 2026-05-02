@@ -49,7 +49,9 @@ async fn two_node_request_response_ping_pong() {
     };
 
     let server_peer_id = *server.local_peer_id();
-    let server_dial_addr: Multiaddr = format!("{server_addr}/p2p/{server_peer_id}").parse().unwrap();
+    let server_dial_addr: Multiaddr = format!("{server_addr}/p2p/{server_peer_id}")
+        .parse()
+        .unwrap();
 
     client.dial(server_dial_addr).expect("client dial");
 
