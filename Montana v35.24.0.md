@@ -1,6 +1,6 @@
 # Монтана — Спецификация протокола
 
-**Версия:** 35.21.0 (2026-05-01)
+**Версия:** 35.24.0 (2026-05-02)
 
 
 ---
@@ -3670,6 +3670,42 @@ ML-DSA-65.KeyGen принимает 32-байтный seed по FIPS 204 §5.1 A
 Один `master_seed` порождает все три keypair — аккаунта (подпись операций), узла (подпись proposals и lottery endpoints), приложения (ML-KEM-768 шифрование). Любое устройство с мнемоникой восстанавливает полный контроль; баланс читается из текущего Account Table — локального состояния не требуется.
 
 Смена ключа аккаунта (ротация либо реакция на компрометацию мнемоники) в данной версии не поддерживается; компрометация мнемоники закрывается переводом баланса на новый аккаунт до момента утраты.
+
+#### Identity persistence modes (recoverable vs ephemeral)
+
+Узел сохраняет derived keypair-ы на диске в файле `identity.bin` (mode 0600). Алгоритм M-1 + per-role HKDF derivation детерминистичен: `mnemonic → master_seed → derived keys`. Spec не нормирует binary layout `identity.bin` (это локальный артефакт реализации, не consensus-critical). Spec нормирует **структурные требования** к двум режимам persistence.
+
+**Mode A — recoverable.** `identity.bin` содержит `master_seed` (64 байта) рядом с derived keypair-ами. Свойства:
+
+- Восстановление identity на новом устройстве: владелец вводит мнемонику → derive → пересобирает identity.bin.
+- Локальная потеря identity.bin: владелец может recover из мнемоники.
+- Оператор сервера видит `master_seed` (file mode 0600 + root доступ): может скопировать identity.bin, может re-derive все ключи.
+
+**Mode B — ephemeral (proof-of-no-interest).** `identity.bin` содержит **только** derived secret keys (`account_sk`, `node_sk`, `app_kem_sk`) и публичные ключи. `master_seed` после derivation уничтожен в памяти через `zeroize` (secure erasure pattern). Мнемоника после генерации **не сохраняется** на диск и **не выводится** оператору.
+
+Свойства Mode B:
+
+- **Recovery невозможен.** Поломка диска → identity потеряна. Заработанный баланс Ɉ принадлежит `account_id` записи в Account Table; если узел теряет identity.bin без backup, signing capability утрачивается необратимо.
+- **Operator capability ограничена.** Root оператора видит derived secret keys (signing capability на текущие роли), но не `master_seed`. Не может re-derive ключи для будущих ролей (если spec расширит per-role registry).
+- **Двойной майнинг ограничен частично.** Оператор может скопировать derived secret keys и запустить параллельный узел — но **только** для signing того же `(account_id, node_id)`. Для полной защиты нужен hardware key isolation (TPM2/Secure Enclave); out of scope для текущей версии.
+
+**Use case для Mode B:**
+
+- Genesis-узлы (proof-of-no-interest): оператор сервера не должен иметь exclusive access к мнемонике, иначе он может запустить параллельный узел с теми же ключами на другой машине, нарушая one-machine-one-identity.
+- Узлы где recovery нежелателен по threat model: компрометация оператора не должна давать возможность ротировать identity.
+
+**Layout requirements (binding для conformance):**
+
+- `identity.bin` начинается с `magic = "MTID"` (4 байта ASCII) || `version: u8`.
+- `version = 1` — Mode A, layout содержит `master_seed` (64 байта) после header.
+- `version = 2` — Mode B, layout без `master_seed`, derived keys сразу после header.
+- Реализация ОБЯЗАНА читать оба версии (backwards compat).
+- Default режим записи `init` — Mode A; Mode B выбирается явной опцией (`--ephemeral` либо аналог).
+- Переход Mode A → Mode B (`migrate-to-ephemeral`): реализация перезаписывает identity.bin без `master_seed`, делая `zeroize` старого `master_seed` в RAM перед записью нового файла.
+
+**Test vectors:**
+
+Derived keys в Mode A и Mode B byte-identical: различается storage layout, не cryptographic output. Реализация прогоняет M-1 binding vectors на обеих ветках (Mode A read-write, Mode B read-write); terminal observable outputs (`account_pubkey`, `node_pubkey`, `app_kem_pubkey` SHA-256 fingerprints) byte-equal в обоих режимах.
 
 #### [I-9] статус
 
