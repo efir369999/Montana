@@ -2,7 +2,7 @@
 # Montana node — установка одной командой на Linux VPS.
 #
 # Использование (одна строка в терминале VPS):
-#   curl -sSL https://raw.githubusercontent.com/montana-protocol/montana/main/Протокол/Код/scripts/install-vps.sh | sudo bash
+#   curl -sSL https://raw.githubusercontent.com/efir369999/Montana/main/Код/scripts/install-vps.sh | sudo bash
 #
 # Либо локально после git clone:
 #   sudo bash scripts/install-vps.sh
@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-REPO_URL="${MONTANA_REPO_URL:-https://github.com/montana-protocol/montana.git}"
+REPO_URL="${MONTANA_REPO_URL:-https://github.com/efir369999/Montana.git}"
 REPO_BRANCH="${MONTANA_REPO_BRANCH:-main}"
 INSTALL_DIR="/opt/montana"
 DATA_DIR="/var/lib/montana"
@@ -88,7 +88,7 @@ else
 fi
 
 # --- Шаг 6: build бинарь ---
-SOURCE_DIR="$INSTALL_DIR/Протокол/Код"
+SOURCE_DIR="$INSTALL_DIR/Код"
 if [ ! -d "$SOURCE_DIR" ]; then
   die "директория '$SOURCE_DIR' не найдена в репозитории. Возможно структура изменилась — проверьте путь к montana-node."
 fi
@@ -131,7 +131,7 @@ log "устанавливаю systemd unit $SERVICE_FILE..."
 cat > "$SERVICE_FILE" <<UNIT
 [Unit]
 Description=Montana Local Node (single-node, Proof-of-Time)
-Documentation=https://github.com/montana-protocol/montana
+Documentation=https://github.com/efir369999/Montana
 After=network.target
 Wants=network-online.target
 

@@ -2,7 +2,7 @@
 # Montana node — установка одной командой на macOS.
 #
 # Использование (одна строка в Terminal.app):
-#   curl -sSL https://raw.githubusercontent.com/montana-protocol/montana/main/Протокол/Код/scripts/install-mac.sh | bash
+#   curl -sSL https://raw.githubusercontent.com/efir369999/Montana/main/Код/scripts/install-mac.sh | bash
 #
 # Что делает:
 #   1. Проверяет macOS + Xcode CLT (запрашивает установку если нет)
@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-REPO_URL="${MONTANA_REPO_URL:-https://github.com/montana-protocol/montana.git}"
+REPO_URL="${MONTANA_REPO_URL:-https://github.com/efir369999/Montana.git}"
 REPO_BRANCH="${MONTANA_REPO_BRANCH:-main}"
 SOURCE_CACHE="$HOME/.cache/montana-source"
 # Локация установки: env var INSTALL_DIR либо default ~/Applications/Montana.
@@ -68,7 +68,7 @@ else
 fi
 
 # --- Шаг 5: build бинарь ---
-SOURCE_DIR="$SOURCE_CACHE/Протокол/Код"
+SOURCE_DIR="$SOURCE_CACHE/Код"
 if [ ! -d "$SOURCE_DIR" ]; then
   die "директория '$SOURCE_DIR' не найдена в репозитории"
 fi
