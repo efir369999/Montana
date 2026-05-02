@@ -1,0 +1,22 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Docker reproducibility build outputs
+/build-output-*/
+
+# Local node installation (когда оператор держит установку внутри репо)
+/Montana/
+/Montana_Node/
+/montana-node/

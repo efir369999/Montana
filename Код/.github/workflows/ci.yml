@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  doc_drift:
+    name: Documentation drift check (numbers sync code ↔ AUDIT.md)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run check_doc_drift.sh
+        run: bash scripts/check_doc_drift.sh
+
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    name: Tests (debug + release × linux + macos)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        profile: [debug, release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: cargo test (${{ matrix.profile }})
+        run: |
+          if [ "${{ matrix.profile }}" = "release" ]; then
+            cargo test --all --release
+          else
+            cargo test --all
+          fi
+
+  release_build:
+    name: Release build (LTO=fat, codegen-units=1)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: cargo build --release
+        run: cargo build --all --release
+
+  kat_release:
+    name: KAT self_test on release artifact (PQ KeyGen byte-identity)
+    runs-on: ${{ matrix.os }}
+    needs: [release_build]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: Build release examples
+        run: cargo build --release -p mt-examples
+      - name: KAT — m1_mnemonic vectors (release binary)
+        run: ./target/release/examples/m1_mnemonic vectors
+      - name: KAT — m1_mnemonic recovery-fingerprint reproducibility (run 1)
+        id: fp1
+        run: |
+          OUT=$(./target/release/examples/m1_mnemonic recovery-fingerprint | grep "hex (64 chars)" | awk '{print $NF}')
+          echo "fp=$OUT" >> $GITHUB_OUTPUT
+          echo "Run 1 fingerprint: $OUT"
+      - name: KAT — m1_mnemonic recovery-fingerprint reproducibility (run 2)
+        id: fp2
+        run: |
+          OUT=$(./target/release/examples/m1_mnemonic recovery-fingerprint | grep "hex (64 chars)" | awk '{print $NF}')
+          echo "fp=$OUT" >> $GITHUB_OUTPUT
+          echo "Run 2 fingerprint: $OUT"
+      - name: Assert fingerprints byte-identical
+        run: |
+          if [ "${{ steps.fp1.outputs.fp }}" != "${{ steps.fp2.outputs.fp }}" ]; then
+            echo "FAIL: recovery-fingerprint non-deterministic between runs"
+            echo "Run 1: ${{ steps.fp1.outputs.fp }}"
+            echo "Run 2: ${{ steps.fp2.outputs.fp }}"
+            exit 1
+          fi
+          echo "PASS: recovery-fingerprint byte-identical (${{ steps.fp1.outputs.fp }})"
+      - name: KAT — keygen_vectors integration tests (release)
+        run: cargo test --release --test keygen_vectors
+      - name: KAT — e2e_recovery integration tests (release)
+        run: cargo test --release --test e2e_recovery
+
+  reproducible_release:
+    name: Reproducible release build (Docker, byte-identical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build release artifact (run 1)
+        run: |
+          docker build \
+            --file docker/release-build.dockerfile \
+            --tag montana-release:run1 \
+            --output type=local,dest=./build-output-1 \
+            .
+
+      - name: Build release artifact (run 2 — independent rebuild, no cache)
+        run: |
+          docker build \
+            --no-cache \
+            --file docker/release-build.dockerfile \
+            --tag montana-release:run2 \
+            --output type=local,dest=./build-output-2 \
+            .
+
+      - name: Compare binary hashes (must be byte-identical)
+        run: |
+          HASH1=$(sha256sum build-output-1/release_hashes.txt | awk '{print $1}')
+          HASH2=$(sha256sum build-output-2/release_hashes.txt | awk '{print $1}')
+          echo "Run 1 hash: $HASH1"
+          echo "Run 2 hash: $HASH2"
+          if [ "$HASH1" != "$HASH2" ]; then
+            echo "FAIL: reproducible build produced different binaries"
+            diff build-output-1/release_hashes.txt build-output-2/release_hashes.txt
+            exit 1
+          fi
+          echo "PASS: reproducible build byte-identical between runs"
+          cat build-output-1/release_hashes.txt

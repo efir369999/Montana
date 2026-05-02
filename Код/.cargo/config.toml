@@ -1,0 +1,32 @@
+# Workspace-wide cargo configuration.
+#
+# Цель: один процесс / один поток на cargo build + cargo test.
+# Причина: предотвращение перегрева машины автора. Тесты mt-mnemonic
+# выполняют PBKDF2-HMAC-SHA-256 с iter=2²⁰ (1 048 576 итераций SHA-256,
+# anti-brute-force защита mnemonic per spec раздел "Ключи → Мнемоника и
+# seed → M-1"). При parallel выполнении 6+ тестов на 5+ ядрах одновременно
+# — взрыв CPU (528%+, idle 0%) и нагрев машины.
+#
+# Два уровня контроля parallelism (оба обязательны):
+#
+# 1. [build] jobs = 1 — ограничивает cargo до 1 process одновременно.
+#    Cargo при `cargo test` запускает несколько test binaries для разных
+#    integration tests + unit tests; этот флаг ограничивает их до 1 process
+#    одновременно (последовательное выполнение test binaries).
+#
+# 2. RUST_TEST_THREADS=1 — ограничивает потоки ВНУТРИ одного test binary
+#    до 1 (тесты в одном файле выполняются последовательно).
+#
+# Без обоих ограничений автор видел в Activity Monitor 569% CPU
+# (keygen_vectors-881... 355% + mt_mnemonic-3bfc... 214% параллельно).
+#
+# Trade-off: тесты выполняются медленнее (sum of times вместо max), но
+# author convenience + защита от перегрева > CI/dev speed.
+#
+# Override для конкретного запуска: явно передать `--jobs N` либо
+# `--test-threads=N` через cargo flags.
+[build]
+jobs = 1
+
+[env]
+RUST_TEST_THREADS = "1"
