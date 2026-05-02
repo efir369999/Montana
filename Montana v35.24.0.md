@@ -3696,7 +3696,7 @@ ML-DSA-65.KeyGen принимает 32-байтный seed по FIPS 204 §5.1 A
 
 **Layout requirements (binding для conformance):**
 
-- `identity.bin` начинается с `magic = "MTID"` (4 байта ASCII) || `version: u8`.
+- `identity.bin` начинается с `magic = "montana1"` (8 байт ASCII production-grade naming per [C-12]) || `version: u8`.
 - `version = 1` — Mode A, layout содержит `master_seed` (64 байта) после header.
 - `version = 2` — Mode B, layout без `master_seed`, derived keys сразу после header.
 - Реализация ОБЯЗАНА читать оба версии (backwards compat).
