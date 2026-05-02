@@ -96,7 +96,7 @@ sudo bash /opt/montana/Код/montana-vpn/install.sh
 | [`Код/ROADMAP.md`](Код/ROADMAP.md) | 9 milestones, M1-M6+M9 ready, M7-M8 in progress |
 | [`Код/docs/SPEC_DEVIATIONS.md`](Код/docs/SPEC_DEVIATIONS.md) | 9 documented deviations (M5-singleton phase) |
 | [`SECURITY.md`](SECURITY.md) | Security policy, как репортить уязвимости |
-| [`МАНИФЕСТ.md`](%D0%9C%D0%90%D0%9D%D0%98%D0%A4%D0%95%D0%A1%D0%A2.md) | Манифест автора. *«Время — это элегантные деньги»* |
+| [`Генезис.md`](%D0%93%D0%B5%D0%BD%D0%B5%D0%B7%D0%B8%D1%81.md) | Genesis-послание автора (cypherpunk-style, аналог Bitcoin Genesis headline). Будет вшито в Genesis Decree протокола. |
 | [`Архив/`](Архив/) | Исторические версии спецификации |
 
 ## Status
