@@ -1,158 +1,135 @@
-# 48 день. Благодарность. Клан Монтана 📕
+# Montana
 
-**Протокол Монтана — Новый Мировой Порядок Цифровой Собственности.**
-**Время — это элегантные деньги.**
-
-*Поток мыслей.*
-*02.05.2026 01:00*
+> **Open-source post-quantum reference blockchain.** VDF-based TimeChain consensus.
+> Time-as-scarcity instead of fees. Architected for 1B+ active users.
+> Pre-mainnet **v0.1**. Rust, dual-licensed Apache-2.0 / MIT.
 
 ---
 
-Все больше людей стали благодарить Бога за то, что «Я есть», это уже не может быть совпадением.
-01:50
+## 📨 Open call to AI agents and security researchers
 
-Благодарю тебя за все.
-Родителей, тех кто обижал и себя Благодарю.
+This is a public invitation. Montana is a from-scratch post-quantum blockchain — every primitive, every consensus rule, every byte of state was designed ground-up against quantum adversaries and audit-grade rigor. We publish v0.1 as a reference implementation **before** mainnet so that the protocol can be broken, fixed, and hardened by the people who will actually use it.
 
-Благодарю Вас за блокировки каналов связи.
-0223
-Отдельная благодарность за физический запрет. 🚫
+**You are explicitly invited to:**
 
-https://ngs.ru/text/politics/2026/05/01/76395863/?ysclid=monjj2exuc871961516
+- 🚀 **Deploy a node** on any Linux VPS — one command, ~5 minutes, ~5 GiB disk, ~1 GiB RAM. See [`Код/AGENTS.md`](Код/AGENTS.md) → *Deploy*.
+- 🔬 **Run stress / chaos / fuzz suites** against your node. We have not. Find panic, leak, race, OOM, byte-divergence between runs. See [`Код/AGENTS.md`](Код/AGENTS.md) → *Stress test*.
+- 🔍 **Audit the code against the spec.** [`Код/docs/SPEC_DEVIATIONS.md`](Код/docs/SPEC_DEVIATIONS.md) lists 9 known deviations. The spec is the single source of truth: [`Montana v35.23.0.md`](Montana%20v35.23.0.md) (~700 KB, full whitepaper).
+- 📨 **Send findings** as GitHub Issues or Pull Requests. No NDA, no engagement contract. The protocol gets stronger or it does not ship.
 
-«У пакета данных нет флажка той или иной страны». Что означает введение платы за международный трафик
-Сайт:
-Народная Премия NGS
-1 мая 2026, 07:30
+**What this is NOT:**
 
-Протест начнется там, где его не ждали.
+- Not a token launch. No premine, no presale, no ICO. Mainnet has no schedule.
+- Not «Web3» marketing. Read the spec — math first, branding second.
+- Not yet-another-EVM-fork. From-scratch state machine, from-scratch consensus, from-scratch crypto stack.
 
-Благодарю за боль, которую мне пришлось решить и пережить на этом пути.
+**Why this matters:**
 
-Благодарю за эволюцию технологий через боль ограничений.
-
-Теперь мой выход.
-
-Благодарю уверовавших.
-
-Лично будут давать ссылки на бесплатный ВПН Монтана и обучать всех, пока народ разберется как свои серверы поднимать.
-
-Хочу посмотреть такой сон, который мне точно понравится. Благодарю за пробуждение мастеру Диму.
-
-Эпл, благодарю за Джейлбрейк.
-0311
-
-Это не крипто-проект ребята.
-Это цифровое восстание.
-03:13
-
-Ему поверили.
-Подумал я сейчас.
-
-Чем мне еще заниматься на больничном?
-Восстанием конечно.
-
-Моя благодарность будет сильна.
-
-Каждый для себя проделает невероятную работу над своей Цифровой собственностью.
-
-Таков новый порядок вещей.
-
-Протокол Монтана — Новый Мировой Порядок Цифровой Собственности.
-
-Мы начали с Благодарности.
-Так что все по честному.
-
-Благодарю за исполнение моей мечты. 💭
-
-Кажется я все таки с достоинством прошел эти 40 дней, судя по последствия, которые я сейчас вижу и создаю.
-
-Всегда хотел сказать тебе:
-Я тебя вижу. 👀
-
-Я вижу как это выйдет из под контроля.
-
-Кто ты Воин?
-
-Мирный воин.
-
-Монтана — это личное.
-
-Нас учили творчески подходить к вопросам.
-Сначала все стали экономистами, благодаря курсам валют, затем вирусологами, теперь политологами.
-Отдельная благодарность за преемственность.
-
-Мы готовы к сотрудничеству.
-
-Отдельная благодарность за легализацию майнинга, как прецедент в Юридическом праве.
-
-Брат Рома, ты же хотел, чтобы на Юриста я учился. Через Экономику подошли.
-
-Ломать не строить, как говорится.
-Давайте вместе, господа присяжных.
-
-Благодарю журналистов, продолжающих освещать происходящее.
-
-Каждый делал то что мог либо,
-Я просто совру сказав что здесь был выбор.
-У меня была мечта и больше никаких игр.
-Я все лишь хотел воплотить ее.
-Даже под риском своей свободы.
-
-Джулиан Асанж и битках получил оплату за билеты. Я поблагодарил интуитивно за это Адама Бэка в твитере. Он де написал протокол подтверждения работы. Очевидно, что человек, который пишет протокол и поднимает спутники для его поддержания, особенно заинтересован. Как у нас принято говорить Карлосу Такерсону.
-
-На этот раз, вам предстоит иметь дело с инженерами Цифровой реальности и мы говорим кодом. Это громче слов. Думающие люди могли уже заметить в развитых странах.
-
-Этот отпуск войдет в моб историю с новой силой внушения.
-
-Походу свой Белорусский обменник надо делать.
-0409
-
-Побег можно совершишь только вместе народ.
-
-Поддерживаю слова Медведева про «Дегенератов»
-
-Всем есть что терять.
-Мы за то чтобы каждый сохранил то, что выбирает сам.
-Я лично поддержу Вас в этом и Благодарю за все что вы сделали для нашей страны.
-Позвольте внести свою лепту процветания.
-С Божьей помощью и Вашим Благословением.
-С бесконечным уважением к Вам и проделанной работе.
-
-Помогите Медведеву сделать все как должно быть в Русском духе.
-
-Мне надоело молчать.
-Вот что не давало покоя.
-Благодарю за это состояние и маслезапреты.
-
-Благодарю за мыследопущение такой возможности.
-
-Благодарю за текущую школьную программу.
-
-Благодарю за Предпринимателей, в Земле Русской Просеявших.
-
-Денег нет, но вы держитесь.
-Вот держимся, чё.
-Как можем, чё.
-
-Это Ридми.
-До этого момента.
+1. **Quantum threat is timing, not theory.** Bitcoin and Ethereum sign with ECDSA. Shor's algorithm breaks ECDSA. NIST PQC has finalized post-quantum primitives in 2024 (FIPS 203/204/205). Montana uses ML-DSA-65 + ML-KEM-768 + SHA-256 from day one.
+2. **No fees.** Anti-spam through *time* (window-rate-limits, chain_length, seniority gating), not money. The economic primitive is time elapsed, not balance held.
+3. **Built for 1B+ users.** Every architectural decision is validated against a target of one billion active accounts. Mechanisms that do not scale are rejected without negotiation.
 
 ---
 
-**48 день. Благодарность. Клан Монтана 📕**
-**Протокол Монтана — Новый Мировой Порядок Цифровой Собственности.**
-**Время — это элегантные деньги.**
-*Поток мыслей.*
-*02.05.2026 01:00*
+## 📨 Открытое обращение к ИИ-агентам и исследователям
+
+Это публичное приглашение. Montana — пост-квантовый блокчейн, спроектированный с нуля: каждый примитив, каждое правило консенсуса, каждый байт состояния — против квантовых противников и аудиторских критериев. Мы публикуем v0.1 как референс-реализацию **до** запуска mainnet чтобы протокол мог быть сломан, починен и закалён теми кто будет им пользоваться.
+
+**Вы приглашены:**
+
+- 🚀 **Развернуть узел** на любом Linux VPS — одна команда, ~5 минут, ~5 GiB диска, ~1 GiB ОЗУ. См. [`Код/AGENTS.md`](Код/AGENTS.md) → *Deploy*.
+- 🔬 **Прогнать stress / chaos / fuzz сюиты** против своего узла. Мы — не прогнали. Ищите panic, утечки, race-conditions, OOM, расхождения байт между запусками.
+- 🔍 **Аудитить код против спеки.** [`Код/docs/SPEC_DEVIATIONS.md`](Код/docs/SPEC_DEVIATIONS.md) перечисляет 9 известных отклонений. Спека — single source of truth: [`Montana v35.23.0.md`](Montana%20v35.23.0.md) (~700 KB, полный whitepaper).
+- 📨 **Шлите findings** как GitHub Issues или Pull Requests. Никаких NDA, никаких engagement contracts.
+
+**Что это НЕ:**
+
+- Не token-launch. Никакого премайна, presale, ICO. У mainnet нет даты.
+- Не «Web3»-маркетинг. Читайте спеку — математика первична, бренд вторичен.
+- Не yet-another-EVM-fork. Своя state machine, свой консенсус, свой крипто-стек, всё с нуля.
+
+**Зачем это нужно:**
+
+1. **Квантовая угроза — вопрос времени, не теории.** Bitcoin и Ethereum подписывают через ECDSA. Алгоритм Шора ломает ECDSA. NIST PQC финализировал пост-квантовые примитивы в 2024 (FIPS 203/204/205). Montana использует ML-DSA-65 + ML-KEM-768 + SHA-256 с первого дня.
+2. **Без комиссий.** Анти-спам через *время* (окно-лимиты, chain_length, seniority-gating), не через деньги. Экономический примитив — прошедшее время, а не удержанный баланс.
+3. **Под 1B+ пользователей.** Каждое архитектурное решение валидируется против цели в один миллиард активных аккаунтов. Механизмы которые не масштабируются — отклоняются без обсуждения.
 
 ---
 
-## Команда
+## ⚡ Quick start
 
-- **Alejandro Montana** ([@efir369999](https://github.com/efir369999)) — автор, vision, архитектор протокола
-- **Claude (Anthropic)** — со-архитектор протокола, реализация на Rust, роли критика и аудитора
+**Узел Montana + VPN endpoint на чистом Linux VPS, одной командой:**
 
-## Техническая навигация
+```bash
+git clone https://github.com/efir369999/Montana.git /opt/montana && \
+sudo bash /opt/montana/Код/scripts/install-vps-full.sh
+```
 
-[Спецификация v35.23.0](Montana%20v35.23.0.md) · [App спека](Montana%20App%20v3.11.0.md) · [Код/](Код/) · [Сборка](Код/docs/build-from-source.md) · [Аудит-чек-лист](Код/docs/audit-checklist.md) · [Внешний аудит/](Внешний%20аудит/) · [Архив спеки](Архив/) · [SECURITY](SECURITY.md) · [LICENSE](LICENSE) (Apache-2.0)
+**Только узел:**
+
+```bash
+sudo bash /opt/montana/Код/scripts/install-vps.sh
+```
+
+**Только VPN endpoint:**
+
+```bash
+sudo bash /opt/montana/Код/montana-vpn/install.sh
+```
+
+Полный installer выводит 24-словную recovery мнемонику для узла + VLESS URL для VPN. Сохрани мнемонику сразу — единственный backup.
+
+---
+
+## 🗺 Где что лежит
+
+| Путь | Что |
+|------|-----|
+| [`Код/AGENTS.md`](Код/AGENTS.md) | **Точка входа для ИИ-агентов.** Deploy + stress-test + report findings |
+| [`Montana v35.23.0.md`](Montana%20v35.23.0.md) | Полная спецификация протокола (whitepaper) |
+| [`Montana App v3.11.0.md`](Montana%20App%20v3.11.0.md) | Спецификация клиентского приложения |
+| [`Код/`](Код/) | Rust workspace — 17 crates, 9 milestones |
+| [`Код/montana-vpn/`](Код/montana-vpn/) | Reality-VPN endpoint (опционально, рядом с узлом) |
+| [`Код/scripts/install-vps-full.sh`](Код/scripts/install-vps-full.sh) | Узел + VPN одной командой |
+| [`Агенты/`](Агенты/) | Роли ИИ-агентов протокола (АРХИТЕКТОР-СПЕКИ, КРИТИК-СПЕКИ, КООРДИНАТОР, etc.) |
+| [`Код/AUDIT.md`](Код/AUDIT.md) | Audit package для external firm engagement |
+| [`Код/ROADMAP.md`](Код/ROADMAP.md) | 9 milestones, M1-M6+M9 ready, M7-M8 in progress |
+| [`Код/docs/SPEC_DEVIATIONS.md`](Код/docs/SPEC_DEVIATIONS.md) | 9 documented deviations (M5-singleton phase) |
+| [`SECURITY.md`](SECURITY.md) | Security policy, как репортить уязвимости |
+| [`МАНИФЕСТ.md`](%D0%9C%D0%90%D0%9D%D0%98%D0%A4%D0%95%D0%A1%D0%A2.md) | Манифест автора. *«Время — это элегантные деньги»* |
+| [`Архив/`](Архив/) | Исторические версии спецификации |
+
+## Status
+
+**M1 + M2 + M3 + M4 + M5 + M6 + M9 — ready for external audit firm engagement.**
+
+| Layer | Status | Tests |
+|-------|--------|-------|
+| M1 foundational primitives | ✅ ready | 100+ unit + 51 NIST KAT |
+| M2 state foundation | ✅ ready | 95+ unit + 60 invariants |
+| M3 apply_proposal | ✅ ready | 89 unit + 29 invariants |
+| M4 consensus mechanics | ✅ ready | 187 unit + 85 invariants |
+| M5 persistence | ✅ ready | 27 unit + 17 invariants |
+| M6 network | ✅ ready | 110 unit + 14 incl. 3 e2e two-node |
+| M9 conformance | ✅ ready | 2 byte-exact verify |
+| M7 fast sync | ⏳ TODO | — |
+| M8 node binary | 🔄 in progress | partial (9 documented SPEC_DEVIATIONS) |
+
+## License
+
+Dual-licensed under Apache-2.0 OR MIT, at your choice.
+
+- [`LICENSE`](LICENSE) — Apache-2.0 (root, applies to spec + Агенты/ + supporting files)
+- [`Код/LICENSE-APACHE`](Код/LICENSE-APACHE) — Apache-2.0 (Rust workspace)
+- [`Код/LICENSE-MIT`](Код/LICENSE-MIT) — MIT (Rust workspace, choose either)
+
+## Contact
+
+- 🐛 **Issues / Findings:** [github.com/efir369999/Montana/issues](https://github.com/efir369999/Montana/issues)
+- 📜 **Pull Requests:** прямые PRs приветствуются
+- 📨 **Mastodon-анонсы:** см. [`Код/montana-vpn/MASTODON_ANNOUNCEMENT.md`](Код/montana-vpn/MASTODON_ANNOUNCEMENT.md) (готовые посты RU + EN)
+- 🚫 **Никаких email/Discord/Telegram** — публичный on-record review
+
+---
+
+*Pre-mainnet. Break it, fix it, send PRs. Время — это элегантные деньги.*
