@@ -79,6 +79,7 @@ where
         .map_err(|e| TransportError::Setup(format!("transport upgrade: {e}")))?
         .with_behaviour(|_| behaviour)
         .map_err(|e| TransportError::Setup(format!("behaviour: {e}")))?
+        .with_swarm_config(|c| c.with_idle_connection_timeout(std::time::Duration::from_secs(60)))
         .build();
 
     for addr in &config.listen_addrs {
