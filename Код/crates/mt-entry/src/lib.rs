@@ -243,7 +243,7 @@ pub fn rank_candidates_for_selection(
         })
         .collect();
     // Canonical sort: sort_key ascending (32B lex)
-    scored.sort_by(|a, b| a.0.cmp(&b.0));
+    scored.sort_by_key(|s| s.0);
     scored
 }
 
