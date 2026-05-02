@@ -45,7 +45,9 @@ async fn proposal_envelope_round_trip() {
         }
     };
     let server_peer_id = *server.local_peer_id();
-    let server_dial: Multiaddr = format!("{server_addr}/p2p/{server_peer_id}").parse().unwrap();
+    let server_dial: Multiaddr = format!("{server_addr}/p2p/{server_peer_id}")
+        .parse()
+        .unwrap();
     client.dial(server_dial).expect("client dial");
 
     // Synthetic Proposal payload — структура согласно spec section "Proposal":
@@ -133,7 +135,9 @@ async fn large_payload_near_max_limit() {
         }
     };
     let server_peer_id = *server.local_peer_id();
-    let dial: Multiaddr = format!("{server_addr}/p2p/{server_peer_id}").parse().unwrap();
+    let dial: Multiaddr = format!("{server_addr}/p2p/{server_peer_id}")
+        .parse()
+        .unwrap();
     client.dial(dial).unwrap();
 
     let big = vec![0xCD; 512 * 1024];
