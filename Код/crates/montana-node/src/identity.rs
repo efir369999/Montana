@@ -13,6 +13,7 @@ use mt_mnemonic::{
     MnemonicError, MASTER_SEED_LEN,
 };
 use mt_state::{derive_account_id, derive_node_id, AccountId, NodeId};
+use zeroize::Zeroize;
 
 // Identity file format magic — production-grade naming per [C-12].
 // "montana1" = ASCII «montana» + версия 1; 8 байт fixed.
@@ -21,6 +22,8 @@ use mt_state::{derive_account_id, derive_node_id, AccountId, NodeId};
 // consensus hash compositions.
 pub const IDENTITY_MAGIC: &[u8; 8] = b"montana1";
 pub const IDENTITY_VERSION: u8 = 1;
+// spec, раздел "Identity persistence modes" — Mode B (ephemeral, без master_seed)
+pub const IDENTITY_VERSION_V2: u8 = 2;
 
 const OFFSET_MAGIC: usize = 0;
 const OFFSET_VERSION: usize = 8;
@@ -35,9 +38,23 @@ const OFFSET_MLKEM_SK: usize = OFFSET_MLKEM_PK + MLKEM_PUBLIC_KEY_SIZE;
 
 pub const IDENTITY_FILE_SIZE: usize = OFFSET_MLKEM_SK + MLKEM_SECRET_KEY_SIZE;
 
+// V2 layout (Mode B — ephemeral) без master_seed:
+// magic[8] || version[1] || suite[2] || account_pk || account_sk || node_pk || node_sk || mlkem_pk || mlkem_sk
+const OFFSET_V2_ACCOUNT_PK: usize = OFFSET_MASTER_SEED;
+const OFFSET_V2_ACCOUNT_SK: usize = OFFSET_V2_ACCOUNT_PK + PUBLIC_KEY_SIZE;
+const OFFSET_V2_NODE_PK: usize = OFFSET_V2_ACCOUNT_SK + SECRET_KEY_SIZE;
+const OFFSET_V2_NODE_SK: usize = OFFSET_V2_NODE_PK + PUBLIC_KEY_SIZE;
+const OFFSET_V2_MLKEM_PK: usize = OFFSET_V2_NODE_SK + SECRET_KEY_SIZE;
+const OFFSET_V2_MLKEM_SK: usize = OFFSET_V2_MLKEM_PK + MLKEM_PUBLIC_KEY_SIZE;
+pub const IDENTITY_FILE_SIZE_V2: usize = OFFSET_V2_MLKEM_SK + MLKEM_SECRET_KEY_SIZE;
+
 pub struct Identity {
     pub suite_id: SuiteId,
+    /// В Mode A (recoverable) — реальный master_seed.
+    /// В Mode B (ephemeral) — `[0u8; 64]` placeholder (master_seed уничтожен).
     pub master_seed: [u8; MASTER_SEED_LEN],
+    /// `true` — Mode B, identity.bin будет писаться без master_seed (v2 layout).
+    pub is_ephemeral: bool,
     pub mnemonic: String,
     pub account_pk: PublicKey,
     pub account_sk: SecretKey,
@@ -76,6 +93,7 @@ impl Identity {
         Ok(Self {
             suite_id: SuiteId::Mldsa65,
             master_seed,
+            is_ephemeral: false,
             mnemonic: String::new(),
             account_pk,
             account_sk,
@@ -84,6 +102,33 @@ impl Identity {
             mlkem_pk,
             mlkem_sk,
         })
+    }
+
+    /// spec, раздел "Identity persistence modes" — Mode B.
+    /// Derive все ключи + zeroize master_seed в RAM. Identity содержит
+    /// master_seed=[0;64] placeholder и is_ephemeral=true. При save
+    /// будет записан v2 layout без master_seed.
+    pub fn from_master_seed_ephemeral(
+        master_seed: [u8; MASTER_SEED_LEN],
+    ) -> Result<Self, NodeError> {
+        let mut id = Self::from_master_seed(master_seed)?;
+        id.master_seed.zeroize();
+        id.is_ephemeral = true;
+        Ok(id)
+    }
+
+    pub fn from_mnemonic_ephemeral(mnemonic: &str) -> Result<Self, NodeError> {
+        let master_seed = mnemonic_to_master_seed(mnemonic).map_err(NodeError::Mnemonic)?;
+        let mut id = Self::from_master_seed_ephemeral(master_seed)?;
+        // Не сохраняем мнемонику в struct в Mode B — она для оператора-spec
+        // не должна оставаться в RAM узла после derivation.
+        id.mnemonic = String::new();
+        Ok(id)
+    }
+
+    pub fn from_entropy_ephemeral(entropy: &[u8; 32]) -> Result<Self, NodeError> {
+        let mnemonic = entropy_to_mnemonic(entropy);
+        Self::from_mnemonic_ephemeral(&mnemonic)
     }
 
     pub fn from_entropy(entropy: &[u8; 32]) -> Result<Self, NodeError> {
@@ -127,7 +172,7 @@ impl std::fmt::Display for NodeError {
             ),
             NodeError::UnsupportedVersion(v) => write!(
                 f,
-                "версия формата identity.bin = {v} не поддерживается; ожидалась {IDENTITY_VERSION}"
+                "версия формата identity.bin = {v} не поддерживается; ожидалась {IDENTITY_VERSION} или {IDENTITY_VERSION_V2}"
             ),
             NodeError::UnsupportedSuite(s) => write!(
                 f,
@@ -183,17 +228,38 @@ pub fn save_identity(
         return Err(NodeError::IdentityAlreadyExists(path));
     }
 
-    let mut buf = vec![0u8; IDENTITY_FILE_SIZE];
-    buf[OFFSET_MAGIC..OFFSET_MAGIC + 8].copy_from_slice(IDENTITY_MAGIC);
-    buf[OFFSET_VERSION] = IDENTITY_VERSION;
-    buf[OFFSET_SUITE..OFFSET_SUITE + 2].copy_from_slice(&(identity.suite_id as u16).to_le_bytes());
-    buf[OFFSET_MASTER_SEED..OFFSET_ACCOUNT_PK].copy_from_slice(&identity.master_seed);
-    buf[OFFSET_ACCOUNT_PK..OFFSET_ACCOUNT_SK].copy_from_slice(identity.account_pk.as_bytes());
-    buf[OFFSET_ACCOUNT_SK..OFFSET_NODE_PK].copy_from_slice(identity.account_sk.as_bytes());
-    buf[OFFSET_NODE_PK..OFFSET_NODE_SK].copy_from_slice(identity.node_pk.as_bytes());
-    buf[OFFSET_NODE_SK..OFFSET_MLKEM_PK].copy_from_slice(identity.node_sk.as_bytes());
-    buf[OFFSET_MLKEM_PK..OFFSET_MLKEM_SK].copy_from_slice(identity.mlkem_pk.as_bytes());
-    buf[OFFSET_MLKEM_SK..].copy_from_slice(identity.mlkem_sk.as_bytes());
+    let buf = if identity.is_ephemeral {
+        // Mode B (v2) — без master_seed
+        let mut b = vec![0u8; IDENTITY_FILE_SIZE_V2];
+        b[OFFSET_MAGIC..OFFSET_MAGIC + 8].copy_from_slice(IDENTITY_MAGIC);
+        b[OFFSET_VERSION] = IDENTITY_VERSION_V2;
+        b[OFFSET_SUITE..OFFSET_SUITE + 2]
+            .copy_from_slice(&(identity.suite_id as u16).to_le_bytes());
+        b[OFFSET_V2_ACCOUNT_PK..OFFSET_V2_ACCOUNT_SK]
+            .copy_from_slice(identity.account_pk.as_bytes());
+        b[OFFSET_V2_ACCOUNT_SK..OFFSET_V2_NODE_PK]
+            .copy_from_slice(identity.account_sk.as_bytes());
+        b[OFFSET_V2_NODE_PK..OFFSET_V2_NODE_SK].copy_from_slice(identity.node_pk.as_bytes());
+        b[OFFSET_V2_NODE_SK..OFFSET_V2_MLKEM_PK].copy_from_slice(identity.node_sk.as_bytes());
+        b[OFFSET_V2_MLKEM_PK..OFFSET_V2_MLKEM_SK].copy_from_slice(identity.mlkem_pk.as_bytes());
+        b[OFFSET_V2_MLKEM_SK..].copy_from_slice(identity.mlkem_sk.as_bytes());
+        b
+    } else {
+        // Mode A (v1) — с master_seed
+        let mut b = vec![0u8; IDENTITY_FILE_SIZE];
+        b[OFFSET_MAGIC..OFFSET_MAGIC + 8].copy_from_slice(IDENTITY_MAGIC);
+        b[OFFSET_VERSION] = IDENTITY_VERSION;
+        b[OFFSET_SUITE..OFFSET_SUITE + 2]
+            .copy_from_slice(&(identity.suite_id as u16).to_le_bytes());
+        b[OFFSET_MASTER_SEED..OFFSET_ACCOUNT_PK].copy_from_slice(&identity.master_seed);
+        b[OFFSET_ACCOUNT_PK..OFFSET_ACCOUNT_SK].copy_from_slice(identity.account_pk.as_bytes());
+        b[OFFSET_ACCOUNT_SK..OFFSET_NODE_PK].copy_from_slice(identity.account_sk.as_bytes());
+        b[OFFSET_NODE_PK..OFFSET_NODE_SK].copy_from_slice(identity.node_pk.as_bytes());
+        b[OFFSET_NODE_SK..OFFSET_MLKEM_PK].copy_from_slice(identity.node_sk.as_bytes());
+        b[OFFSET_MLKEM_PK..OFFSET_MLKEM_SK].copy_from_slice(identity.mlkem_pk.as_bytes());
+        b[OFFSET_MLKEM_SK..].copy_from_slice(identity.mlkem_sk.as_bytes());
+        b
+    };
 
     write_owner_only(&path, &buf)?;
     Ok(path)
@@ -221,23 +287,38 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> io::Result<()> {
 pub fn load_identity(data_dir: &Path) -> Result<Identity, NodeError> {
     let path = identity_path(data_dir);
     let bytes = fs::read(&path)?;
-    if bytes.len() != IDENTITY_FILE_SIZE {
+    if bytes.len() < OFFSET_MASTER_SEED {
         return Err(NodeError::CorruptedSize {
-            expected: IDENTITY_FILE_SIZE,
+            expected: OFFSET_MASTER_SEED,
             actual: bytes.len(),
         });
     }
     if &bytes[OFFSET_MAGIC..OFFSET_MAGIC + 8] != IDENTITY_MAGIC.as_slice() {
         return Err(NodeError::InvalidMagic);
     }
-    if bytes[OFFSET_VERSION] != IDENTITY_VERSION {
-        return Err(NodeError::UnsupportedVersion(bytes[OFFSET_VERSION]));
+    match bytes[OFFSET_VERSION] {
+        IDENTITY_VERSION => load_identity_v1(&bytes),
+        IDENTITY_VERSION_V2 => load_identity_v2(&bytes),
+        other => Err(NodeError::UnsupportedVersion(other)),
     }
+}
+
+fn parse_suite(bytes: &[u8]) -> Result<SuiteId, NodeError> {
     let suite_raw = u16::from_le_bytes([bytes[OFFSET_SUITE], bytes[OFFSET_SUITE + 1]]);
-    let suite_id = match suite_raw {
-        0x0001 => SuiteId::Mldsa65,
-        other => return Err(NodeError::UnsupportedSuite(other)),
-    };
+    match suite_raw {
+        0x0001 => Ok(SuiteId::Mldsa65),
+        other => Err(NodeError::UnsupportedSuite(other)),
+    }
+}
+
+fn load_identity_v1(bytes: &[u8]) -> Result<Identity, NodeError> {
+    if bytes.len() != IDENTITY_FILE_SIZE {
+        return Err(NodeError::CorruptedSize {
+            expected: IDENTITY_FILE_SIZE,
+            actual: bytes.len(),
+        });
+    }
+    let suite_id = parse_suite(bytes)?;
 
     let mut master_seed = [0u8; MASTER_SEED_LEN];
     master_seed.copy_from_slice(&bytes[OFFSET_MASTER_SEED..OFFSET_ACCOUNT_PK]);
@@ -281,6 +362,64 @@ pub fn load_identity(data_dir: &Path) -> Result<Identity, NodeError> {
     Ok(Identity {
         suite_id,
         master_seed,
+        is_ephemeral: false,
+        mnemonic: String::new(),
+        account_pk,
+        account_sk,
+        node_pk,
+        node_sk,
+        mlkem_pk,
+        mlkem_sk,
+    })
+}
+
+fn load_identity_v2(bytes: &[u8]) -> Result<Identity, NodeError> {
+    if bytes.len() != IDENTITY_FILE_SIZE_V2 {
+        return Err(NodeError::CorruptedSize {
+            expected: IDENTITY_FILE_SIZE_V2,
+            actual: bytes.len(),
+        });
+    }
+    let suite_id = parse_suite(bytes)?;
+
+    let account_pk = PublicKey::from_slice(&bytes[OFFSET_V2_ACCOUNT_PK..OFFSET_V2_ACCOUNT_SK])
+        .ok_or(NodeError::CorruptedSize {
+            expected: PUBLIC_KEY_SIZE,
+            actual: OFFSET_V2_ACCOUNT_SK - OFFSET_V2_ACCOUNT_PK,
+        })?;
+    let account_sk = SecretKey::from_slice(&bytes[OFFSET_V2_ACCOUNT_SK..OFFSET_V2_NODE_PK]).ok_or(
+        NodeError::CorruptedSize {
+            expected: SECRET_KEY_SIZE,
+            actual: OFFSET_V2_NODE_PK - OFFSET_V2_ACCOUNT_SK,
+        },
+    )?;
+    let node_pk = PublicKey::from_slice(&bytes[OFFSET_V2_NODE_PK..OFFSET_V2_NODE_SK]).ok_or(
+        NodeError::CorruptedSize {
+            expected: PUBLIC_KEY_SIZE,
+            actual: OFFSET_V2_NODE_SK - OFFSET_V2_NODE_PK,
+        },
+    )?;
+    let node_sk = SecretKey::from_slice(&bytes[OFFSET_V2_NODE_SK..OFFSET_V2_MLKEM_PK]).ok_or(
+        NodeError::CorruptedSize {
+            expected: SECRET_KEY_SIZE,
+            actual: OFFSET_V2_MLKEM_PK - OFFSET_V2_NODE_SK,
+        },
+    )?;
+    let mlkem_pk = MlkemPublicKey::from_slice(&bytes[OFFSET_V2_MLKEM_PK..OFFSET_V2_MLKEM_SK])
+        .ok_or(NodeError::CorruptedSize {
+            expected: MLKEM_PUBLIC_KEY_SIZE,
+            actual: OFFSET_V2_MLKEM_SK - OFFSET_V2_MLKEM_PK,
+        })?;
+    let mlkem_sk =
+        MlkemSecretKey::from_slice(&bytes[OFFSET_V2_MLKEM_SK..]).ok_or(NodeError::CorruptedSize {
+            expected: MLKEM_SECRET_KEY_SIZE,
+            actual: bytes.len() - OFFSET_V2_MLKEM_SK,
+        })?;
+
+    Ok(Identity {
+        suite_id,
+        master_seed: [0u8; MASTER_SEED_LEN],
+        is_ephemeral: true,
         mnemonic: String::new(),
         account_pk,
         account_sk,
@@ -410,6 +549,76 @@ mod tests {
         let path = save_identity(&dir, &id, false).unwrap();
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "ожидался mode 0600, получили {mode:o}");
+    }
+
+
+    #[test]
+    fn ephemeral_master_seed_is_zeroized() {
+        // spec, раздел "Identity persistence modes" — Mode B
+        let entropy = [42u8; 32];
+        let id = Identity::from_entropy_ephemeral(&entropy).unwrap();
+        assert!(id.is_ephemeral);
+        assert_eq!(id.master_seed, [0u8; MASTER_SEED_LEN]);
+        // derived keys остаются valid (signing capability сохраняется)
+        assert!(!id.account_pk.as_bytes().is_empty());
+    }
+
+    #[test]
+    fn ephemeral_save_load_roundtrip_v2() {
+        let dir = tempdir();
+        let original = Identity::from_entropy_ephemeral(&[7u8; 32]).unwrap();
+        let path = save_identity(&dir, &original, false).expect("save v2");
+        let meta = fs::metadata(&path).unwrap();
+        assert_eq!(
+            meta.len() as usize,
+            IDENTITY_FILE_SIZE_V2,
+            "v2 layout без master_seed"
+        );
+
+        let loaded = load_identity(&dir).expect("load v2");
+        assert!(loaded.is_ephemeral);
+        assert_eq!(loaded.master_seed, [0u8; MASTER_SEED_LEN]);
+        // derived keys byte-exact
+        assert_eq!(original.account_pk.as_bytes(), loaded.account_pk.as_bytes());
+        assert_eq!(original.account_sk.as_bytes(), loaded.account_sk.as_bytes());
+        assert_eq!(original.node_pk.as_bytes(), loaded.node_pk.as_bytes());
+        assert_eq!(original.node_sk.as_bytes(), loaded.node_sk.as_bytes());
+        assert_eq!(original.mlkem_pk.as_bytes(), loaded.mlkem_pk.as_bytes());
+        assert_eq!(original.mlkem_sk.as_bytes(), loaded.mlkem_sk.as_bytes());
+    }
+
+    #[test]
+    fn ephemeral_and_recoverable_produce_byte_identical_derived_keys() {
+        // Тот же entropy → те же derived keys в обоих режимах
+        let entropy = [99u8; 32];
+        let recoverable = Identity::from_entropy(&entropy).unwrap();
+        let ephemeral = Identity::from_entropy_ephemeral(&entropy).unwrap();
+        assert_eq!(
+            recoverable.account_pk.as_bytes(),
+            ephemeral.account_pk.as_bytes()
+        );
+        assert_eq!(
+            recoverable.node_pk.as_bytes(),
+            ephemeral.node_pk.as_bytes()
+        );
+        assert_eq!(
+            recoverable.mlkem_pk.as_bytes(),
+            ephemeral.mlkem_pk.as_bytes()
+        );
+    }
+
+    #[test]
+    fn v1_backwards_compat() {
+        // V1 файл (с master_seed) продолжает корректно загружаться
+        let dir = tempdir();
+        let id = Identity::from_entropy(&[3u8; 32]).unwrap();
+        save_identity(&dir, &id, false).unwrap();
+        let path = identity_path(&dir);
+        let meta = fs::metadata(&path).unwrap();
+        assert_eq!(meta.len() as usize, IDENTITY_FILE_SIZE, "v1 layout");
+        let loaded = load_identity(&dir).unwrap();
+        assert!(!loaded.is_ephemeral);
+        assert_eq!(loaded.master_seed, id.master_seed);
     }
 
     fn tempdir() -> PathBuf {

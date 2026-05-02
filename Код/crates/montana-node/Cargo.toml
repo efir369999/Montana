@@ -22,6 +22,7 @@ mt-entry = { path = "../mt-entry" }
 mt-genesis = { path = "../mt-genesis" }
 mt-lottery = { path = "../mt-lottery" }
 mt-merkle = { path = "../mt-merkle" }
+zeroize = { workspace = true }
 mt-mnemonic = { path = "../mt-mnemonic" }
 mt-timechain = { path = "../mt-timechain" }
 mt-state = { path = "../mt-state" }
