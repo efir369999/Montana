@@ -156,20 +156,66 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         .map_err(|e| NodeError::InvalidArguments(format!("FsStore::open: {e:?}")))?;
 
     loop {
-        // M9: drain incoming envelopes от peer-ов (Proposal + другие), log + (Phase 2) apply
+        // M9 Phase 2: drain incoming Proposal envelopes от bootstrap. Decode window_index
+        // и proposer_node_id напрямую из 3722-байтного header layout без полного
+        // deserialize (signature валидация в M10). Для каждого нового окна — apply_proposal
+        // с reconstructed singleton ProposalSettle (winner = bootstrap, confirmers = [bootstrap]).
+        // Followers: current_window растёт в lockstep с Moscow.
         if let Some(ref mut handle) = network_handle {
+            let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
             while let Ok(msg) = handle.incoming_rx.try_recv() {
-                if msg.msg_type == MsgType::Proposal {
+                if msg.msg_type != MsgType::Proposal {
+                    continue;
+                }
+                if msg.payload.len() != 3722 {
                     eprintln!(
-                        "[consensus] inbound Proposal envelope window={} (size={} bytes)                          — M9 Phase 1 (log only; Phase 2 = apply_proposal)",
-                        msg.request_id,
+                        "[consensus] Proposal envelope wrong size {} (expected 3722) — skip",
                         msg.payload.len()
                     );
+                    continue;
                 }
+                let window_index = u64::from_le_bytes([
+                    msg.payload[32], msg.payload[33], msg.payload[34], msg.payload[35],
+                    msg.payload[36], msg.payload[37], msg.payload[38], msg.payload[39],
+                ]);
+                let mut winner_id = [0u8; 32];
+                winner_id.copy_from_slice(&msg.payload[332..364]);
+                let mut proposer_node_id = [0u8; 32];
+                proposer_node_id.copy_from_slice(&msg.payload[364..396]);
+
+                if proposer_node_id != bootstrap_node_id {
+                    eprintln!("[consensus] Proposal от не-bootstrap proposer, skip");
+                    continue;
+                }
+                if window_index <= current {
+                    continue;
+                }
+                let mut applied_count = 0u64;
+                while current < window_index {
+                    let next_w = current + 1;
+                    let settle = ProposalSettle {
+                        window_w: next_w,
+                        winner_id,
+                        cemented_confirmers: vec![proposer_node_id],
+                    };
+                    let _post_state_root = apply_proposal(
+                        &mut state.accounts,
+                        &mut state.nodes,
+                        &state.candidates,
+                        &settle,
+                        params,
+                    );
+                    current = next_w;
+                    applied_count += 1;
+                }
+                save_current_window(&data_dir, current)?;
+                eprintln!(
+                    "[consensus] applied {applied_count} window(s) from peer Proposal → current_window={current}"
+                );
             }
         }
 
-        if STOP.load(Ordering::SeqCst) {
+                if STOP.load(Ordering::SeqCst) {
             println!();
             println!("[shutdown] получен SIGINT/SIGTERM, сохраняю состояние...");
             break;
