@@ -126,7 +126,24 @@ else
   log "identity уже существует ($DATA_DIR/identity.bin) — пропускаю генерацию"
 fi
 
-# --- Шаг 10: install systemd unit ---
+# --- Шаг 10: M8 cross-machine networking config (опционально) ---
+# Если operator задал MONTANA_LISTEN и MONTANA_GENESIS_MANIFEST в env —
+# узел стартует в cross-machine режиме (libp2p TCP+TLS+Noise + peer discovery).
+# Иначе остаётся в singleton mode (backward compat).
+MONTANA_NODE_EXTRA_ARGS=""
+if [ -n "${MONTANA_LISTEN:-}" ] && [ -n "${MONTANA_GENESIS_MANIFEST:-}" ]; then
+  MONTANA_NODE_EXTRA_ARGS="--listen $MONTANA_LISTEN --genesis-manifest $MONTANA_GENESIS_MANIFEST"
+  log "cross-machine M8 mode: --listen=$MONTANA_LISTEN, manifest=$MONTANA_GENESIS_MANIFEST"
+  if [ ! -f "$MONTANA_GENESIS_MANIFEST" ]; then
+    warn "manifest $MONTANA_GENESIS_MANIFEST ещё не существует — узел перезапустится корректно после его создания (Restart=on-failure)"
+  fi
+elif [ -n "${MONTANA_LISTEN:-}" ] || [ -n "${MONTANA_GENESIS_MANIFEST:-}" ]; then
+  die "MONTANA_LISTEN и MONTANA_GENESIS_MANIFEST должны указываться вместе"
+else
+  log "singleton mode (без --listen/--genesis-manifest)"
+fi
+
+# --- Шаг 11: install systemd unit ---
 log "устанавливаю systemd unit $SERVICE_FILE..."
 cat > "$SERVICE_FILE" <<UNIT
 [Unit]
@@ -139,7 +156,7 @@ Wants=network-online.target
 Type=simple
 User=$USER_NAME
 Group=$USER_NAME
-ExecStart=$BIN_DST start --data-dir $DATA_DIR
+ExecStart=$BIN_DST start --data-dir $DATA_DIR ${MONTANA_NODE_EXTRA_ARGS}
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

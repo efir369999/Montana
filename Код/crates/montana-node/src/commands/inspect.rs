@@ -51,6 +51,9 @@ pub fn run(args: InspectArgs) -> Result<(), NodeError> {
         "mlkem_pk[..16]   : {}",
         hex_lower(&identity.mlkem_pk.as_bytes()[..16])
     );
+    println!();
+    println!("--- libp2p transport identity (M8 cross-machine) ---");
+    println!("libp2p_peer_id   : {}", identity.libp2p_peer_id());
 
     if args.reveal_master_seed {
         println!();

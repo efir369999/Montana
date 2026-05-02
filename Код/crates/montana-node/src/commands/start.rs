@@ -37,12 +37,29 @@ pub struct StartArgs {
     pub data_dir: Option<PathBuf>,
     pub max_windows: Option<u64>,
     pub d_test_override: Option<u64>,
+    /// Multiaddr для libp2p listen (например `/ip4/0.0.0.0/tcp/8444`).
+    /// При наличии — узел стартует cross-machine peering thread.
+    pub listen_multiaddr: Option<String>,
+    /// Путь к genesis-manifest.json с peer list для bootstrap connectivity.
+    /// При наличии `--listen` обязателен.
+    pub genesis_manifest: Option<PathBuf>,
 }
 
 pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let data_dir = args.data_dir.unwrap_or_else(default_data_dir);
     let identity = load_identity(&data_dir)?;
     let params = genesis_params();
+
+    // Cross-machine M8: spawn network thread с собственным tokio runtime.
+    // Network событийный loop отделён от consensus loop (VDF compute) —
+    // separate OS thread предотвращает блокировку async задач CPU-heavy
+    // операциями подсчёта VDF.
+    if let (Some(listen_str), Some(manifest_path)) =
+        (&args.listen_multiaddr, &args.genesis_manifest)
+    {
+        spawn_network_thread(&identity, listen_str, manifest_path)?;
+    }
+
     let mut state = LocalState::load_or_bootstrap(&data_dir, &identity, params)?;
     let mut current = load_current_window(&data_dir)?;
     let mut timechain = load_or_init_timechain(&data_dir)?;
@@ -591,4 +608,60 @@ fn hex16(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+fn spawn_network_thread(
+    identity: &crate::identity::Identity,
+    listen_str: &str,
+    manifest_path: &std::path::Path,
+) -> Result<(), NodeError> {
+    use std::str::FromStr;
+
+    let manifest_text = std::fs::read_to_string(manifest_path).map_err(|e| {
+        NodeError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("genesis-manifest {manifest_path:?}: {e}"),
+        ))
+    })?;
+    let manifest = mt_genesis::GenesisManifest::parse(&manifest_text)
+        .map_err(|e| NodeError::Network(format!("parse manifest: {e}")))?;
+
+    let listen_addr = libp2p::Multiaddr::from_str(listen_str)
+        .map_err(|e| NodeError::Network(format!("parse --listen {listen_str}: {e}")))?;
+
+    let local_keypair = identity.libp2p_keypair();
+    let local_peer_id = identity.libp2p_peer_id();
+    let manifest_clone = manifest.clone();
+
+    eprintln!(
+        "[main] spawning network thread, local_peer_id={local_peer_id},          listen={listen_addr}, peers={n}",
+        n = manifest.peers.len()
+    );
+
+    std::thread::Builder::new()
+        .name("montana-network".into())
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("[network] failed to start tokio runtime: {e}");
+                    return;
+                },
+            };
+            if let Err(e) = runtime.block_on(crate::network::run_network_loop(
+                local_keypair,
+                local_peer_id,
+                manifest_clone,
+                listen_addr,
+            )) {
+                eprintln!("[network] event loop exited with error: {e}");
+            }
+        })
+        .map_err(|e| NodeError::Network(format!("spawn network thread: {e}")))?;
+
+    Ok(())
 }

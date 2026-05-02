@@ -1,5 +1,9 @@
 // spec, раздел "Вход и регистрация → Genesis State"
 
+pub mod manifest;
+
+pub use manifest::{GenesisManifest, GenesisPeer, ManifestError};
+
 use std::sync::OnceLock;
 
 use mt_codec::{domain, write_bytes, write_u128, write_u16, write_u64, write_u8, CanonicalEncode};
