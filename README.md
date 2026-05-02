@@ -127,7 +127,7 @@ Dual-licensed under Apache-2.0 OR MIT, at your choice.
 
 - 🐛 **Issues / Findings:** [github.com/efir369999/Montana/issues](https://github.com/efir369999/Montana/issues)
 - 📜 **Pull Requests:** прямые PRs приветствуются
-- 📨 **Mastodon-анонсы:** см. [`Код/montana-vpn/MASTODON_ANNOUNCEMENT.md`](Код/montana-vpn/MASTODON_ANNOUNCEMENT.md) (готовые посты RU + EN)
+- 📄 **Whitepaper (Сатоши style):** [`whitepaper.md`](whitepaper.md) — academic paper в стиле Bitcoin paper, для рассылки в [metzdowd cryptography list](metzdowd-email.txt)
 - 🚫 **Никаких email/Discord/Telegram** — публичный on-record review
 
 ---

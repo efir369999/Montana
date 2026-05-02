@@ -1,0 +1,24 @@
+Subject: Montana — post-quantum blockchain reference paper
+
+I've been working on a new blockchain whose security rests entirely on
+post-quantum cryptographic primitives, with no transaction fees and time as
+the scarce resource in place of money.
+
+The paper is available at:
+https://github.com/efir369999/Montana/blob/main/whitepaper.md
+
+The main properties:
+  Post-quantum signatures (ML-DSA-65) and key encapsulation (ML-KEM-768)
+  from primitives up. No ECDSA, no curve25519, no RSA in the protocol.
+  Consensus is a verifiable delay function over SHA-256 producing a globally
+  ordered chain of windows of approximately 60 seconds each.
+  Anti-spam operates on time, not on fees: per-identity per-window rates,
+  account chain-length thresholds, seniority gating.
+  No mint, no premine, no transaction fee. The single emission is 13 base
+  units of Ɉ to the operator who completed each window's VDF.
+  Architecturally targets one billion active accounts as the design baseline.
+
+Full paper and reference implementation in Rust:
+https://github.com/efir369999/Montana
+
+Alejandro Montana

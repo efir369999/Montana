@@ -111,7 +111,7 @@ The full installer prints back the 24-word recovery mnemonic for the node and a 
 | [`docs/SPEC_DEVIATIONS.md`](docs/SPEC_DEVIATIONS.md) | Known deviations from spec (9 documented) |
 | [`docs/build-from-source.md`](docs/build-from-source.md) | Reproducible build instructions |
 | [`montana-vpn/README.md`](montana-vpn/README.md) | Companion VPN endpoint (xray Reality) |
-| [`montana-vpn/MASTODON_ANNOUNCEMENT.md`](montana-vpn/MASTODON_ANNOUNCEMENT.md) | Ready-to-paste announcements (RU + EN) |
+| [`../whitepaper.md`](../whitepaper.md) | Whitepaper in Сатоши style |
 | [`CLAUDE.md`](CLAUDE.md) | Architect role for code (process, not normative) |
 | [`CRITIC.md`](CRITIC.md) | Critic role for implementation review |
 
@@ -169,7 +169,6 @@ cargo test -p mt-net --features testing
 ├── montana-vpn/               companion VPN endpoint (xray Reality)
 │   ├── README.md
 │   ├── install.sh
-│   ├── MASTODON_ANNOUNCEMENT.md
 │   ├── config-template/
 │   └── docs/
 └── bench/                     VDF benchmark (standalone)
