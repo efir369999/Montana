@@ -624,6 +624,122 @@ on_timer_expired(entry):
 
 Это делает internet-connected устройство **gateway** между internet-сетью и изолированной mesh-областью. Один такой шлюз восстанавливает связность для всего mesh-кластера до внешнего мира.
 
+### Privacy Scope (точная зона ответственности)
+
+Прежде чем описать Семь слоёв сетевой защиты, фиксируем **точные границы** того что Montana защищает на сетевом уровне и что **намеренно не закрывается**.
+
+#### Three-level decomposition
+
+Privacy в Montana работает на трёх отдельных уровнях, каждый со своими гарантиями:
+
+1. **Wire-level (transport layer):** что видит провайдер / DPI / наблюдатель отдельного линка.
+   - Защита: TLS 1.3 + Noise + IBT (ML-DSA-65 PQ peer auth) + Uniform Framing + Transport Randomness + Dandelion++ + Label Rotation per τ₁ + Censorship-resistant discovery
+   - Закрывает: local DPI, ISP, regulator с перехватом одного линка, small-medium Sybil eclipse, long-term recipient linkability через провайдеров приложений
+   - **НЕ закрывает:** global passive adversary с GPS-precision timing-correlation на ВСЕХ backbone links одновременно (open research problem всей anon-net области)
+
+2. **Content-level (application data):** что видит хостящий узел или наблюдатель proposal-broadcast.
+   - Защита: Anchor + ML-KEM-768 encryption (data_hash в proposal, content off-chain encrypted под recipient ключ) + Double Ratchet PQ для messenger end-to-end + PQXDH async handshake
+   - Закрывает: content surveillance со стороны хоста, recipient identity через ephemeral labels
+   - **НЕ закрывает:** endpoint compromise (RAT/spyware) — out of scope любого network protocol
+
+3. **Financial-level:** что видит любой наблюдатель cemented proposal.
+   - Status: **ОТКРЫТ per [I-2]** — балансы, sender_account_id, recipient, amount публичны.
+   - Это **intentional design feature** для регуляторной совместимости (FATF/MiCA), аудитируемости и [I-3] детерминизма consensus state.
+   - Privacy финансовых движений на protocol level **намеренно не предоставляется**.
+
+#### Privacy Tier model для пользователей
+
+Пользователь выбирает уровень privacy по trade-off против latency и bandwidth:
+
+| Tier | Stack | Latency | Bandwidth | Threat closure |
+|------|-------|---------|-----------|----------------|
+| **1 default** | Семь слоёв baseline (TLS+IBT+Dandelion+Label Rotation+Mesh) | <500мс | minimal | Local DPI, ISP, regulator (один линк), small-medium Sybil, long-term recipient unlinkability |
+| **2 recommended** | + own узел (Light-Node-at-Home) + Tor entry + Noise_PQ handshake | 500мс — 2с | medium | + ISP не видит «Montana traffic», + bypass legal request, + quantum store-now-decrypt-later |
+| **3 paranoid financial** | + canonical Mempool buffering + end-of-window batch flush + cover traffic 100% | 60-120с | full | + temporal unlinkability sender's local act → operation appearance в state |
+| **4 research-grade** | + artificial random delay 5-30 мин + multiple onion paths | 5-30 мин | full | + extreme protection from mass-surveillance flowtracking; **practically maximum** при non-information-theoretic anonymity |
+
+Tier 1 — автоматически для всех пользователей. Tier 2-4 — opt-in.
+
+#### Canonical-aggregation closure для timing-correlation (unique Montana property)
+
+Montana отличается от Tor / Loopix / I2P **fundamentally** в том как обрабатываются operations на сетевом уровне:
+
+```
+Tor / Loopix / I2P model:
+  packet_α emit immediately → traverse network → arrive at recipient
+  Adversary observes individual packet timing → correlates Alice IP ↔ Bob IP
+  Deanonymization после 100-1000 messages
+
+Montana model:
+  Alice creates operation_α локально в момент T_local
+  → Mempool buffer на узле-операторе (random hold N окон)
+  → Dandelion++ stem 2-hop форвардинг
+  → Operator's mempool → operator selection lottery
+  → Aggregation: proposal_W = canonical(op_α, op_β, ..., op_ω)
+                 включает 100-10000 operations from different accounts
+  → Broadcast aggregate
+  Adversary observes aggregate proposal, individual op_α неотличим от op_β
+  Deanonymization требует 10⁶-10⁸ messages (orders of magnitude harder)
+```
+
+**Уникальные primitives Montana** которые работают вместе для этого свойства:
+
+- **Mempool temporal buffering** — Alice's individual emit timing decoupled от operation appearance в state
+- **Canonical proposal aggregation** — proposal содержит operations от множества accounts, individual flow смешан
+- **VDF-canonical aggregation point** — все proposals публикуются в canonical моменты (end-of-window) — гомогенный stream events для adversary
+- **Block Lattice independent AccountChain** — каждый аккаунт пишет в свою цепочку, structurally separate но bundled в proposal
+- **Dandelion++ stem buffering** — operator entry скрыт через 2-hop stem propagation
+
+Operations в Montana — это **state events на canonical TimeChain**, не ephemeral network messages. Этой fundamental architectural property нет ни в Tor (per-message routing), ни в Loopix (per-message Poisson mixing), ни в I2P (per-tunnel routing). Это даёт Montana **уникально сильное** ослабление global passive timing-correlation — **не absolute closure** (open research problem остаётся), но **на порядки сильнее** existing systems.
+
+#### Honest claim — что закрывается и что не закрывается
+
+| Adversary class | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|-----------------|--------|--------|--------|--------|
+| Local DPI / ISP | ✅ через TLS+IBT | ✅ через Tor | ✅ | ✅ |
+| Government legal request to ISP | ⚠️ partial — DPI закрыт, IP виден | ✅ через Tor | ✅ | ✅ |
+| Active probing | ✅ через IBT | ✅ | ✅ | ✅ |
+| Sybil eclipse | ✅ через 4-dim diversity | ✅ | ✅ | ✅ |
+| Sender authorship inference (ближайшие peers) | ✅ через Dandelion++ | ✅ | ✅ | ✅ |
+| Long-term recipient linkability | ✅ через Label Rotation per τ₁ | ✅ | ✅ | ✅ |
+| Hosting third-party metadata | ⚠️ visible to host | ✅ через own node | ✅ | ✅ |
+| Content surveillance | ✅ через Anchor encryption | ✅ | ✅ | ✅ |
+| Quantum store-now-decrypt-later | ❌ TLS handshake X25519 vulnerable | ✅ через Noise_PQ | ✅ | ✅ |
+| Backbone GPS-precision timing-correlation | ⚠️ partial through aggregation (10⁶ msg threshold) | ⚠️ same + Tor obscures | ⚠️ + temporal randomization | ⚠️ + multi-path delays |
+| Endpoint compromise (RAT) | ❌ out of scope | ❌ out of scope; mitigation через Light-Node-at-Home damage containment | ❌ | ❌ |
+| Financial state visibility | ❌ public per [I-2] **by design** | ❌ same | ❌ same | ❌ same |
+
+Маркеры: ✅ closed; ⚠️ partial / mitigated; ❌ not closed (intentional или fundamental limit).
+
+#### Endpoint compromise — Montana damage containment (architectural mitigation)
+
+Network protocol не может prevent endpoint compromise. **Но Montana архитектурно ограничивает damage** через unique patterns:
+
+- **Light-Node-at-Home split** (App spec § 26): master_seed на home node, phone имеет только ephemeral session keys. Compromise phone ≠ compromise master key.
+- **VDF-anchored ephemeral session rotation per τ₁**: session key derivable через `HKDF(master_seed, current_window || "session-W")`. Maximum exposure window = 60 sec.
+- **Junona local pre-processing**: AI агент на own node делает decryption + summarization; phone никогда не имеет full content в memory.
+- **Block Lattice sub-account hierarchy**: phone использует daily-spend sub-account ($X/day limit); master savings account только на home node.
+- **Hardware-backed enclave integration**: master_seed в iOS Secure Enclave / Android StrongBox.
+
+**Сравнение с existing messengers:**
+
+| System | Endpoint compromise impact |
+|--------|----------------------------|
+| Signal | Compromise device = full chat history forever (single trust domain) |
+| WhatsApp | Compromise device = full history + cloud sync |
+| Telegram | Compromise device = full history + cloud + saved messages |
+| **Montana с Light-Node-at-Home** | Compromise phone = max loss `sub_account_limit × 60_sec_window_content` (multi-domain trust) |
+
+#### Что **не** покрывается ни одним tier
+
+Два fundamental open problems которые **не закрывает никто** (включая Tor, Loopix, I2P):
+
+1. **Global passive adversary с GPS-precision timing-correlation на всех backbone links одновременно**. Montana **уникально ослабляет** через canonical aggregation (10⁶-10⁸ message threshold вместо 10²-10³ как в Tor), но **не закрывает абсолютно** — это open research problem с 1980-х в anon-net области.
+
+2. **Endpoint compromise через RAT / hardware-level malware**. Network protocol бесполезен — данные читаются до encryption. Montana **архитектурно ограничивает damage** через trust domain split, но не **prevents** compromise. Полная защита требует hardware secure enclave + verified boot + careful endpoint hygiene.
+
+Эти ограничения **honestly зафиксированы** в spec — пользователь знает scope защиты до использования. Marketing-claim «полная анонимность» отвергается как overpromise который рухнёт при первом серьёзном аудите.
+
 ### Семь слоёв — одна конструкция
 
 ```
@@ -2807,7 +2923,7 @@ Cell содержит механизм защиты + status. Status: **C** = cl
 
 3. **Side-channel attacks на crypto primitives** — timing / power / EM на ML-DSA-65 / SHA-256 implementations. Mitigation: использовать constant-time implementations (rustls / aws-lc-rs / ring); это [C-6] requirement, не network-protocol concern.
 
-4. **Quantum-capable adversary** — частично закрывается: PQ primitives (ML-DSA-65, ML-KEM-768 в SF) защищают auth и encryption. ECDH в TLS 1.3 hybrid mode (X25519+ML-KEM) — defer to upstream rustls support; meanwhile auth через IBT (PQ) sufficient для identity, но TLS session keys vulnerable к store-now-decrypt-later квантовым атакам. Acknowledged residual — P в Confidentiality (data) когда вычисление quantum компьютера станет возможным.
+4. **Quantum-capable adversary** — статус: **mainnet blocker, plan to closure через Noise_PQ migration**. Текущее состояние: PQ primitives (ML-DSA-65, ML-KEM-768) защищают application auth и encryption (✅), но TLS 1.3 handshake использует classical X25519 ECDHE — vulnerable к store-now-decrypt-later квантовым атакам. **План closure**: replace TLS 1.3 + Noise XK на единый Noise_PQ handshake с ML-KEM-768 как KEM replacement для DH; это удаляет TLS layer целиком (он не даёт ничего сверх IBT-аутентифицированной Noise) и достигает pure-PQ handshake без classical primitives в protocol layer. **Per [I-1]** в protocol layer classical crypto **запрещена** (только в client layer допустима — например browser в Junona к обычному web). Defer to upstream rustls — отвергнут как «acknowledged residual» больше не приемлем; closure через Noise_PQ — обязательный mainnet milestone.
 
 5. **Supply chain attacks на dependencies** — compromised library обновление (libp2p, rustls). Mitigation: Cargo.lock pinning + reproducible builds + dependency audit ([C-6] req #3-4-5-6); это build-time concern.
 
