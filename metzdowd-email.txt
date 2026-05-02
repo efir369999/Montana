@@ -5,7 +5,7 @@ post-quantum cryptographic primitives, with no transaction fees and time as
 the scarce resource in place of money.
 
 The paper is available at:
-https://github.com/efir369999/Montana/blob/main/whitepaper.md
+https://github.com/efir369999/Montana/blob/main/Whitepaper Montana.md
 
 The main properties:
   Post-quantum signatures (ML-DSA-65) and key encapsulation (ML-KEM-768)
