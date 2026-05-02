@@ -33,7 +33,7 @@ use crate::identity::NodeError;
 
 /// Период heartbeat Ping → каждый узел шлёт Ping каждые N секунд всем connected peers.
 /// Production: 30 сек = compromise между фон-трафик минимизацией и timeliness.
-const HEARTBEAT_PERIOD: Duration = Duration::from_secs(30);
+const HEARTBEAT_PERIOD: Duration = Duration::from_secs(5);
 
 /// Запустить network event loop в текущем tokio runtime. Блокирует tokio task
 /// до Ctrl-C (либо ошибки swarm). При корректной остановке — graceful close
@@ -107,6 +107,15 @@ pub async fn run_network_loop(
                             remote = endpoint.get_remote_address()
                         );
                         connected_peers.insert(peer_id, label);
+                        // Сразу шлём Ping чтобы предотвратить idle_connection_timeout (60s)
+                        // и установить liveness sentinel в первые секунды соединения.
+                        request_id_counter = request_id_counter.wrapping_add(1);
+                        let initial_ping = ProtocolMessage::new(
+                            MsgType::Ping,
+                            request_id_counter,
+                            Vec::new(),
+                        );
+                        swarm.behaviour_mut().request_response.send_request(&peer_id, initial_ping);
                     }
                     SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
                         let label = connected_peers.remove(&peer_id).unwrap_or_default();
