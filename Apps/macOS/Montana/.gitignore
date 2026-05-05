@@ -1,0 +1,10 @@
+# Swift Package Manager build cache
+.build/
+.swiftpm/
+Package.resolved
+
+# Built .app bundle (производное от source — не коммитится)
+build/
+
+# macOS
+.DS_Store
