@@ -71,6 +71,11 @@ command -v cargo >/dev/null 2>&1 || die "cargo не доступен"
 command -v swift >/dev/null 2>&1 || die "swift не доступен (нужен Xcode CLT)"
 log "Rust: $(cargo --version) · Swift: $(swift --version | head -1)"
 
+# --- 1.5. остановка running Montana.app (singleton enforce) ---
+log "останавливаю running Montana.app (если запущена)..."
+pkill -f "Montana.app/Contents/MacOS/Montana" 2>/dev/null || true
+sleep 1
+
 # --- 2. остановка старого узла ---
 if launchctl list "$SERVICE_LABEL" >/dev/null 2>&1; then
   log "останавливаю текущий узел перед обновлением..."
@@ -165,6 +170,12 @@ cp -R "$APP_BUILT" "$APP_DEST"
 xattr -dr com.apple.quarantine "$APP_DEST" 2>/dev/null || true
 touch "$APP_DEST"
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "$APP_DEST" 2>/dev/null || true
+
+# --- 8.5. чистка dev build (singleton enforce — каноничен только /Applications/Montana.app) ---
+if [ -d "$APP_SRC_DIR/build/Montana.app" ]; then
+  rm -rf "$APP_SRC_DIR/build/Montana.app"
+  log "удалил dev-копию $APP_SRC_DIR/build/Montana.app"
+fi
 
 # --- 9. запуск узла ---
 log "запускаю узел через launchctl load..."
