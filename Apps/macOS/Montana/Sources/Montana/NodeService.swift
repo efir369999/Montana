@@ -29,6 +29,7 @@ struct NodeStatus {
 @MainActor
 final class NodeService: ObservableObject {
     @Published var status = NodeStatus()
+    @Published var identity = IdentityInfo()
     @Published var isRunning = false
     @Published var lastLogLines: [String] = []
 
@@ -39,13 +40,58 @@ final class NodeService: ObservableObject {
     var plistPath: URL { home.appendingPathComponent("Library/LaunchAgents/org.montana.node.plist") }
 
     func refresh() async {
-        async let status = runStatus()
-        async let running = runIsLoaded()
-        async let logTail = readLogTail(lines: 8)
-        let (s, r, l) = await (status, running, logTail)
-        if let s { self.status = s }
-        self.isRunning = r
-        self.lastLogLines = l
+        async let s = runStatus()
+        async let r = runIsLoaded()
+        async let l = readLogTail(lines: 8)
+        let (status, running, log) = await (s, r, l)
+        if let status { self.status = status }
+        self.isRunning = running
+        self.lastLogLines = log
+        if !identity.loaded { await loadIdentity() }
+    }
+
+    func loadIdentity() async {
+        guard FileManager.default.fileExists(atPath: binary.path) else { return }
+        let result = await runProcess(binary.path, ["inspect", "--data-dir", dataDir.path])
+        guard result.exit == 0 else { return }
+        var info = IdentityInfo()
+        for raw in result.stdout.split(separator: "\n") {
+            let line = String(raw)
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let key = line[..<colon].trimmingCharacters(in: .whitespaces)
+            let val = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            switch key {
+            case "data-dir": info.dataDir = val
+            case "identity": info.identityPath = val
+            case "suite": info.suite = val
+            case "account_id": info.accountId = val
+            case "node_id": info.nodeId = val
+            case "master_seed_fp": info.masterSeedFp = val
+            case "libp2p_peer_id": info.libp2pPeerId = val
+            case "account_pk[..16]": info.accountPkPrefix = val
+            case "node_pk[..16]": info.nodePkPrefix = val
+            case "mlkem_pk[..16]": info.mlkemPkPrefix = val
+            default: break
+            }
+        }
+        info.loaded = !info.accountId.isEmpty
+        self.identity = info
+    }
+
+    func revealMasterSeed() async -> String? {
+        guard FileManager.default.fileExists(atPath: binary.path) else { return nil }
+        let r = await runProcess(binary.path, ["inspect", "--data-dir", dataDir.path, "--reveal-master-seed"])
+        guard r.exit == 0 else { return nil }
+        for line in r.stdout.split(separator: "\n") {
+            let s = String(line)
+            if s.contains("master_seed") && !s.contains("master_seed_fp") {
+                if let colon = s.firstIndex(of: ":") {
+                    let val = s[s.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                    if val.count >= 64 { return val }
+                }
+            }
+        }
+        return nil
     }
 
     private func runStatus() async -> NodeStatus? {
@@ -54,13 +100,13 @@ final class NodeService: ObservableObject {
             s.error = "Бинарь не найден: \(binary.path)"
             return s
         }
-        let result = await runProcess(binary.path, ["status", "--data-dir", dataDir.path])
-        guard result.exit == 0 else {
+        let r = await runProcess(binary.path, ["status", "--data-dir", dataDir.path])
+        guard r.exit == 0 else {
             var s = NodeStatus()
-            s.error = "exit \(result.exit): \(result.stderr.prefix(200))"
+            s.error = "exit \(r.exit): \(r.stderr.prefix(200))"
             return s
         }
-        return parseStatus(result.stdout)
+        return parseStatus(r.stdout)
     }
 
     private func runIsLoaded() async -> Bool {
@@ -98,6 +144,12 @@ final class NodeService: ObservableObject {
 
     func revealDataFolder() {
         NSWorkspace.shared.activateFileViewerSelecting([dataDir])
+    }
+
+    func copyToPasteboard(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
     }
 
     private func parseStatus(_ text: String) -> NodeStatus {
@@ -150,9 +202,7 @@ final class NodeService: ObservableObject {
                 let errPipe = Pipe()
                 task.standardOutput = outPipe
                 task.standardError = errPipe
-                do {
-                    try task.run()
-                } catch {
+                do { try task.run() } catch {
                     cont.resume(returning: ProcessResult(exit: -1, stdout: "", stderr: "\(error)"))
                     return
                 }

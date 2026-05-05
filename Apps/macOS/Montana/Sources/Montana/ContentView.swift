@@ -8,19 +8,16 @@ struct ContentView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    statusCard
-                    operatorCard
-                    networkCard
-                    logCard
-                }
-                .padding(20)
+            TabView {
+                NodeStatusView(service: service)
+                    .tabItem { Label("Узел", systemImage: "server.rack") }
+                WalletView(service: service)
+                    .tabItem { Label("Кошелёк", systemImage: "wallet.pass") }
             }
             Divider()
             actionBar
         }
-        .frame(minWidth: 720, minHeight: 620)
+        .frame(minWidth: 760, minHeight: 660)
         .task {
             await service.refresh()
             startTimer()
@@ -62,12 +59,54 @@ struct ContentView: View {
         .clipShape(Capsule())
     }
 
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            Button("Перезапустить") { Task { await service.restart() } }
+            Button("Остановить") { Task { await service.stop() } }
+                .disabled(!service.isRunning)
+            Button("Запустить") { Task { await service.start() } }
+                .disabled(service.isRunning)
+            Spacer()
+            Button("Логи") { service.openLogs() }
+            Button("Папка данных") { service.revealDataFolder() }
+            Button(action: { Task { await service.refresh() } }) {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help("Обновить статус")
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+    }
+
+    private func startTimer() {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+            Task { @MainActor in await service.refresh() }
+        }
+    }
+}
+
+private struct NodeStatusView: View {
+    @ObservedObject var service: NodeService
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                statusCard
+                operatorCard
+                networkCard
+                logCard
+            }
+            .padding(20)
+        }
+    }
+
     private var statusCard: some View {
         Card(title: "Состояние узла") {
             VStack(alignment: .leading, spacing: 10) {
-                row("Фаза", service.status.phase, mono: true)
-                row("Текущее окно", "\(service.status.currentWindow)", mono: true)
-                row("D (итераций SHA-256/окно)", formatNumber(service.status.d), mono: true)
+                row("Фаза", service.status.phase)
+                row("Текущее окно", "\(service.status.currentWindow)")
+                row("D (итераций SHA-256/окно)", formatNumber(service.status.d))
                 if service.status.candidateTotal > 0 {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -90,11 +129,11 @@ struct ContentView: View {
     private var operatorCard: some View {
         Card(title: "Оператор") {
             VStack(alignment: .leading, spacing: 10) {
-                row("account_id", service.status.accountId.prefix16, mono: true)
-                row("node_id", service.status.nodeId.prefix16, mono: true)
-                row("balance", service.status.balance, mono: true)
-                row("account_chain_length", "\(service.status.accountChainLength)", mono: true)
-                row("is_node_operator", service.status.isNodeOperator ? "true" : "false", mono: true)
+                row("account_id", service.status.accountId.prefix16)
+                row("node_id", service.status.nodeId.prefix16)
+                row("balance", service.status.balance)
+                row("account_chain_length", "\(service.status.accountChainLength)")
+                row("is_node_operator", service.status.isNodeOperator ? "true" : "false")
             }
         }
     }
@@ -102,11 +141,11 @@ struct ContentView: View {
     private var networkCard: some View {
         Card(title: "Сеть · state") {
             VStack(alignment: .leading, spacing: 10) {
-                row("AccountTable", "\(service.status.accountTable) записей", mono: true)
-                row("NodeTable", "\(service.status.nodeTable) активных узлов", mono: true)
-                row("CandidatePool", "\(service.status.candidatePool) ожидают selection", mono: true)
-                row("supply", service.status.supply, mono: true)
-                row("Σ balances", service.status.sumBalances, mono: true)
+                row("AccountTable", "\(service.status.accountTable) записей")
+                row("NodeTable", "\(service.status.nodeTable) активных узлов")
+                row("CandidatePool", "\(service.status.candidatePool) ожидают selection")
+                row("supply", service.status.supply)
+                row("Σ balances", service.status.sumBalances)
             }
         }
     }
@@ -129,32 +168,11 @@ struct ContentView: View {
         }
     }
 
-    private var actionBar: some View {
-        HStack(spacing: 10) {
-            Button("Перезапустить") { Task { await service.restart() } }
-            Button("Остановить") { Task { await service.stop() } }
-                .disabled(!service.isRunning)
-            Button("Запустить") { Task { await service.start() } }
-                .disabled(service.isRunning)
-            Spacer()
-            Button("Логи") { service.openLogs() }
-            Button("Папка данных") { service.revealDataFolder() }
-            Button(action: { Task { await service.refresh() } }) {
-                Image(systemName: "arrow.clockwise")
-            }
-            .help("Обновить статус")
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-    }
-
-    private func row(_ label: String, _ value: String, mono: Bool = false) -> some View {
+    private func row(_ label: String, _ value: String) -> some View {
         HStack {
             Text(label).font(.system(size: 12)).foregroundColor(.secondary)
             Spacer()
-            Text(value)
-                .font(.system(size: 12, design: mono ? .monospaced : .default))
-                .textSelection(.enabled)
+            Text(value).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
         }
     }
 
@@ -164,16 +182,9 @@ struct ContentView: View {
         f.groupingSeparator = " "
         return f.string(from: NSNumber(value: n)) ?? "\(n)"
     }
-
-    private func startTimer() {
-        refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
-            Task { @MainActor in await service.refresh() }
-        }
-    }
 }
 
-private struct Card<Content: View>: View {
+struct Card<Content: View>: View {
     let title: String
     @ViewBuilder let content: () -> Content
     var body: some View {
@@ -187,6 +198,6 @@ private struct Card<Content: View>: View {
     }
 }
 
-private extension String {
+extension String {
     var prefix16: String { count <= 16 ? self : String(prefix(16)) + "…" }
 }
