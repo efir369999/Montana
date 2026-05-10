@@ -59,7 +59,7 @@ Montana 节点 = 地图上的一座城市。截至 2026-05-10,网络由三座城
 
 **发行。** 每个窗口准确铸造 `13 Ɉ = 13·10⁹ nɈ`。供应由闭式公式给出:`supply(W) = 13·(W+1) Ɉ`。撰文时 `W = 34 922`,supply ≈ 454 000 Ɉ。
 
-**节点注册。** 新运营商必须构建长度为 `τ₂` 窗口的 candidate VDF 链(M-class Mac 上约 10 小时实际墙钟)。这是 Sybil 防御:N 个身份需要 N 条 candidate 链。完成 candidate VDF 后,节点提交 `NodeRegistration`,在下一次 selection event(每 336 窗口一次)被纳入 `NodeTable` 为 Active。
+**节点注册、队列与 welcome 奖励。** 新运营商必须构建长度为 `τ₂` 窗口的 candidate VDF 链(M-class Mac 上约 10 小时实际墙钟)。这是 Sybil 防御:N 个身份需要 N 条 candidate 链。完成 candidate VDF 后,节点提交 `NodeRegistration` 并进入 `CandidatePool` 队列。准入**严格每窗口一个**:在 admission 窗口,被纳入者获得该窗口全部发行(13 Ɉ)作为 welcome 奖励(「一个时间窗口 = 进入 Montana 的第一步」);Active 验证者在该窗口放弃自己的发行。闭式 `supply(W) = 13·(W+1) Ɉ` 不变。若队列中有 N 个就绪候选,全部准入需要 N 个窗口(约 N 分钟)。
 
 **当前网络状态**(2026-05-10 实时快照):
 
