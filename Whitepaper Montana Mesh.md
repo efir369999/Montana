@@ -59,7 +59,7 @@ The full description is in `Montana Protocol v35.25.0` and in the TimeChain whit
 
 **Emission.** Each window mints exactly `13 Ɉ = 13·10⁹ nɈ`. Supply is given by the closed form `supply(W) = 13·(W+1) Ɉ`. At the time of writing `W = 34 922`, supply ≈ 454 000 Ɉ.
 
-**Node registration.** A new operator must build a candidate VDF chain of length `τ₂` windows (≈10 hours wall-clock on M-class Mac). This is the Sybil defense: N identities require N candidate chains. After completing the candidate VDF, the node submits `NodeRegistration` and at the next selection event (every 336 windows) is admitted into the `NodeTable` as Active.
+**Node registration, queue, and welcome bonus.** A new operator must build a candidate VDF chain of length `τ₂` windows (≈10 hours wall-clock on M-class Mac). This is the Sybil defense: N identities require N candidate chains. After completing the candidate VDF, the node submits `NodeRegistration` and joins the `CandidatePool` queue. Admission is **strictly one candidate per window**: in the admission window, the admitted node receives the entire window emission (13 Ɉ) as a welcome bonus ("one window of time = first step into Montana"); the Active validator forgoes its emission for that window. The closed-form `supply(W) = 13·(W+1) Ɉ` is preserved unchanged. If the queue holds N ready candidates, admitting them all takes N windows (≈ N minutes).
 
 **Current network state** (live snapshot 2026-05-10):
 
