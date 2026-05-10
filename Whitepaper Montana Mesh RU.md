@@ -198,13 +198,12 @@ Reality маскирует handshake под публичный TLS к легит
 ### 9.1. На сегодня (2026-05-10)
 
 - **TimeChain**: 3 узла (Москва Active, Frankfurt+Helsinki в candidate-VDF), 1 кандидат (Mac). Genesis 2026-01-09. Window ≈ 35 000.
-- **VPN**: 2 активные точки (Frankfurt, Helsinki). Helsinki фронтит Frankfurt. Federated `/vpn/sub` агрегирует обе.
+- **VPN**: 3 активные точки (Москва :2053, Frankfurt :443, Helsinki :443). Helsinki фронтит Frankfurt; Москва — самостоятельный третий origin. Federated `/vpn/sub` агрегирует все три.
 - **Эксплорер**: `montana.quest/net` — live-дашборд 4 узлов, мобильно-адаптированный, без раскрытия IP.
-- **Карта городов**: backend `/net/cities.json` готов, `vpn/city/<id>` отдаёт per-city ссылки. Визуальная карта — следующий шаг.
+- **Карта городов**: backend `/net/cities.json` готов, `/vpn/city/{msk,fra,fin}` отдаёт per-city ссылки. Все три города помечены как VPN-узлы. Визуальная карта — следующий шаг.
 
 ### 9.2. Ближайший шаг
 
-- Поднять xray Reality на Москве (отдельный порт, поскольку :443 занят nginx). Москва войдёт в federated pool как третий VPN-узел. После этого `cities.json` автоматически отметит Москву как `vpn origin`.
 - Frankfurt и Helsinki завершают candidate-VDF и регистрируются как Active валидаторы. Расхождение AccountTable / supply между узлами схлопывается до нуля.
 - Визуальная карта городов на `montana.quest/net` — отдельная итерация фронта.
 
