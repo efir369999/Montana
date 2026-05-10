@@ -198,13 +198,12 @@ Reality 将握手伪装为对合法公开目标的常规 TLS。观察握手的 D
 ### 9.1. 截至 2026-05-10
 
 - **TimeChain**:3 个节点(莫斯科 Active,法兰克福+赫尔辛基处于 candidate-VDF 中),1 个候选(Mac)。Genesis 为 2026-01-09。Window ≈ 35 000。
-- **VPN**:2 个活跃点(法兰克福、赫尔辛基)。赫尔辛基为法兰克福做 front。联邦 `/vpn/sub` 同时聚合两者。
+- **VPN**:3 个活跃点(莫斯科 :2053、法兰克福 :443、赫尔辛基 :443)。赫尔辛基为法兰克福做 front;莫斯科作为独立的第三个 origin。联邦 `/vpn/sub` 聚合三者。
 - **Explorer**:`montana.quest/net`——4 节点的实时仪表板,移动端适配,不暴露 IP。
-- **城市地图**:后端 `/net/cities.json` 已就绪,`vpn/city/<id>` 提供单城市 URL。可视地图为下一步。
+- **城市地图**:后端 `/net/cities.json` 已就绪,`/vpn/city/{msk,fra,fin}` 提供单城市 URL。三座城市均标记为 VPN 节点。可视地图为下一步。
 
 ### 9.2. 近期
 
-- 在莫斯科启动 xray Reality(独立端口,因 :443 由 nginx 占用)。莫斯科作为第三个 VPN 节点加入联邦池。之后 `cities.json` 自动将莫斯科标记为 `vpn origin`。
 - 法兰克福和赫尔辛基完成 candidate-VDF 并注册为 Active 验证者。节点间 AccountTable / supply 的偏差归零。
 - `montana.quest/net` 上的可视城市地图——独立的前端迭代。
 

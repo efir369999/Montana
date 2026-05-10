@@ -198,13 +198,12 @@ Layer estimates:
 ### 9.1. As of 2026-05-10
 
 - **TimeChain**: 3 nodes (Moscow Active, Frankfurt+Helsinki in candidate-VDF), 1 candidate (Mac). Genesis 2026-01-09. Window ≈ 35 000.
-- **VPN**: 2 active points (Frankfurt, Helsinki). Helsinki fronts Frankfurt. Federated `/vpn/sub` aggregates both.
+- **VPN**: 3 active points (Moscow :2053, Frankfurt :443, Helsinki :443). Helsinki fronts Frankfurt; Moscow is a standalone third origin. Federated `/vpn/sub` aggregates all three.
 - **Explorer**: `montana.quest/net` — live dashboard for 4 nodes, mobile-adapted, no IP exposure.
-- **City map**: backend `/net/cities.json` ready, `vpn/city/<id>` serves per-city URLs. Visual map is the next step.
+- **City map**: backend `/net/cities.json` ready, `/vpn/city/{msk,fra,fin}` serves per-city URLs. All three cities are marked as VPN nodes. The visual map is the next step.
 
 ### 9.2. Near-term
 
-- Bring up xray Reality on Moscow (separate port, since :443 is held by nginx). Moscow joins the federated pool as the third VPN node. After that `cities.json` automatically marks Moscow as `vpn origin`.
 - Frankfurt and Helsinki finish candidate-VDF and register as Active validators. AccountTable / supply divergence between nodes collapses to zero.
 - Visual city map on `montana.quest/net` — a separate frontend iteration.
 
