@@ -47,7 +47,7 @@ A new operator joining the network is required to produce a candidate sequential
 
 The cost of producing N candidate identities scales linearly. Each candidate chain has the same per-chain wall-clock cost T (approximately 10 hours). An attacker with N machines can compute all N chains in parallel at wall-clock T, paying N × T machine-hours of computation. With one machine, the attacker pays N × T wall-clock hours. There is no quadratic multiplier and no time-non-parallelizability across distinct identities. Sybil cost is therefore linear in hardware and linear in energy expenditure, not super-linear in either.
 
-Sybil resistance within Montana derives from the composition of this entry cost with the in-protocol per-identity rate limits (Section 8) and the seniority gating of the lottery (Section 6). The combined effect is that attacker influence over consensus grows linearly with hardware budget and not at all with token holdings.
+Sybil resistance within Montana derives from the composition of this entry cost with the in-protocol per-identity rate limits (Section 10) and the seniority gating of the lottery (Section 7). The combined effect is that attacker influence over consensus grows linearly with hardware budget and not at all with token holdings.
 
 
 ## 4. Post-Quantum Primitives
@@ -74,11 +74,11 @@ Montana's threat model is formulated explicitly to delimit security properties t
 
 **Hardware-bounded influence.** Attacker advantage in consensus participation scales linearly with hardware budget (parallel SHA-256 compute) and not at all with token holdings. Capital does not buy more time. An adversary with k times the hardware of an honest median operator obtains at most k times the operator share in expectation.
 
-**What Montana defends.** Consensus integrity (no operation is cemented without honest quorum signature); signature unforgeability (post-quantum, ML-DSA-65); Sybil-bounded influence (linear in hardware); chain liveness under honest > 67% (sections 9 and below).
+**What Montana defends.** Consensus integrity (no operation is cemented without honest quorum signature); signature unforgeability (post-quantum, ML-DSA-65); Sybil-bounded influence (linear in hardware); chain liveness under honest > 67% (Section 8 and below).
 
-**What Montana does not defend, at present milestone.** Transport-layer confidentiality against quantum adversaries (TLS 1.3 with classical ECDHE remains vulnerable to store-now-decrypt-later until Noise_PQ integration at M6); application-layer metadata anonymity beyond what Anchor encryption provides (the network observes operation timing and counts even when content is encrypted); fairness of the bootstrap period before the operator population stabilizes (Section 7).
+**What Montana does not defend, at present milestone.** Transport-layer confidentiality against quantum adversaries (TLS 1.3 with classical ECDHE remains vulnerable to store-now-decrypt-later until Noise_PQ integration at M6); application-layer metadata anonymity beyond what Anchor encryption provides (the network observes operation timing and counts even when content is encrypted); fairness of the bootstrap period before the operator population stabilizes (Section 9).
 
-**Failure conditions.** Safety fails when an attacker controls > 50% of active_chain_length and > 50% of operator SHA-256 compute simultaneously and for a sustained duration. Liveness halts (without safety loss) when fewer than 67% of active operators are responsive within the fallback cascade (Section 9).
+**Failure conditions.** Safety fails when an attacker controls > 50% of active_chain_length and > 50% of operator SHA-256 compute simultaneously and for a sustained duration. Liveness halts (without safety loss) when fewer than 67% of active operators are responsive within the fallback cascade (Section 8).
 
 This threat model is the basis for the security claims in subsequent sections. Properties beyond this model — including any privacy property beyond explicit content encryption — are out of scope for the protocol layer.
 
@@ -166,7 +166,7 @@ These mechanisms together close DoS without monetary barriers. The protocol cont
 
 ## 11. State Lifecycle and Scaling
 
-Every persistent record in consensus state has either a cost-based barrier, a lifecycle bound, or a hard quota. Account creation requires the creator to submit an opening operation whose validation includes a chain-length precondition. Accounts whose balance falls below `MIN_ACCOUNT_BALANCE = 1 nɈ` and whose `last_active_window` precedes the current window by more than `8 × 20 160` windows are pruned by `apply_candidate_expiry` at the next epoch boundary.
+Every persistent record in consensus state has either a cost-based barrier, a lifecycle bound, or a hard quota. Account creation requires the creator to submit an opening operation whose validation includes a chain-length precondition. Accounts whose balance has reached zero and whose `last_active_window` precedes the current window by more than `4 × 20 160` windows (`4 × τ₂`, the protocol parameter `pruning_idle_windows` for AccountRecord pruning) are removed by `apply_candidate_expiry` at the next epoch boundary.
 
 Pruning is not optional; it is part of the canonical state transition. Two honest nodes following the protocol prune identically. The Account Table size is bounded above by
 
@@ -213,7 +213,7 @@ For the lottery to be biased in favor of the attacker, the attacker must control
 P(attacker wins k consecutive windows) = p^k
 ```
 
-For `p = 0.3` and `k = 10`, P = 5.9 × 10^-6. This is the probability of consecutive single-window wins; it does not correspond directly to chain reorganization probability in the Bitcoin sense, because Montana's cementing rule requires honest quorum signature on `BundledConfirmation` for any operation to take effect (Section 7). A run of consecutive lottery wins by an adversary does not allow the adversary to cement adversarial operations without 67% honest active_chain_length signatures — the lottery selects the proposer, but the proposal still requires quorum.
+For `p = 0.3` and `k = 10`, P = 5.9 × 10^-6. This is the probability of consecutive single-window wins; it does not correspond directly to chain reorganization probability in the Bitcoin sense, because Montana's cementing rule requires honest quorum signature on `BundledConfirmation` for any operation to take effect (Section 8). A run of consecutive lottery wins by an adversary does not allow the adversary to cement adversarial operations without 67% honest active_chain_length signatures — the lottery selects the proposer, but the proposal still requires quorum.
 
 This is the security argument: monetary capital does not buy more time. The operator economy reduces to a hardware economy in which the unit good (one chain window) is uniformly priced in joules.
 
