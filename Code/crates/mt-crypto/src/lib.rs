@@ -6,7 +6,8 @@
 // без re-architecture protocol.
 
 use mt_crypto_native::{
-    mt_keypair_from_seed_mldsa, mt_keypair_from_seed_mlkem, mt_sign_mldsa, mt_verify_mldsa,
+    mt_keypair_from_seed_mldsa, mt_keypair_from_seed_mlkem, mt_mlkem_decapsulate,
+    mt_mlkem_encapsulate, mt_sign_mldsa, mt_verify_mldsa,
     MT_ERR_INVALID_INPUT, MT_ERR_INVALID_PUBLIC_KEY, MT_ERR_INVALID_SECRET_KEY,
     MT_ERR_KEYGEN_FAILED, MT_ERR_OPENSSL_INIT, MT_ERR_PARAM_FETCH_FAILED,
     MT_ERR_PARAM_QUERY_FAILED, MT_ERR_PARAM_SIZE_MISMATCH, MT_ERR_SIGN_FAILED,
@@ -79,6 +80,8 @@ pub const KEYPAIR_SEED_SIZE: usize = 32;
 pub const MLKEM_PUBLIC_KEY_SIZE: usize = 1184;
 pub const MLKEM_SECRET_KEY_SIZE: usize = 2400;
 pub const MLKEM_SEED_SIZE: usize = 64;
+pub const MLKEM_CIPHERTEXT_SIZE: usize = 1088;
+pub const MLKEM_SHARED_SECRET_SIZE: usize = 32;
 
 pub type Hash32 = [u8; HASH_SIZE];
 
@@ -399,6 +402,104 @@ pub fn keypair_from_seed_mlkem(
         .try_into()
         .expect("box size matches MLKEM_SECRET_KEY_SIZE");
     Ok((MlkemPublicKey(pk), MlkemSecretKey(arr_box)))
+}
+
+/// ML-KEM-768 ciphertext (FIPS 203 §6.2 output of encapsulate).
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MlkemCiphertext([u8; MLKEM_CIPHERTEXT_SIZE]);
+
+impl MlkemCiphertext {
+    pub fn from_array(bytes: [u8; MLKEM_CIPHERTEXT_SIZE]) -> Self {
+        MlkemCiphertext(bytes)
+    }
+
+    pub fn from_slice(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != MLKEM_CIPHERTEXT_SIZE {
+            return None;
+        }
+        let mut arr = [0u8; MLKEM_CIPHERTEXT_SIZE];
+        arr.copy_from_slice(bytes);
+        Some(MlkemCiphertext(arr))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; MLKEM_CIPHERTEXT_SIZE] {
+        &self.0
+    }
+}
+
+/// ML-KEM-768 shared-secret output. Secret material; held briefly during
+/// handshake then derived into per-direction session keys via HKDF and zeroized.
+pub struct MlkemSharedSecret(Box<[u8; MLKEM_SHARED_SECRET_SIZE]>);
+
+impl MlkemSharedSecret {
+    pub fn as_bytes(&self) -> &[u8; MLKEM_SHARED_SECRET_SIZE] {
+        &self.0
+    }
+
+    pub fn into_bytes(mut self) -> [u8; MLKEM_SHARED_SECRET_SIZE] {
+        let out = *self.0;
+        self.0.zeroize();
+        out
+    }
+}
+
+impl Drop for MlkemSharedSecret {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+/// ML-KEM-768 encapsulate (FIPS 203 §6.2). Given a recipient public key,
+/// generate a fresh ciphertext and the shared secret. The ciphertext is
+/// transmitted to the recipient; the shared secret is the symmetric key
+/// for the Noise_PQ handshake.
+pub fn mlkem_encapsulate(
+    pk: &MlkemPublicKey,
+) -> Result<(MlkemCiphertext, MlkemSharedSecret), CryptoError> {
+    let mut ct = [0u8; MLKEM_CIPHERTEXT_SIZE];
+    let mut ss_box = alloc_locked_secret_box(MLKEM_SHARED_SECRET_SIZE);
+    let r = unsafe {
+        // SAFETY: pk — valid 1184-byte input; ct — 1088-byte output buffer;
+        // ss_box — 32-byte heap-allocated mlock-protected buffer matching
+        // MT_MLKEM768_SS_SIZE from the C FFI contract.
+        mt_mlkem_encapsulate(pk.as_bytes().as_ptr(), ct.as_mut_ptr(), ss_box.as_mut_ptr())
+    };
+    if r != MT_OK {
+        ss_box.zeroize();
+        return Err(CryptoError::from_code(r));
+    }
+    let arr_box: Box<[u8; MLKEM_SHARED_SECRET_SIZE]> = ss_box
+        .try_into()
+        .expect("box size matches MLKEM_SHARED_SECRET_SIZE");
+    Ok((MlkemCiphertext(ct), MlkemSharedSecret(arr_box)))
+}
+
+/// ML-KEM-768 decapsulate (FIPS 203 §6.3) with FIPS 203 implicit-rejection
+/// semantics: a malformed ciphertext yields a pseudo-random shared secret
+/// indistinguishable from a valid one. The downstream handshake MUST verify
+/// an identity-bound MAC or signature to detect this case.
+pub fn mlkem_decapsulate(
+    sk: &MlkemSecretKey,
+    ct: &MlkemCiphertext,
+) -> Result<MlkemSharedSecret, CryptoError> {
+    let mut ss_box = alloc_locked_secret_box(MLKEM_SHARED_SECRET_SIZE);
+    let r = unsafe {
+        // SAFETY: sk.as_bytes() — 2400-byte heap-locked secret; ct — 1088-byte
+        // input; ss_box — 32-byte heap-allocated mlock-protected buffer.
+        mt_mlkem_decapsulate(
+            sk.as_bytes().as_ptr(),
+            ct.as_bytes().as_ptr(),
+            ss_box.as_mut_ptr(),
+        )
+    };
+    if r != MT_OK {
+        ss_box.zeroize();
+        return Err(CryptoError::from_code(r));
+    }
+    let arr_box: Box<[u8; MLKEM_SHARED_SECRET_SIZE]> = ss_box
+        .try_into()
+        .expect("box size matches MLKEM_SHARED_SECRET_SIZE");
+    Ok(MlkemSharedSecret(arr_box))
 }
 
 #[repr(u16)]

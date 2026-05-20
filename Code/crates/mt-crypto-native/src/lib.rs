@@ -21,6 +21,8 @@ pub const MLDSA65_SEED_SIZE: usize = 32;
 pub const MLKEM768_PUBKEY_SIZE: usize = 1184;
 pub const MLKEM768_SECRETKEY_SIZE: usize = 2400;
 pub const MLKEM768_SEED_SIZE: usize = 64;
+pub const MLKEM768_CIPHERTEXT_SIZE: usize = 1088;
+pub const MLKEM768_SS_SIZE: usize = 32;
 
 pub const MT_OK: c_int = 0;
 pub const MT_ERR_INVALID_INPUT: c_int = 1;
@@ -55,6 +57,10 @@ extern "C" {
 
     pub fn mt_verify_mldsa(pk: *const u8, msg: *const u8, msg_len: size_t, sig: *const u8)
         -> c_int;
+
+    pub fn mt_mlkem_encapsulate(pk: *const u8, ct_out: *mut u8, ss_out: *mut u8) -> c_int;
+
+    pub fn mt_mlkem_decapsulate(sk: *const u8, ct: *const u8, ss_out: *mut u8) -> c_int;
 
     pub fn mt_self_test() -> c_int;
 }

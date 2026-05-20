@@ -26,6 +26,8 @@
 #define MT_MLKEM768_PUBKEY_SIZE    1184
 #define MT_MLKEM768_SECRETKEY_SIZE 2400
 #define MT_MLKEM768_SEED_SIZE        64
+#define MT_MLKEM768_CIPHERTEXT_SIZE  1088
+#define MT_MLKEM768_SS_SIZE            32
 
 int mt_keypair_from_seed_mldsa(
     const uint8_t seed[MT_MLDSA65_SEED_SIZE],
@@ -60,6 +62,28 @@ int mt_verify_mldsa(
     const uint8_t pk[MT_MLDSA65_PUBKEY_SIZE],
     const uint8_t* msg, size_t msg_len,
     const uint8_t sig[MT_MLDSA65_SIGNATURE_SIZE]
+);
+
+/* ML-KEM-768 encapsulate per FIPS 203 §6.2.
+ * Takes a public key, produces (ciphertext, shared_secret). The shared
+ * secret is the 32-byte derived key; the ciphertext is sent to the holder
+ * of the secret key. */
+int mt_mlkem_encapsulate(
+    const uint8_t pk[MT_MLKEM768_PUBKEY_SIZE],
+    uint8_t ct_out[MT_MLKEM768_CIPHERTEXT_SIZE],
+    uint8_t ss_out[MT_MLKEM768_SS_SIZE]
+);
+
+/* ML-KEM-768 decapsulate per FIPS 203 §6.3.
+ * Takes the secret key and a ciphertext, recovers the shared secret.
+ * Implicit-rejection semantics: a malformed or substituted ciphertext
+ * yields a pseudo-random shared secret indistinguishable from a valid
+ * one to the caller; downstream handshake authentication MUST verify
+ * an identity-bound MAC or signature to detect rejection. */
+int mt_mlkem_decapsulate(
+    const uint8_t sk[MT_MLKEM768_SECRETKEY_SIZE],
+    const uint8_t ct[MT_MLKEM768_CIPHERTEXT_SIZE],
+    uint8_t ss_out[MT_MLKEM768_SS_SIZE]
 );
 
 int mt_self_test(void);
