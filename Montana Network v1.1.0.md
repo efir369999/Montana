@@ -1,103 +1,103 @@
-# Монтана — Спецификация сетевого слоя
+# Montana — Network Layer Specification
 
 **Версия:** 1.1.0 (2026-05-20)
 
-**Слой:** Network — между Protocol (низкий) и App (высокий).
+**Layer:** Network — sits between Protocol (low) and App (high).
 
 
 ---
 
-## Введение
+## Introduction
 
-Сетевой слой Montana — транспорт и discovery между узлами консенсуса и клиентами. Эта спецификация исторически жила inline разделами в Montana Protocol; отделена в собственный файл для разделения слоёв по принципу [I-7] минимальной криптографической поверхности и удобства независимого аудита.
+Montana's network layer covers transport and discovery between consensus nodes and clients. This specification historically lived as inline sections inside Montana Protocol; it has been split into its own file to separate the layers per the [I-7] minimal-cryptographic-surface principle and to make independent audit easier.
 
-**Что в этой спеке:**
+**What this spec covers:**
 
-- Транспортный слой через libp2p (TCP+TLS 1.3 + Noise XK)
-- Обфускация трафика (TLS-mimicry, ECH, padding, timing)
-- Identity-Bound Tunnel (IBT) — proof что peer обладает privкey соответствующего его node_id
-- Transport Randomness — непредсказуемые network-bound seeds
-- PeerRecord и discovery
-- Mesh Transport (Bluetooth/Wi-Fi Direct, store-and-forward)
+- Transport layer via libp2p (TCP + TLS 1.3 + Noise XK)
+- Traffic obfuscation (TLS-mimicry, ECH, padding, timing)
+- Identity-Bound Tunnel (IBT) — proof that a peer holds the privkey corresponding to its node_id
+- Transport Randomness — unpredictable network-bound seeds
+- PeerRecord and discovery
+- Mesh Transport (Bluetooth / Wi-Fi Direct, store-and-forward)
 - Sync protocols (FastSync, BatchLookup, RangeSubscribe, Label Rotation)
-- Threat Model сетевого слоя
-- Binding KAT vectors сетевого слоя
-- apply_mesh_frame и apply_store_and_forward — нормативные правила
-- Final Gate audit M6 milestone
+- Network-layer Threat Model
+- Network-layer binding KAT vectors
+- apply_mesh_frame and apply_store_and_forward — normative rules
+- Final Gate audit, M6 milestone
 
-**Что НЕ в этой спеке:**
+**What this spec does NOT cover:**
 
-- State machine, apply_proposal, операции (Transfer/OpenAccount/...) — см. Montana Protocol
-- Crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256, PBKDF2/HKDF) — см. Montana Protocol §«Криптография»
-- UI / Wallet / Messenger / Channels / Contacts / Profile / Junona / Browser — см. Montana App
+- State machine, apply_proposal, operations (Transfer / OpenAccount / ...) — see Montana Protocol
+- Crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256, PBKDF2 / HKDF) — see Montana Protocol §«Cryptography»
+- UI / Wallet / Messenger / Channels / Contacts / Profile / Juno / Browser — see Montana App
 
 ---
 
-## Сетевой уровень
+## Network layer
 
-Все временные параметры сетевого уровня (frame rate, padding window, feeler interval, Dandelion timers) — implementation guidance для локального сетевого стека узла. Они оперируют на локальных часах узла и находятся вне scope consensus state.
+All time parameters at the network layer (frame rate, padding window, feeler interval, Dandelion timers) are implementation guidance for the node's local network stack. They operate on the node's local clock and are outside the scope of consensus state.
 
-### Обфускация транспорта
+### Transport obfuscation
 
-Монтана — персональная сеть. Каждый узел — персональный сервер участника. Транспортный слой построен из этого определения: персональный сервер отвечает только участникам, персональный мессенджер скрывает тайминг сообщений, персональный = доступный обычному человеку.
+Montana is a personal network. Each node is the participant's personal server. The transport layer is built from this definition: a personal server answers only to participants, a personal messenger hides message timing, personal = affordable to an ordinary person.
 
-#### Шифрование
+#### Encryption
 
-Все P2P-соединения инкапсулированы в TLS 1.3 на порт 443. Noise framework (встроен в libp2p) для аутентификации по публичному ключу узла внутри TLS. Содержимое трафика недоступно наблюдателю.
+All P2P connections are encapsulated in TLS 1.3 on port 443. The Noise framework (built into libp2p) authenticates by the node's public key inside TLS. The content of the traffic is not accessible to an observer.
 
 #### Identity-Bound Tunnel (IBT)
 
-Персональный сервер отвечает только участникам сети. После TLS handshake клиент отправляет proof аутентификации. Узлы (зарегистрированные и приглашённые) подписывают node keypair. Аккаунты (клиенты) подписывают account keypair.
+A personal server answers only to network participants. After the TLS handshake the client sends an authentication proof. Nodes (registered and invited) sign with the node keypair. Accounts (clients) sign with the account keypair.
 
 ```
 proof = ML-DSA-65_sign(client_privkey,
           "mt-tunnel-online" || server_node_id || floor(current_window_index / 2)
           || online_session_nonce)
 
-где:
-  online_session_nonce  32B    — генерируется клиентом из CSPRNG для каждого
-                                 handshake, передаётся в plain части IBT
-                                 advertisement рядом с proof
+where:
+  online_session_nonce  32B    — generated by the client from CSPRNG for each
+                                 handshake, transmitted in the plain part of the IBT
+                                 advertisement alongside the proof
 ```
 
-Сервер проверяет:
+The server checks:
 
-1. Подпись валидна для заявленного client_pubkey
-2. Window slot = текущий ИЛИ предыдущий (окно = 2 window_index)
-3. Уровень доступа — сервер проверяет client_pubkey по трём таблицам последовательно, первое совпадение определяет уровень:
-   - `node_id = SHA-256("mt-node" || client_pubkey)` в Node Table → **полный gossip** (клиент подключился node keypair)
-   - `node_id` с `node_pubkey = client_pubkey` в Candidate Pool → **read-only gossip**: получает proposals (кандидат подключился node keypair)
-   - `account_id = SHA-256("mt-account" || suite_id || client_pubkey)` в Account Table → **подключение к доверенному узлу** (клиент подключился account keypair)
-   - Ни одно не найдено → отказ
+1. Signature is valid for the claimed client_pubkey
+2. Window slot = current OR previous (window = 2 window_index)
+3. Access level — the server checks client_pubkey against three tables in order, the first match determines the level:
+   - `node_id = SHA-256("mt-node" || client_pubkey)` in Node Table → **full gossip** (client connected with the node keypair)
+   - `node_id` with `node_pubkey = client_pubkey` in Candidate Pool → **read-only gossip**: receives proposals (candidate connected with the node keypair)
+   - `account_id = SHA-256("mt-account" || suite_id || client_pubkey)` in Account Table → **connection to a trusted node** (client connected with the account keypair)
+   - None matched → reject
 
-Условия 1-2 выполнены + уровень 3 определён → Noise handshake → P2P-сеть Монтаны с соответствующим уровнем доступа.
-Любое не выполнено → TLS alert `bad_certificate`, close. Стандартное поведение сервера с обязательной аутентификацией клиента — таких серверов в интернете миллионы (корпоративные порталы, API, банковские системы).
+Conditions 1-2 met + access level from step 3 determined → Noise handshake → Montana's P2P network at the corresponding access level.
+Any condition failed → TLS alert `bad_certificate`, close. This is standard server behaviour for mandatory client authentication — there are millions of such servers on the internet (corporate portals, APIs, banking systems).
 
-Replay protection: трёхслойная защита одновременно. (а) `server_node_id` привязывает proof к конкретному получателю — replay против другого сервера невозможен. (б) Window slot ограничивает replay window до 2 окон (≤120 секунд на genesis-калибровке) — proof становится невалидным через окно. (в) **Session nonce tracking.** Сервер хранит `used_online_nonces[client_pubkey]` — set of `online_session_nonce` значений использованных данным клиентом в пределах current/previous window. При приёме proof с `online_session_nonce ∈ used_online_nonces[client_pubkey]` → reject (replay в течение window slot). Set pruning: записи старше 2 окон удаляются (nonce reuse acceptable после expiry, window slot уже невалиден). Это defence-in-depth закрытие класса MITM-replay внутри window slot — даже при перехвате proof атакующий не может переиспользовать его до самого сервера в течение тех же 2 окон.
+Replay protection: three-layer defence simultaneously. (a) `server_node_id` binds the proof to a specific recipient — replay against a different server is impossible. (b) The window slot caps the replay window at 2 windows (≤120 seconds at genesis calibration) — the proof becomes invalid after one window. (c) **Session nonce tracking.** The server keeps `used_online_nonces[client_pubkey]` — a set of `online_session_nonce` values used by this client within the current / previous window. On receiving a proof with `online_session_nonce ∈ used_online_nonces[client_pubkey]` → reject (replay within the window slot). Set pruning: entries older than 2 windows are removed (nonce reuse is acceptable after expiry — the window slot is no longer valid). This is a defence-in-depth closure of the MITM-replay class inside the window slot — even if a proof is intercepted, the attacker cannot reuse it against the same server within those 2 windows.
 
-**Verification procedure для online peer.** Серверный узел при приёме online IBT advertisement выполняет проверки в следующем порядке (mirror к mesh IBT procedure):
+**Verification procedure for an online peer.** On receiving an online IBT advertisement, the server node performs the checks in the following order (mirror of the mesh IBT procedure):
 
-1. Parse advertisement, извлечь `client_pubkey`, `online_session_nonce` (32 B), `proof` (3309 B ML-DSA-65 signature).
-2. Проверить ML-DSA-65 signature валидна для `client_pubkey` над message reconstruction `"mt-tunnel-online" || server_node_id || u64_LE(floor(current_window_index / 2)) || online_session_nonce` (текущий window slot). Если не прошло — попробовать с `floor(current_window_index / 2) - 1` (previous slot).
-3. Проверить `server_node_id == local_node_id` (proof bound к данному серверу).
-4. Проверить `online_session_nonce ∉ used_online_nonces[client_pubkey]` (replay block).
-5. Lookup `client_pubkey` по трём таблицам последовательно: Node Table (через `SHA-256("mt-node" || client_pubkey)` lookup) → Candidate Pool → Account Table (через `SHA-256("mt-account" || suite_id || client_pubkey)`). Первое совпадение определяет access level. Ни одного — reject.
-6. Все проверки прошли → accept; добавить `online_session_nonce` в `used_online_nonces[client_pubkey]`; начать Noise handshake; начать P2P-сессию с уровнем доступа из шага 5.
-7. Любая проверка не прошла → TLS alert `bad_certificate`, close. Silent reject опционален (не давать feedback атакующему о том, на каком шаге провалилось).
+1. Parse the advertisement; extract `client_pubkey`, `online_session_nonce` (32 B), `proof` (3309 B ML-DSA-65 signature).
+2. Check that the ML-DSA-65 signature is valid for `client_pubkey` over the message reconstruction `"mt-tunnel-online" || server_node_id || u64_LE(floor(current_window_index / 2)) || online_session_nonce` (current window slot). If it does not match — try with `floor(current_window_index / 2) - 1` (previous slot).
+3. Check `server_node_id == local_node_id` (proof bound to this server).
+4. Check `online_session_nonce ∉ used_online_nonces[client_pubkey]` (replay block).
+5. Look up `client_pubkey` against three tables in order: Node Table (via `SHA-256("mt-node" || client_pubkey)` lookup) → Candidate Pool → Account Table (via `SHA-256("mt-account" || suite_id || client_pubkey)`). The first match determines the access level. None matched — reject.
+6. All checks passed → accept; add `online_session_nonce` to `used_online_nonces[client_pubkey]`; start the Noise handshake; start the P2P session at the access level from step 5.
+7. Any check failed → TLS alert `bad_certificate`, close. Silent reject is optional (do not give an attacker feedback about which step failed).
 
-**`used_online_nonces` memory bound.** Set per `client_pubkey`, ephemeral, transport-layer (не consensus state — [I-14] formally не применяется). DoS-bound через два уровня: (i) per-pubkey set bounded `MAX_ONLINE_NONCES_PER_PUBKEY = 256` (атакующий с одним keypair не может flood-ить более 256 nonce'ов за window slot — handshake rate-limit уже ограничивает реальный поток до < 256/2τ₁); (ii) глобальный bound `MAX_ONLINE_NONCES_TOTAL = 65 536` (32 B × 65536 ≈ 2 MB per server — приемлемая память на commodity hardware [I-5]). Pruning at window slot boundary: записи старше 2 окон автоматически удаляются. Защита от множества client_pubkey: server-side handshake rate-limit (см. backpressure правила [B5] в спеке — `max_pending_requests_per_peer`) ограничивает new-handshake поток per source.
+**`used_online_nonces` memory bound.** Set per `client_pubkey`, ephemeral, transport-layer (not consensus state — [I-14] formally does not apply). DoS bound on two levels: (i) per-pubkey set bounded by `MAX_ONLINE_NONCES_PER_PUBKEY = 256` (an attacker with one keypair cannot flood more than 256 nonces per window slot — the handshake rate-limit already caps the real stream below < 256 / 2τ₁); (ii) global bound `MAX_ONLINE_NONCES_TOTAL = 65 536` (32 B × 65536 ≈ 2 MB per server — acceptable memory on commodity hardware [I-5]). Pruning at the window-slot boundary: entries older than 2 windows are removed automatically. Defence against many distinct client_pubkeys: server-side handshake rate-limit (see backpressure rule [B5] in the spec — `max_pending_requests_per_peer`) caps the new-handshake stream per source.
 
-Bootstrap exception: genesis bootstrap nodes хардкодированы как `(IP, node_id, pubkey) × 12`. Bootstrap принимает proof от любого валидного ML-DSA-65 ключа (Account Table не проверяется). Для защиты от connection flood клиент прилагает proof-of-work:
+Bootstrap exception: genesis bootstrap nodes are hard-coded as `(IP, node_id, pubkey) × 12`. The bootstrap accepts a proof from any valid ML-DSA-65 key (the Account Table is not consulted). To defend against a connection flood, the client attaches a proof-of-work:
 
 ```
 SHA-256("mt-bootstrap-pow" || proof || nonce) < target
 ```
 
-`target` подбирается чтобы стоимость ≈ 100ms CPU. PoW требуется только при подключении к bootstrap, не к обычным peers.
+`target` is chosen so the cost is ≈ 100 ms CPU. PoW is required only when connecting to a bootstrap, not to ordinary peers.
 
 **Mesh transport IBT extension.**
 
-Mesh transport (см. подраздел «Mesh Transport» ниже) работает при отсутствии fresh `window_index` — устройство может быть offline часы или дни до следующей синхронизации с internet-сетью. IBT proof в mesh контексте использует **cached** `window_index` — значение последнего известного окна с любого предыдущего online-соединения.
+Mesh transport (see the «Mesh Transport» subsection below) operates without a fresh `window_index` — the device may be offline for hours or days until the next sync with the internet-side network. The IBT proof in the mesh context uses a **cached** `window_index` — the last known window value from any previous online connection.
 
 Формула для mesh transport:
 
@@ -2887,7 +2887,7 @@ boundary / edge" per critical type как в Gate 0.5 [I-9] требовании
 Закрытие [I-9] для каждого type: status «conformance pending → closed Phase A»
 после генерации expected hex и cross-implementation roundtrip test.
 
-### Сетевой уровень — Threat Model
+### Network layer — Threat Model
 
 Обязательная нормативная секция для сетевого слоя. Перечисляет adversary classes, защищённые свойства, coverage matrix (механизм защиты per intersection), и явный out-of-scope. Без этой секции Gate 11 (threat concentration) не закрывается для сетевых механизмов; реализатор не может оценить достаточность защит.
 
