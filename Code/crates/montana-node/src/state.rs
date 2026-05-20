@@ -28,29 +28,64 @@ impl LocalState {
     pub fn bootstrap(operator: &Identity, params: &ProtocolParams) -> Self {
         let is_genesis = NodeLifecycle::is_bootstrap_node(operator, params);
         let mut accounts = AccountTable::new();
+
+        // Bootstrap account из Genesis Decree — присутствует во ВСЕХ узлах
+        // (нужен для emission target в apply_proposal на receivers).
+        let bootstrap_account_id = mt_state::derive_account_id(
+            operator.suite_id as u16,
+            &params.bootstrap_account_pubkey,
+        );
         accounts.insert(AccountRecord {
-            // SPEC DEVIATION DEV-010
-            account_id: operator.account_id(),
+            account_id: bootstrap_account_id,
             balance: 0,
             suite_id: operator.suite_id as u16,
-            is_node_operator: is_genesis,
+            is_node_operator: true,
             frontier_hash: [0u8; 32],
             op_height: 0,
             account_chain_length: 0,
             account_chain_length_snapshot: 0,
-            current_pubkey: *operator.account_pk.as_bytes(),
+            current_pubkey: params.bootstrap_account_pubkey,
             creation_window: 0,
             last_op_window: 0,
             last_activation_window: 0,
         });
 
-        let mut nodes = NodeTable::new();
-        if is_genesis {
-            nodes.insert(genesis_bootstrap_node_record(operator)); // SPEC DEVIATION DEV-010
+        // Operator's own account — отдельная запись если operator != bootstrap
+        // (in is_genesis case identity.account_id() == bootstrap_account_id —
+        // тот же account_id, insert override без эффекта).
+        if !is_genesis {
+            accounts.insert(AccountRecord {
+                account_id: operator.account_id(),
+                balance: 0,
+                suite_id: operator.suite_id as u16,
+                is_node_operator: false,
+                frontier_hash: [0u8; 32],
+                op_height: 0,
+                account_chain_length: 0,
+                account_chain_length_snapshot: 0,
+                current_pubkey: *operator.account_pk.as_bytes(),
+                creation_window: 0,
+                last_op_window: 0,
+                last_activation_window: 0,
+            });
         }
-        // Candidate узел: пустой NodeTable. CandidatePool тоже пустой —
-        // узел добавится через apply_noderegistrations_batch когда vdf_chain_length
-        // достигнет τ₂; затем активируется через apply_selection_event.
+
+        // Bootstrap NodeRecord — всегда в NodeTable (Genesis Decree), независимо
+        // от того bootstrap ли локальный operator. Receivers нужен для validate
+        // ProposalHeader.proposer_node_id и apply_emission winner_id lookup.
+        let mut nodes = NodeTable::new();
+        let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
+        nodes.insert(mt_state::NodeRecord {
+            node_id: bootstrap_node_id,
+            node_pubkey: params.bootstrap_node_pubkey,
+            suite_id: operator.suite_id as u16,
+            operator_account_id: bootstrap_account_id,
+            start_window: 0,
+            chain_length: 1,
+            chain_length_snapshot: 1,
+            chain_length_checkpoints: [0; 6],
+            last_confirmation_window: 0,
+        });
 
         Self {
             accounts,
@@ -109,20 +144,8 @@ impl LocalState {
     }
 }
 
-// SPEC DEVIATION DEV-010: genesis bootstrap NodeRecord — узел = bootstrap_node_pubkey
-// своей локальной сети, активирован через genesis state без Candidate VDF + selection.
-// Per spec: chain_length=1 (= результат selection event activation), start_window=0.
-// Acknowledged автором 2026-04-28. См. docs/SPEC_DEVIATIONS.md DEV-010.
-fn genesis_bootstrap_node_record(operator: &Identity) -> mt_state::NodeRecord {
-    mt_state::NodeRecord {
-        node_id: operator.node_id(),
-        node_pubkey: *operator.node_pk.as_bytes(),
-        suite_id: operator.suite_id as u16,
-        operator_account_id: operator.account_id(),
-        start_window: 0,
-        chain_length: 1,
-        chain_length_snapshot: 1,
-        chain_length_checkpoints: [0; 6],
-        last_confirmation_window: 0,
-    }
-}
+// SPEC DEVIATION DEV-010 (closed 2026-05-02 в M9 Phase 1):
+// Bootstrap NodeRecord теперь deriviается из params.bootstrap_node_pubkey
+// (а не из operator's own pk). Это унифицирует bootstrap entry между всеми
+// узлами cohort-а — необходимо для apply_proposal validation на receivers.
+// Inline в LocalState::bootstrap(); helper удалён.

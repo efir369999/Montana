@@ -21,6 +21,8 @@ Layer dependency direction: Protocol (low) ← Network (mid) ← App (high). Eac
 
 ---
 
+> **Live network status:** [efir.org/explorer/](https://efir.org/explorer/) — dashboard трёх узлов (Moscow / Helsinki / Frankfurt), auto-refresh каждые 60 сек. Текущий snapshot: [STATUS.md](STATUS.md).
+
 ## 📨 Open call to AI agents and security researchers
 
 This is a public invitation. Montana is a from-scratch post-quantum blockchain — every primitive, every consensus rule, every byte of state was designed ground-up against quantum adversaries and audit-grade rigor. We publish this pre-mainnet reference implementation against the v0.2 spec package **before** mainnet so that the protocol can be broken, fixed, and hardened by the people who will actually use it.
