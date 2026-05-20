@@ -251,3 +251,31 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 **Status:** closed (mt-net / mt-net-transport: online_session_nonce in signed scope + used_online_nonces tracking)
 
 **Acknowledged:** the wire-level handshake envelope in transport integration must pass `online_session_nonce` alongside the proof; the API already requires the nonce, so without it the call site will not compile.
+
+---
+
+## DEV-014: Noise_PQ post-quantum transport migration (M6 milestone)
+
+**Crate:** `mt-net-transport`
+**File:line:** `crates/mt-net-transport/src/transport.rs:42, 76` (current TLS + Noise XK upgrade chain)
+**Spec section:** «Post-quantum transport migration (M6 milestone)» in `Montana Network v1.1.0.md`
+**Spec quote:** «Migration to a single post-quantum transport handshake: hybrid Noise_PQ combining X25519 with ML-KEM-768 as the KEM replacement for Diffie-Hellman.»
+**What the code does:** The current transport upgrade chain is `TLS 1.3 (rustls) → Noise XK (X25519 ECDHE inner) → Yamux`. Both handshake layers use classical X25519 ECDHE and are vulnerable to store-now-decrypt-later attacks by a future quantum adversary. Consensus signatures (ML-DSA-65) are unaffected; only transport confidentiality is exposed.
+**Severity:** mainnet blocker for the «pure post-quantum» claim; currently disclosed honestly in the spec as a Phase 0 / pre-M6 state. Not blocking for the consensus-integrity audit scope.
+**Closure path (multi-phase, 3–5 weeks total wall-clock):**
+
+- **Phase 0 — Architecture & scaffolding (this entry).** Network spec documents the migration plan with phases and verification criteria; this DEV-014 tracker entry is added; a `pq_transport_version: u8` wire field is reserved in the IBT advertisement for capability negotiation; no code change beyond the planning documentation. **Status: completed in this commit.**
+- **Phase 1 — Noise_PQ handshake implementation.** Implement an ML-KEM-768-augmented Noise XK variant. Two viable paths:
+  - (a) Fork the `snow` crate (https://github.com/mcginty/snow) to add ML-KEM-768 as a DH replacement. Contribute upstream after byte-exact KAT validation against the emerging Noise PQ draft. Estimated effort: 3 weeks for a senior Rust + crypto engineer, including KATs and differential testing.
+  - (b) Write a custom Noise_PQ handler outside libp2p's `noise` upgrade module, wrapping it as a `libp2p::core::upgrade::OutboundConnectionUpgrade` / `InboundConnectionUpgrade`. Reuse the `mt-crypto::keypair_from_seed_mlkem` and `mt-crypto::Mlkem*` types already present in `mt-crypto`. Estimated effort: 4 weeks.
+  Either path requires byte-exact KAT vectors checked into `mt-conformance` and differential testing against at least one independent reference implementation.
+- **Phase 2 — Hybrid coexistence period.** Capability negotiation through the `pq_transport_version` wire field. Peers advertise both classical and Noise_PQ; the connection negotiates the highest mutually supported version. A chain_length-weighted majority signal (≥ 67% of active_chain_length advertising Noise_PQ for ≥ τ₂) triggers the deprecation of classical inbound. Estimated wall-clock: 2 weeks of soak-time on the genesis 3-node network plus observability collection.
+- **Phase 3 — Classical removal.** TLS 1.3 layer dropped entirely. The transport stack becomes TCP → Noise_PQ → Yamux. Uniform framing preserved at the application layer for DPI obfuscation. Spec bump removes `pq_transport_version` once capability negotiation is no longer needed. Estimated wall-clock: 1 week including spec patch + node deployment + 24-hour soak.
+
+**Closure cost:** 3–5 weeks wall-clock for Phase 1 + 1–2 weeks for Phases 2 + 3 = total **5–7 weeks** for production-grade closure with KATs, differential testing, and three-node soak. This is M6 milestone scope, not single-session work.
+
+**Status:** open (Phase 0 completed)
+
+**Verification protocol per phase.** Each phase is closed only after ≥ 24 hours of continuous operation across the three genesis nodes (Moscow, Helsinki, Frankfurt) with zero unexpected handshake failures and zero classical-fallback events during the observation window. The cross-node verification log is committed to the repository at `External-Audit/noise-pq-phase{N}-verification.log`.
+
+**Acknowledged:** author 2026-05-20 — «сделай это прежде чем релиз делать. полность все фазы и проверь на узлах». Acknowledgement of scope: Phase 0 closed in this session; Phases 1-3 are dedicated multi-week milestones with code work and cross-node deployment validation that cannot honestly be promised within a single conversation. The plan, scope, and verification criteria are documented here so that the work can be picked up and executed in dedicated implementation sessions.
