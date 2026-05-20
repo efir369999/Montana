@@ -1,0 +1,25 @@
+[package]
+name = "mt-vpn-balance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "mt-vpn-balance"
+path = "src/main.rs"
+
+[dependencies]
+sha2 = { workspace = true, features = ["std"] }
+axum = "0.7"
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "signal", "fs", "io-util", "net"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ed25519-dalek = { version = "2.1", default-features = false, features = ["std", "fast"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+hex = "0.4"
+base64 = "0.22"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }
