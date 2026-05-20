@@ -3836,11 +3836,11 @@ SHA-256(sk) = 685c8c5299dde1176c4145a8af6dd08f2773f5551a7df29c3b1f7b6faba439b3
 | Примитив | Стандарт | Роль |
 |----------|----------|------|
 | SHA-256 | FIPS 180-4 | TimeChain, lottery endpoints, адреса, Merkle-деревья |
-| ML-DSA-65 | NIST FIPS 204 (finalized August 2024), security level 3, deterministic variant (RND = 0x00 × 32); реализация ОБЯЗАНА быть constant-time для resistance к timing/power side-channel attacks per FIPS 140-3 §4.7.4 (NIST SP 800-90C side-channel guidance) | Подписи операций аккаунтов и proposals узлов |
+| ML-DSA-65 | NIST FIPS 204 (finalized August 2024), security level 3, deterministic variant (RND = 0x00 × 32); реализация ОБЯЗАНА быть constant-time для resistance к timing/power side-channel attacks per FIPS 140-3 §4.7.4 (non-invasive security) | Подписи операций аккаунтов и proposals узлов |
 | HMAC-SHA-256 | RFC 2104 | Внутренний примитив PBKDF2 и HKDF (композиция поверх SHA-256) |
 | PBKDF2-HMAC-SHA-256 | RFC 8018 §5.2 | KDF деривации master_seed из мнемоники (Algorithm M-1) |
 | HKDF-Expand (поверх HMAC-SHA-256) | RFC 5869 §2.3 | Per-role key derivation ключей из master_seed |
-| ML-KEM-768 | FIPS 203; реализация ОБЯЗАНА быть constant-time для resistance к timing/power side-channel attacks per FIPS 140-3 §4.7.4 | Шифрование сообщений на клиентском уровне (Application Layer) |
+| ML-KEM-768 | FIPS 203; реализация ОБЯЗАНА быть constant-time для resistance к timing/power side-channel attacks per FIPS 140-3 §4.7.4 (non-invasive security) И использовать implicit rejection per FIPS 203 §6.3 (chosen-ciphertext robustness) | Шифрование сообщений на клиентском уровне (Application Layer) |
 
 #### HMAC-SHA-256 — integer спецификация
 
