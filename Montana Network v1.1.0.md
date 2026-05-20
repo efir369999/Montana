@@ -75,6 +75,18 @@ proof = ML-DSA-65_sign(client_privkey,
 
 Replay protection: трёхслойная защита одновременно. (а) `server_node_id` привязывает proof к конкретному получателю — replay против другого сервера невозможен. (б) Window slot ограничивает replay window до 2 окон (≤120 секунд на genesis-калибровке) — proof становится невалидным через окно. (в) **Session nonce tracking.** Сервер хранит `used_online_nonces[client_pubkey]` — set of `online_session_nonce` значений использованных данным клиентом в пределах current/previous window. При приёме proof с `online_session_nonce ∈ used_online_nonces[client_pubkey]` → reject (replay в течение window slot). Set pruning: записи старше 2 окон удаляются (nonce reuse acceptable после expiry, window slot уже невалиден). Это defence-in-depth закрытие класса MITM-replay внутри window slot — даже при перехвате proof атакующий не может переиспользовать его до самого сервера в течение тех же 2 окон.
 
+**Verification procedure для online peer.** Серверный узел при приёме online IBT advertisement выполняет проверки в следующем порядке (mirror к mesh IBT procedure):
+
+1. Parse advertisement, извлечь `client_pubkey`, `online_session_nonce` (32 B), `proof` (3309 B ML-DSA-65 signature).
+2. Проверить ML-DSA-65 signature валидна для `client_pubkey` над message reconstruction `"mt-tunnel-online" || server_node_id || u64_LE(floor(current_window_index / 2)) || online_session_nonce` (текущий window slot). Если не прошло — попробовать с `floor(current_window_index / 2) - 1` (previous slot).
+3. Проверить `server_node_id == local_node_id` (proof bound к данному серверу).
+4. Проверить `online_session_nonce ∉ used_online_nonces[client_pubkey]` (replay block).
+5. Lookup `client_pubkey` по трём таблицам последовательно: Node Table (через `SHA-256("mt-node" || client_pubkey)` lookup) → Candidate Pool → Account Table (через `SHA-256("mt-account" || suite_id || client_pubkey)`). Первое совпадение определяет access level. Ни одного — reject.
+6. Все проверки прошли → accept; добавить `online_session_nonce` в `used_online_nonces[client_pubkey]`; начать Noise handshake; начать P2P-сессию с уровнем доступа из шага 5.
+7. Любая проверка не прошла → TLS alert `bad_certificate`, close. Silent reject опционален (не давать feedback атакующему о том, на каком шаге провалилось).
+
+**`used_online_nonces` memory bound.** Set per `client_pubkey`, ephemeral, transport-layer (не consensus state — [I-14] formally не применяется). DoS-bound через два уровня: (i) per-pubkey set bounded `MAX_ONLINE_NONCES_PER_PUBKEY = 256` (атакующий с одним keypair не может flood-ить более 256 nonce'ов за window slot — handshake rate-limit уже ограничивает реальный поток до < 256/2τ₁); (ii) глобальный bound `MAX_ONLINE_NONCES_TOTAL = 65 536` (32 B × 65536 ≈ 2 MB per server — приемлемая память на commodity hardware [I-5]). Pruning at window slot boundary: записи старше 2 окон автоматически удаляются. Защита от множества client_pubkey: server-side handshake rate-limit (см. backpressure правила [B5] в спеке — `max_pending_requests_per_peer`) ограничивает new-handshake поток per source.
+
 Bootstrap exception: genesis bootstrap nodes хардкодированы как `(IP, node_id, pubkey) × 12`. Bootstrap принимает proof от любого валидного ML-DSA-65 ключа (Account Table не проверяется). Для защиты от connection flood клиент прилагает proof-of-work:
 
 ```
