@@ -21,7 +21,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use ed25519_dalek::{Signature, Verifier, VerifyingKey, SIGNATURE_LENGTH, PUBLIC_KEY_LENGTH};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::SystemTime};
 use tokio::sync::Mutex;
@@ -62,7 +62,9 @@ fn exit_node_label(ip: &str) -> Option<(&'static str, &'static str)> {
 
 fn is_valid_address(addr: &str) -> bool {
     addr.len() == ADDRESS_HEX_LEN
-        && addr.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        && addr
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
 fn unix_ms() -> u64 {
@@ -166,7 +168,9 @@ impl AppState {
     async fn save(&self, state: &StateFile) -> Result<(), String> {
         let tmp = self.state_path.with_extension("tmp");
         let json = serde_json::to_vec_pretty(state).map_err(|e| e.to_string())?;
-        tokio::fs::write(&tmp, &json).await.map_err(|e| e.to_string())?;
+        tokio::fs::write(&tmp, &json)
+            .await
+            .map_err(|e| e.to_string())?;
         tokio::fs::rename(&tmp, self.state_path.as_path())
             .await
             .map_err(|e| e.to_string())?;
@@ -180,12 +184,12 @@ impl AppState {
                 Err(e) => {
                     tracing::warn!("state parse error: {}, starting fresh", e);
                     StateFile::default()
-                }
+                },
             },
             Err(_) => {
                 tracing::info!("no state file, starting fresh");
                 StateFile::default()
-            }
+            },
         }
     }
 }
@@ -216,21 +220,24 @@ async fn handler_heartbeat(
         None => {
             return (
                 StatusCode::OK,
-                Json(serde_json::to_value(HeartbeatResponse {
-                    ok: false,
-                    reason: Some("not_via_montana_vpn".into()),
-                    via_montana: false,
-                    node: None,
-                    node_city: None,
-                    throttled: None,
-                    credited_seconds: None,
-                    balance: 0.0,
-                    seconds: 0.0,
-                    auth_mode: None,
-                }).unwrap()),
+                Json(
+                    serde_json::to_value(HeartbeatResponse {
+                        ok: false,
+                        reason: Some("not_via_montana_vpn".into()),
+                        via_montana: false,
+                        node: None,
+                        node_city: None,
+                        throttled: None,
+                        credited_seconds: None,
+                        balance: 0.0,
+                        seconds: 0.0,
+                        auth_mode: None,
+                    })
+                    .unwrap(),
+                ),
             )
                 .into_response();
-        }
+        },
     };
 
     let now_ms = unix_ms();
@@ -263,10 +270,13 @@ async fn handler_heartbeat(
     };
 
     let mut state = app.inner.lock().await;
-    let rec = state.accounts.entry(addr.clone()).or_insert_with(|| AccountVpnRecord {
-        created_unix_ms: now_ms,
-        ..Default::default()
-    });
+    let rec = state
+        .accounts
+        .entry(addr.clone())
+        .or_insert_with(|| AccountVpnRecord {
+            created_unix_ms: now_ms,
+            ..Default::default()
+        });
 
     if let Some((pk_hex, nonce)) = signature_check {
         if rec.pubkey_hex.is_none() {
@@ -314,7 +324,11 @@ async fn handler_heartbeat(
             seconds: rec.seconds_x1000 as f64 / 1000.0,
             auth_mode: Some(auth_mode),
         };
-        return (StatusCode::OK, Json(serde_json::to_value(response).unwrap())).into_response();
+        return (
+            StatusCode::OK,
+            Json(serde_json::to_value(response).unwrap()),
+        )
+            .into_response();
     }
 
     let credited_ms: u64 = if last > 0 && gap_ms <= MAX_GAP_MS {
@@ -353,7 +367,11 @@ async fn handler_heartbeat(
         seconds,
         auth_mode: Some(auth_mode),
     };
-    (StatusCode::OK, Json(serde_json::to_value(response).unwrap())).into_response()
+    (
+        StatusCode::OK,
+        Json(serde_json::to_value(response).unwrap()),
+    )
+        .into_response()
 }
 
 async fn handler_balance(
@@ -425,8 +443,16 @@ async fn handler_stats(State(app): State<AppState>) -> impl IntoResponse {
     let now = unix_ms();
     let total_nj: u64 = state.accounts.values().map(|r| r.balance_nj).sum();
     let total_sec_x1000: u64 = state.accounts.values().map(|r| r.seconds_x1000).sum();
-    let active = state.accounts.values().filter(|r| now.saturating_sub(r.last_hb_unix_ms) < 60_000).count();
-    let signed = state.accounts.values().filter(|r| r.pubkey_hex.is_some()).count();
+    let active = state
+        .accounts
+        .values()
+        .filter(|r| now.saturating_sub(r.last_hb_unix_ms) < 60_000)
+        .count();
+    let signed = state
+        .accounts
+        .values()
+        .filter(|r| r.pubkey_hex.is_some())
+        .count();
     Json(StatsResponse {
         wallets: state.accounts.len(),
         total_juno: total_nj as f64 / 1_000_000.0,
@@ -442,9 +468,16 @@ async fn handler_purge(
     State(app): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    let client_ip = headers.get("x-real-ip").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let client_ip = headers
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
     if client_ip != "127.0.0.1" && client_ip != "::1" && !client_ip.is_empty() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "forbidden"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "forbidden"})),
+        )
+            .into_response();
     }
     let cutoff_ms = unix_ms().saturating_sub(PURGE_INACTIVE_DAYS * 86_400_000);
     let mut state = app.inner.lock().await;
@@ -467,8 +500,6 @@ async fn handler_purge(
     }))
     .into_response()
 }
-
-
 
 #[derive(Debug, Deserialize)]
 struct RevokeBody {
@@ -581,15 +612,28 @@ mod tests {
     fn test_address_validation() {
         assert!(is_valid_address("2f8714b236118011647ec51d0ca6ad40d286bec7"));
         assert!(!is_valid_address("2f8714b236118011647ec51d0ca6ad40d286bec")); // too short
-        assert!(!is_valid_address("2F8714B236118011647EC51D0CA6AD40D286BEC7")); // uppercase
-        assert!(!is_valid_address("xx14b236118011647ec51d0ca6ad40d286bec7zz")); // non-hex
+        assert!(!is_valid_address(
+            "2F8714B236118011647EC51D0CA6AD40D286BEC7"
+        )); // uppercase
+        assert!(!is_valid_address(
+            "xx14b236118011647ec51d0ca6ad40d286bec7zz"
+        )); // non-hex
     }
 
     #[test]
     fn test_exit_node_label() {
-        assert_eq!(exit_node_label("<exit-removed>"), Some(("helsinki", "Хельсинки")));
-        assert_eq!(exit_node_label("<exit-de>"), Some(("frankfurt", "Франкфурт")));
-        assert_eq!(exit_node_label("86.104.72.12"), Some(("newyork", "Нью-Йорк")));
+        assert_eq!(
+            exit_node_label("<exit-removed>"),
+            Some(("helsinki", "Хельсинки"))
+        );
+        assert_eq!(
+            exit_node_label("<exit-de>"),
+            Some(("frankfurt", "Франкфурт"))
+        );
+        assert_eq!(
+            exit_node_label("86.104.72.12"),
+            Some(("newyork", "Нью-Йорк"))
+        );
         assert_eq!(exit_node_label("1.2.3.4"), None);
     }
 
@@ -630,10 +674,8 @@ mod tests {
 
     #[test]
     fn test_credited_arithmetic_overflow_safe() {
-        // saturating_mul защита от overflow
         let huge_ms = u64::MAX / 2;
         let result = huge_ms.saturating_mul(RATE_NJ_PER_SECOND) / 1000;
-        // Просто проверка что не panics
-        assert!(result <= u64::MAX);
+        assert_eq!(result, u64::MAX / 1000);
     }
 }

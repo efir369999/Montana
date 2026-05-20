@@ -1029,7 +1029,7 @@ BatchLookupError:
 
 ### Effective privacy analysis
 
-На масштабе сети 1B+ активных пользователей клиент собирает passively-observed pool активных аккаунтов через gossip proposals. Realistic pool size: 10K–100K накопленных за τ₂ observation window.
+На целевом масштабе сети до ~1B активных аккаунтов (архитектурная цель; один только `AccountRecord` state ≈2.06 TB, fast-sync benchmarks остаются M7 gate) клиент собирает passively-observed pool активных аккаунтов через gossip proposals. Realistic pool size: 10K–100K накопленных за τ₂ observation window.
 
 При pool size 10K–100K и K=16:
 - **Effective anonymity:** ~2–3 бита (1-in-4 до 1-in-8 practical protection)

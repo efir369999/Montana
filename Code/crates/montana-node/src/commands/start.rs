@@ -5,7 +5,6 @@ use std::time::Instant;
 use mt_account::{apply_proposal, ProposalSettle};
 use mt_codec::CanonicalEncode;
 use mt_consensus::{proposal_hash, ProposalHeader};
-use mt_net::{MsgType, ProtocolMessage};
 use mt_crypto::{sign, Hash32, Signature, SIGNATURE_SIZE};
 use mt_entry::{
     apply_candidate_expiry, apply_noderegistrations_batch, apply_selection_event,
@@ -19,6 +18,7 @@ use mt_lottery::{
     VdfReveal,
 };
 use mt_merkle::{empty_internal, SparseMerkleTree, TREE_DEPTH};
+use mt_net::{MsgType, ProtocolMessage};
 use mt_state::compute_state_root;
 use mt_store::FsStore;
 use mt_timechain::{cemented_bundle_aggregate, next_d, vdf_step};
@@ -275,8 +275,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // NodeTable работает как passive follower: не producит proposal,
                 // break 'active_arm падает в post-match cleanup (candidate_expiry +
                 // selection_event + next_d + save_progress) — узел остаётся жив.
-                let is_singleton =
-                    state.nodes.len() == 1 && state.nodes.get(&my_node).is_some();
+                let is_singleton = state.nodes.len() == 1 && state.nodes.get(&my_node).is_some();
                 if !is_singleton {
                     eprintln!(
                         "[active W={current}] singleton невозможен (NodeTable={} узлов), пропуск окна — жду peer Proposal (M9 Phase 2)",
@@ -425,13 +424,13 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 if let Some(ref handle) = network_handle {
                     let mut header_bytes = Vec::with_capacity(3722);
                     header.encode(&mut header_bytes);
-                    let envelope = ProtocolMessage::new(
-                        MsgType::Proposal,
-                        header.window_index,
-                        header_bytes,
-                    );
+                    let envelope =
+                        ProtocolMessage::new(MsgType::Proposal, header.window_index, header_bytes);
                     if let Err(e) = handle.broadcast_tx.send(envelope) {
-                        eprintln!("[consensus] broadcast Proposal w={} failed: {e}", header.window_index);
+                        eprintln!(
+                            "[consensus] broadcast Proposal w={} failed: {e}",
+                            header.window_index
+                        );
                     } else {
                         eprintln!(
                             "[consensus] broadcast Proposal window={} → peers",
@@ -728,7 +727,10 @@ fn spawn_network_thread(
         })
         .map_err(|e| NodeError::Network(format!("spawn network thread: {e}")))?;
 
-    Ok(NetworkHandle { broadcast_tx, incoming_rx })
+    Ok(NetworkHandle {
+        broadcast_tx,
+        incoming_rx,
+    })
 }
 
 /// Handle к network thread. Через broadcast_tx consensus loop рассылает

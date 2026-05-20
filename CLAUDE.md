@@ -838,7 +838,7 @@ Gate 0 проверяется ПЕРВЫМ среди всех gates, до field
 - p^k расчёт: p = доля побед атакующего, k = число окон slack. Если p^k > 1% при p = 0.9, механизм **не закрыт**
 - Может ли delay превратиться в denial of admission
 
-### 10. Hardware asymmetry analysis (специфично для VDF-based систем)
+### 10. Hardware asymmetry analysis (специфично для sequential-delay / TimeChain систем)
 
 Для каждого механизма использующего canonical inputs из VDF-output, TimeChain value, или любое time-derived canonical значение:
 

@@ -1,8 +1,8 @@
 # Montana Reference Implementation — Audit Package
 
-**Spec target:** Montana v35.23.0 (2026-05-02) — см. [VERSION.md](VERSION.md)
-**Last verified:** 2026-05-02 (M1-F + M2 + M3 + M4 + M5 audit prep + M6 transport closure + critic-fix bundle 13 findings + Phase C.0-C.4 e2e two-node communication)
-**Audit-ready status:** **M1 + M2 + M3 + M4 + M5 layers — READY FOR EXTERNAL AUDIT** (13 крейтов, ~11190 LOC, 255 invariants, 40/40 findings closed: 20 internal + 8 external #3 (M3-A-1..M3-A-5 + F-5 + AUDIT-sync) + 2 external #3 VERIFIED (P-C-1 F-19 reopen + P-C-2 audit history) + 10 external #4 (M4-MED-1/2 + M4-LOW-3..7 + M5-LOW-8 + M4-INFO-10) + spec v33→v34 monetary refactor + spec v34 → v35.3.2 patch series)
+**Spec target:** Montana Protocol v35.25.1 + Montana Network v1.1.0 + Montana App v3.12.0 — см. [VERSION.md](VERSION.md)
+**Last verified:** 2026-05-20 (CISO-as-a-Service 2026-05-19 response sync; MONT-001 spec patch; MONT-002 online IBT nonce + replay tracking in mt-net / mt-net-transport)
+**Audit-ready status:** **M1 + M2 + M3 + M4 + M5 + M6 + M9 layers — READY FOR EXTERNAL AUDIT**. M8 node binary remains pre-mainnet/in progress; DEV-012 multi-node proposal apply is the current mainnet blocker.
 
 ---
 
@@ -16,12 +16,12 @@
 | **M4 consensus mechanics** (lottery + proposal acceptance + node admission) | ✅ **READY** | mt-lottery, mt-consensus, mt-entry | 3858 | 187 unit + 85 determinism invariants | 0 (1/1 internal closed: M4-1; 7/7 external #4 closed: M4-MED-1/2 + M4-LOW-3..7 + M4-INFO-10) |
 | **M5 persistence** (filesystem state + proposal archive + crash recovery) | ✅ **READY** | mt-store | 955 | 27 unit + 17 determinism invariants | 0 (manual scan clean; v34 monetary refactor удалила MonetaryState persistence) |
 | **Cross-implementation conformance** | ✅ **READY** | Domain registry sync (spec ↔ code, см. VERSION.md) | — | NIST ACVP 66 byte-exact (KeyGen 50 + SigGen 15 + ctx-equivalence 1) + Recovery flow | 0 (F-1 spec patch closed) |
-| **M6 network layer** (wire format + transport + IBT + Dandelion + mesh + SF) | ✅ **READY** | mt-net, mt-net-transport | ~3300 | 110 unit + 14 transport (включая 3 e2e two-node) | 0 (P-C1..P-C8 critic-fix bundle закрыт) |
+| **M6 network layer** (wire format + transport + IBT + Dandelion + mesh + SF) | ✅ **READY** | mt-net, mt-net-transport | ~3300 | 127 tests: mt-net 112 + mt-net-transport 15 (включая 3 e2e two-node) | 0 (P-C1..P-C8 + MONT-002 nonce replay closure) |
 | **M9 conformance suite** | ✅ **READY** | mt-conformance | ~150 | 2 unit byte-exact verify | 0 (envelope A1-A3 + PoW F1-F2 + IBT B1) |
 | **M7 Fast Sync** | ⏳ TODO | mt-sync | — | — | (не реализовано) |
-| **M8 Node binary** (montana-node SPEC_DEVIATIONS rewrite) | 🔄 in progress | montana-node | ~600 | partial | DEV-001..009 open |
+| **M8 Node binary** (montana-node production multi-node path) | 🔄 in progress | montana-node | ~600 | partial | DEV-012 open; DEV-013 closed |
 
-**Audit firm engagement:** возможен прямо сейчас на полный scope **M1 + M2 + M3 + M4 + M5 + M6** (15 крейтов = 13 предыдущих + mt-net + mt-net-transport + mt-conformance). M7 Fast Sync + M8 montana-node binary — defer to отдельной audit фазы.
+**Audit firm engagement:** возможен прямо сейчас на полный scope **M1 + M2 + M3 + M4 + M5 + M6 + M9**. M7 Fast Sync + M8 production multi-node node binary — defer to отдельной audit фазы.
 
 **iOS application audit:** см. отдельный package `iOS/Apps/Montana/AUDIT.md` — Phase 2 in progress, требует Phase 2.1+ implementation (4-6 недель) перед external firm engagement.
 
@@ -37,13 +37,13 @@
 - `src/codec.rs` — MontanaCodec для libp2p request-response с MAX_PROTOCOL_PAYLOAD_BYTES enforcement (Genesis Decree authoritative bound)
 - `src/behaviour.rs` — MontanaBehaviour wrapper (request-response для FastSync/PeerList/BatchLookup/RangeSubscribe; one-way gossip — Phase C.5+)
 - `src/transport.rs` — build_swarm() helper с TCP→TLS 1.3 (rustls)→Noise→Yamux upgrade chain
-- `src/ibt_upgrade.rs` — classify_proof() для access level determination (Node/Candidate/Account)
+- `src/ibt_upgrade.rs` — classify_proof() для access level determination (Node/Candidate/Account) with online_session_nonce + used_online_nonces replay tracking
 - `tests/e2e_two_node_handshake.rs` — Manual Validation Gate scenario 6 PASS (Ping/Pong через full transport chain)
 - `tests/e2e_proposal_exchange.rs` — scenario 7 PASS (synthetic Proposal payload + 512 KiB boundary test)
 
 **mt-conformance** (~150 LOC) — M9 standalone test vectors crate для cross-implementation verification:
 - VectorEnvelope (A1/A2/A3 byte-exact)
-- VectorIbtSeed (B1 после P-C2 rename mt-tunnel→mt-tunnel-online)
+- VectorIbtSeed (B1 после P-C2 rename mt-tunnel→mt-tunnel-online; Network v1.1.0 adds online_session_nonce)
 - VectorPow (F1/F2 target derivation)
 - Public API: `all_envelope_vectors()`, `all_pow_vectors()`, `ibt_b1_online_proof()`
 

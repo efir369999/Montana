@@ -363,7 +363,10 @@ mod tests {
         p.bootstrap_node_pubkey = [0u8; PUBLIC_KEY_SIZE];
         p.target_zero = [0u8; 32];
         p.genesis_content_data_hash = [0u8; 32];
-        assert!(!is_genesis_bootstrap_finalized(&p), "all zeros → not finalized");
+        assert!(
+            !is_genesis_bootstrap_finalized(&p),
+            "all zeros → not finalized"
+        );
 
         p.bootstrap_account_pubkey = [0xAB; PUBLIC_KEY_SIZE];
         assert!(!is_genesis_bootstrap_finalized(&p));
@@ -375,7 +378,10 @@ mod tests {
         assert!(!is_genesis_bootstrap_finalized(&p));
 
         p.genesis_content_data_hash = [0x42; 32];
-        assert!(is_genesis_bootstrap_finalized(&p), "all 4 non-zero → finalized");
+        assert!(
+            is_genesis_bootstrap_finalized(&p),
+            "all 4 non-zero → finalized"
+        );
     }
 
     #[test]

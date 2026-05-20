@@ -34,7 +34,7 @@ cd montana/Протокол/Code
 
 # Verify HEAD matches expected commit (audit signature confirms specific revision)
 git rev-parse HEAD
-# Expected for spec v35.23.0 audit cycle: 2546269 (либо later forward-compatible)
+# Expected for the v35.25.1 audit cycle: use the audited commit hash or a later forward-compatible revision.
 ```
 
 ---

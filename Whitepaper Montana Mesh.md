@@ -5,6 +5,8 @@
 
 ---
 
+> **Status note:** this mesh paper is a pre-audit companion draft, not the Metzdowd publication target. The authoritative corrected core paper is [`Whitepaper Montana.md`](Whitepaper%20Montana.md). Post-audit corrections apply here as well: sequential delay function over SHA-256 rather than VDF terminology, scoped post-quantum claims until Noise_PQ transport migration, and quantified/qualified billion-account scaling.
+
 ## Abstract
 
 A network in which value moves between parties without trusted intermediaries and without dependence on classical cryptography must simultaneously solve three problems: global consensus on event ordering, transport-level protection against passive observers and active censors, and infrastructural resilience against the failure or capture of individual nodes. Existing systems solve one of the three. Bitcoin gives consensus but not transport privacy. Tor gives transport privacy but not consensus. Tailscale and WireGuard give peer-to-peer connectivity but not infrastructure sovereignty. Montana attempts to combine all three in a single system. It consists of two coupled layers: **TimeChain**, a post-quantum blockchain whose scarcity is time (not block space and not fees), and **Mesh VPN**, a federation of city-nodes, each of which exposes its region of the internet and underwrites its neighbors when they fail. The invariant metaphor: each node is a city on a map; the network of VPN-cities is the internet.
@@ -15,9 +17,9 @@ A network in which value moves between parties without trusted intermediaries an
 
 Bitcoin [1] demonstrated that decentralized monetary consensus is achievable without intermediaries. Tor [11] demonstrated that anonymous traffic routing is achievable on a public network. WireGuard [12] and its descendants showed that simple, fast peer-to-peer VPN is possible on top of modern cryptography. None of these systems combine the three properties Montana targets — a sovereign internet at the scale of ≥10⁹ users: global ordering, transport privacy, and self-sovereign infrastructure.
 
-Bitcoin and its descendants further leave two unresolved vulnerabilities. First, all production blockchains derive signature security from elliptic-curve discrete-logarithm assumptions. Shor's algorithm [8], on a sufficiently large quantum computer, breaks these assumptions in polynomial time. NIST standardized post-quantum signatures and key-encapsulation mechanisms in 2024 (FIPS 203 [2], 204 [3], 205); major chains have not migrated. Second, fee-based anti-spam scales poorly under adoption: under congestion small operations are priced out, under abundance spam returns at marginal cost. Layer-2 systems (state channels, rollups) shift the economics rather than remove the underlying scarcity.
+Bitcoin and its descendants further leave two unresolved vulnerabilities. First, all production blockchains derive signature security from elliptic-curve discrete-logarithm assumptions. Shor's algorithm [8], on a sufficiently large quantum computer, breaks these assumptions in polynomial time. NIST standardized post-quantum key encapsulation and signatures in 2024 (FIPS 203 [2], 204 [3]); major chains have not migrated. Second, fee-based anti-spam scales poorly under adoption: under congestion small operations are priced out, under abundance spam returns at marginal cost. Layer-2 systems (state channels, rollups) shift the economics rather than remove the underlying scarcity.
 
-Montana proposes a chain whose signature security rests entirely on post-quantum primitives, and whose anti-spam mechanism operates on time rather than money [13]. The chain advances by a verifiable delay function (VDF) [5,6,7] over SHA-256, producing globally ordered windows of approximately 60 seconds. Operations within a window are rate-limited by three independent time-derived scarcities: per-identity, account chain length, and seniority. On top of this layer, the protocol deploys a second layer — mesh VPN — using Reality (xray) [14] to mask traffic as a regular TLS handshake to a legitimate public destination.
+Montana proposes a chain whose consensus signatures use post-quantum primitives, and whose anti-spam mechanism operates on time rather than money [13]. The chain advances by a sequential delay function over SHA-256, producing globally ordered windows of approximately 60 seconds; verification costs the same order of work as computation, so this is not a VDF in the efficient-verification literature sense. Operations within a window are rate-limited by three independent time-derived scarcities: per-identity, account chain length, and seniority. On top of this layer, the protocol deploys a second layer — mesh VPN — using Reality (xray) [14] to mask traffic as a regular TLS handshake to a legitimate public destination.
 
 ---
 
@@ -183,7 +185,7 @@ The public dashboard (`montana.quest/net`) **does not expose node IPs** in JSON 
 
 ## 8. Scale
 
-The baseline target is supporting ≥10⁹ active users. Every architectural decision in Montana is checked against this baseline; mechanisms that do not scale are dropped without discussion. See the dedicated document "Scale baseline 1B+".
+The baseline target is supporting ≥10⁹ active accounts. This is a quantified architecture target, not a completed benchmark claim: `AccountRecord` state alone is about 2.06 TB at 1B active accounts, and snapshot fast-sync benchmarks remain an M7 gate.
 
 Layer estimates:
 

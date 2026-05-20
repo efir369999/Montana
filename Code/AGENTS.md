@@ -6,19 +6,19 @@ This document is the canonical entry point for any AI agent or human researcher 
 
 Montana is a from-scratch post-quantum blockchain. Three architectural primitives:
 
-1. **VDF-based TimeChain** — globally-ordered windows of ~60 seconds each, sealed by a sequential SHA-256 chain (D = 325 000 000 iterations per window). Cannot be parallelized, cannot be skipped. This is the consensus clock.
+1. **Sequential-delay TimeChain** — globally-ordered windows of ~60 seconds each, sealed by a sequential SHA-256 chain (D = 325 000 000 iterations per window). Cannot be parallelized, cannot be skipped. Verification costs the same order of work as computation, so this is not a VDF in the efficient-verification literature sense.
 2. **Time-as-scarcity** — anti-spam through window-rate-limits, chain_length thresholds, seniority gating. No transaction fees. No gas. Cannot accelerate operations by paying.
-3. **Post-quantum from primitives up** — ML-DSA-65 (FIPS 204) for signatures, ML-KEM-768 (FIPS 203) for key exchange, SHA-256 for hashing and VDF, PBKDF2 for key derivation. No ECDSA, no RSA, no curve25519, no secp256k1.
+3. **Post-quantum where the protocol currently claims it** — ML-DSA-65 (FIPS 204) for consensus signatures, ML-KEM-768 (FIPS 203) at the application layer, SHA-256 for hashing and TimeChain, PBKDF2 for key derivation. Transport confidentiality is tracked separately through the Noise_PQ migration.
 
-Spec is the single source of truth: [`Протокол/Montana Protocol v35.25.1.md`](../Montana%20Protocol%20v35.25.1.md). ~600 KB markdown, full whitepaper.
+Spec is the single source of truth: [`../Montana Protocol v35.25.1.md`](../Montana%20Protocol%20v35.25.1.md). ~600 KB markdown, full protocol specification.
 
 ## Status
 
-**Pre-mainnet v0.1.** No mainnet date. No token launch. No premine. The implementation is M1-M6 + M9 ready for external audit; M8 (node binary) has 9 documented spec deviations (see [`docs/SPEC_DEVIATIONS.md`](docs/SPEC_DEVIATIONS.md)) operating in M5-singleton mode (one node, no network layer yet).
+**Pre-mainnet v0.2.** No mainnet date. No token launch. No premine. The implementation is M1-M6 + M9 ready for external audit; M8 (node binary) is still in progress, with known deviations and closures tracked in [`docs/SPEC_DEVIATIONS.md`](docs/SPEC_DEVIATIONS.md). DEV-012 (multi-node proposal apply in the node binary) remains the current mainnet blocker.
 
-Singleton means: each deployed node is its own genesis bootstrap, ticking VDF locally, writing its own state. Until M6 network layer is wired into the binary (M6 transport crate is ready, integration into node binary is in progress), nodes do not talk to each other.
+Singleton means: each deployed node is its own genesis bootstrap, ticking TimeChain locally and writing its own state. Until multi-node proposal apply is wired into the binary, nodes do not provide production BFT consensus.
 
-This is intentional for v0.1 — it lets you deploy and break a Montana node end-to-end **without** needing a network of peers.
+This is intentional for v0.2 — it lets you deploy and break a Montana node end-to-end **without** needing a production network of peers.
 
 ---
 
@@ -28,7 +28,7 @@ This is intentional for v0.1 — it lets you deploy and break a Montana node end
 
 ```bash
 git clone https://github.com/efir369999/Montana.git /opt/montana && \
-sudo bash /opt/montana/Протокол/Code/scripts/install-vps-full.sh
+sudo bash /opt/montana/Code/scripts/install-vps-full.sh
 ```
 
 What this does (≈10 minutes on a 1 vCPU VPS):
@@ -53,20 +53,20 @@ montana-node status --data-dir /var/lib/montana    # phase, balance, current_win
 ### Just the node, no VPN
 
 ```bash
-sudo bash /opt/montana/Протокол/Code/scripts/install-vps.sh
+sudo bash /opt/montana/Code/scripts/install-vps.sh
 ```
 
 ### Just the VPN, no node
 
 ```bash
-sudo bash /opt/montana/Протокол/Code/montana-vpn/install.sh
+sudo bash /opt/montana/Code/montana-vpn/install.sh
 ```
 
 ### macOS (Apple Silicon)
 
 ```bash
 git clone https://github.com/efir369999/Montana.git ~/Montana && \
-bash ~/Montana/Протокол/Code/scripts/install-local-mac.sh
+bash ~/Montana/Code/scripts/install-local-mac.sh
 ```
 
 This installs the node under `~/Library/Application Support/Montana/node/` with a launchd agent.
@@ -76,7 +76,7 @@ This installs the node under `~/Library/Application Support/Montana/node/` with 
 See [`docs/build-from-source.md`](docs/build-from-source.md) for the reproducible-build path. Short version:
 
 ```bash
-cd Протокол/Code
+cd Code
 cargo build --release -p montana-node
 ./target/release/montana-node --help
 ```
@@ -197,7 +197,7 @@ Expected: RSS ≈ stable around 30-50 MiB (peak ~100 MiB during VDF burst). Cont
 The state machine `apply_proposal(state, proposal) → state'` must reject malformed input deterministically. Use `cargo-fuzz`:
 
 ```bash
-cd Протокол/Code
+cd Code
 cargo install cargo-fuzz
 cargo fuzz run apply_proposal_arbitrary -- -max_total_time=3600
 ```
@@ -208,11 +208,11 @@ cargo fuzz run apply_proposal_arbitrary -- -max_total_time=3600
 
 ## Audit the code against the spec
 
-The spec is at [`Протокол/Montana Protocol v35.25.1.md`](../Montana%20Protocol%20v35.25.1.md), authoritative.
+The spec is at [`../Montana Protocol v35.25.1.md`](../Montana%20Protocol%20v35.25.1.md), authoritative.
 
 ### Known deviations
 
-[`docs/SPEC_DEVIATIONS.md`](docs/SPEC_DEVIATIONS.md) lists 9 documented deviations, all in `montana-node` (M8 binary, in progress). Each entry:
+[`docs/SPEC_DEVIATIONS.md`](docs/SPEC_DEVIATIONS.md) lists known deviations, acknowledgments, and closures across the implementation. Each entry:
 
 - Spec quote
 - Code location

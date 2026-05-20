@@ -5,6 +5,8 @@
 
 ---
 
+> **Status note:** this Chinese mesh paper is a pre-audit companion draft, not the Metzdowd publication target. The authoritative corrected core paper is [`Whitepaper Montana.md`](Whitepaper%20Montana.md). Post-audit corrections apply here as well: sequential delay function over SHA-256 rather than VDF terminology, scoped post-quantum claims until Noise_PQ transport migration, and quantified/qualified billion-account scaling.
+
 ## 摘要
 
 要在没有可信中介、不依赖经典密码学的前提下,在各方之间传递价值,网络必须同时解决三个问题:事件全局排序的一致性、对被动观察者和主动审查者的传输层保护、以及在个别节点失效或被夺取时的基础设施韧性。现有系统只解决其中一个。Bitcoin 提供共识,但不提供传输隐私。Tor 提供传输隐私,但不提供共识。Tailscale 与 WireGuard 提供 peer-to-peer 互联,但不提供基础设施自治。Montana 试图在一个系统中同时具备这三种属性。它由两个相互耦合的层组成:**TimeChain**——一条后量子区块链,其稀缺资源是时间(而非区块空间或手续费),以及 **Mesh VPN**——一个城市节点的联邦,每个节点开放其所在区域的互联网,并在邻近节点失效时承担其客户端。不变的隐喻:每个节点都是地图上的一座城市;由 VPN 城市组成的网络就是互联网。
@@ -15,9 +17,9 @@
 
 Bitcoin [1] 证明了去中心化的货币共识无须可信中介即可实现。Tor [11] 证明了在公共网络中匿名路由流量是可行的。WireGuard [12] 及其衍生方案表明,基于现代密码学构建简单且高速的 peer-to-peer VPN 是可能的。这些系统都不能同时具备 Montana 所追求的三项属性——面向 ≥10⁹ 用户规模的自治互联网所需的:全局排序、传输隐私、以及自治基础设施。
 
-此外,Bitcoin 及其后继者还存在两个未解决的脆弱性。第一,所有生产级区块链都将签名安全建立在椭圆曲线离散对数假设之上。Shor 算法 [8] 在足够大的量子计算机上以多项式时间打破这些假设。NIST 在 2024 年标准化了后量子签名与密钥封装机制(FIPS 203 [2]、204 [3]、205);主要链尚未迁移。第二,基于手续费的反垃圾机制在大规模采用下扩展不佳:拥堵时小额操作被价格挤出,空闲时垃圾以边际成本回归。Layer-2 系统(状态通道、rollup)只是转移经济成本,并未消除底层稀缺。
+此外,Bitcoin 及其后继者还存在两个未解决的脆弱性。第一,所有生产级区块链都将签名安全建立在椭圆曲线离散对数假设之上。Shor 算法 [8] 在足够大的量子计算机上以多项式时间打破这些假设。NIST 在 2024 年标准化了后量子密钥封装与签名机制(FIPS 203 [2]、204 [3]);主要链尚未迁移。第二,基于手续费的反垃圾机制在大规模采用下扩展不佳:拥堵时小额操作被价格挤出,空闲时垃圾以边际成本回归。Layer-2 系统(状态通道、rollup)只是转移经济成本,并未消除底层稀缺。
 
-Montana 提出:一条签名安全完全建立在后量子原语之上、反垃圾机制基于时间(而非金钱)的链 [13]。链通过 SHA-256 上的可验证延迟函数(VDF)[5,6,7] 推进,产生约 60 秒一格的全局有序窗口。窗口内的操作受三种独立的、由时间派生的稀缺资源限制:每身份每窗口、账户链长度、资历。在此层之上,协议部署第二层——网状 VPN,使用 Reality(xray)[14] 将流量伪装为对合法公开目标的常规 TLS 握手。
+Montana 提出:一条共识签名使用后量子原语、反垃圾机制基于时间(而非金钱)的链 [13]。链通过 SHA-256 上的 sequential delay function 推进,产生约 60 秒一格的全局有序窗口;验证成本与计算成本同阶,因此它不是 Boneh/Pietrzak/Wesolowski 意义上的快速验证 VDF。窗口内的操作受三种独立的、由时间派生的稀缺资源限制:每身份每窗口、账户链长度、资历。在此层之上,协议部署第二层——网状 VPN,使用 Reality(xray)[14] 将流量伪装为对合法公开目标的常规 TLS 握手。
 
 ---
 
@@ -183,7 +185,7 @@ Reality 将握手伪装为对合法公开目标的常规 TLS。观察握手的 D
 
 ## 8. 规模
 
-基线目标是支撑 ≥10⁹ 活跃用户。Montana 的每一项架构决策都对照此基线检验;不可扩展的机制无须讨论即被舍弃。详见单独文档"Scale baseline 1B+"。
+基线目标是支撑 ≥10⁹ 活跃账户。这是量化的架构目标,不是已完成的 benchmark claim:仅 `AccountRecord` state 在 1B active 时约为 2.06 TB, snapshot fast-sync benchmarks 仍是 M7 gate。
 
 各层估算:
 

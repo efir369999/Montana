@@ -29,8 +29,9 @@ pub use framing::{
 };
 pub use ibt::{
     ibt_mesh_message, ibt_mesh_proof, ibt_mesh_verify_explicit, ibt_mesh_verify_with_window,
-    ibt_online_message, ibt_online_proof, ibt_online_verify, IbtError, DOMAIN_TUNNEL_MESH,
-    DOMAIN_TUNNEL_ONLINE, MESH_NONCE_SIZE, MESH_STALENESS_BOUND_TAU1,
+    ibt_online_message, ibt_online_proof, ibt_online_verify, IbtError, OnlineNonceTracker,
+    DOMAIN_TUNNEL_MESH, DOMAIN_TUNNEL_ONLINE, MESH_NONCE_SIZE, MESH_STALENESS_BOUND_TAU1,
+    ONLINE_NONCE_SIZE,
 };
 pub use mesh::{
     apply_mesh_frame, decode_mesh_frame, encode_mesh_frame, LocalMeshState, MeshFrame, MeshIntake,
