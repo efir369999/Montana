@@ -1,6 +1,6 @@
 # Монтана — Спецификация сетевого слоя
 
-**Версия:** 1.0.0 (2026-05-02)
+**Версия:** 1.1.0 (2026-05-20)
 
 **Слой:** Network — между Protocol (низкий) и App (высокий).
 
@@ -51,7 +51,13 @@
 
 ```
 proof = ML-DSA-65_sign(client_privkey,
-          "mt-tunnel-online" || server_node_id || floor(current_window_index / 2))
+          "mt-tunnel-online" || server_node_id || floor(current_window_index / 2)
+          || online_session_nonce)
+
+где:
+  online_session_nonce  32B    — генерируется клиентом из CSPRNG для каждого
+                                 handshake, передаётся в plain части IBT
+                                 advertisement рядом с proof
 ```
 
 Сервер проверяет:
@@ -67,7 +73,7 @@ proof = ML-DSA-65_sign(client_privkey,
 Условия 1-2 выполнены + уровень 3 определён → Noise handshake → P2P-сеть Монтаны с соответствующим уровнем доступа.
 Любое не выполнено → TLS alert `bad_certificate`, close. Стандартное поведение сервера с обязательной аутентификацией клиента — таких серверов в интернете миллионы (корпоративные порталы, API, банковские системы).
 
-Replay protection: server_node_id привязывает proof к конкретному получателю. Window slot ограничивает replay window до 2 окон.
+Replay protection: трёхслойная защита одновременно. (а) `server_node_id` привязывает proof к конкретному получателю — replay против другого сервера невозможен. (б) Window slot ограничивает replay window до 2 окон (≤120 секунд на genesis-калибровке) — proof становится невалидным через окно. (в) **Session nonce tracking.** Сервер хранит `used_online_nonces[client_pubkey]` — set of `online_session_nonce` значений использованных данным клиентом в пределах current/previous window. При приёме proof с `online_session_nonce ∈ used_online_nonces[client_pubkey]` → reject (replay в течение window slot). Set pruning: записи старше 2 окон удаляются (nonce reuse acceptable после expiry, window slot уже невалиден). Это defence-in-depth закрытие класса MITM-replay внутри window slot — даже при перехвате proof атакующий не может переиспользовать его до самого сервера в течение тех же 2 окон.
 
 Bootstrap exception: genesis bootstrap nodes хардкодированы как `(IP, node_id, pubkey) × 12`. Bootstrap принимает proof от любого валидного ML-DSA-65 ключа (Account Table не проверяется). Для защиты от connection flood клиент прилагает proof-of-work:
 
@@ -107,7 +113,7 @@ mesh_proof = ML-DSA-65_sign(
 **Domain separator обязательно `mt-tunnel-mesh`, не `mt-tunnel-online`.** Отдельный separator критичен — иначе атакующий перехвативший online IBT proof (window slot = `2 × τ₁` replay) мог бы использовать его в mesh контексте где staleness window расширен до `7 × τ₁`. Cross-context replay блокируется на уровне domain separation.
 
 **Replay surface analysis.**
-- Online IBT (separator `mt-tunnel-online`): replay window `2 × τ₁` — узкий, acceptable.
+- Online IBT (separator `mt-tunnel-online`): replay window `2 × τ₁` — узкий, плюс per-nonce tracking блокирует replay внутри window slot (см. Replay protection выше).
 - Mesh IBT (separator `mt-tunnel-mesh`): replay window расширен до `7 × τ₁`, но replay блокируется per-nonce tracking.
 - Cross-context: domain separation делает proof для одного context невалидным в другом.
 
@@ -1166,14 +1172,17 @@ Worst case offline 1 τ₂ (полный TTL):
 Создатель:                  клиент (узел / candidate / account)
 Проверяет:                  серверный узел (lookup по Node Table → Candidate Pool → Account Table)
 Формат сериализации:        ML-DSA-65 signature (3309 B) над байтовой строкой
-                            "mt-tunnel-online" || server_node_id || floor(W / 2)
+                            "mt-tunnel-online" || server_node_id || floor(W / 2) ||
+                            online_session_nonce (32 B CSPRNG)
 Состояние:                  ephemeral, не хранится; per-connection, отбрасывается при disconnect
 Какой root:                 не входит ни в один root (transport-layer, ортогонален consensus state)
 Срок жизни:                 2 окна — window slot = current ИЛИ previous (acceptable bound)
 Истечение:                  connection drop; reconnect требует свежего proof
-Конфликт:                   replay protection через `server_node_id` binding к получателю +
-                            window slot bound; cross-context replay блокируется доменным
-                            разделителем `mt-tunnel-online` отдельно от `mt-tunnel-mesh`
+Конфликт:                   replay protection трёхслойная: `server_node_id` binding к
+                            получателю, window slot bound (2 окна), per-nonce tracking
+                            `used_online_nonces[client_pubkey]` внутри window slot.
+                            Cross-context replay блокируется доменным разделителем
+                            `mt-tunnel-online` отдельно от `mt-tunnel-mesh`
 Цена злонамеренного:        brute-force ML-DSA-65 secret key (NIST level 3 — квантово-эквивалентно
                             192-битной симметричной стойкости, infeasible)
 State transition:           не участвует — pure transport gate
@@ -2533,24 +2542,20 @@ Vector A3: maximum payload_length boundary, msg_type 0x41 FastSyncResponse
 #### B. IBT proofs (3 vectors)
 
 ```
-Vector B1: IBT online proof — fixed (sk, server_node_id, current_window)
+Vector B1: IBT online proof — fixed (sk, server_node_id, current_window, online_session_nonce)
   Input:
-    domain          = "mt-tunnel-online" (utf-8 bytes)
-    server_node_id  = 32 B = byte_repeat(0x42, 32)
-    window_index W  = 1000 (u64); floor(W / 2) = 500 = 0x01F4 в derivation
-    derivation seed = "mt-tunnel-online" || server_node_id || u64_LE(500)
-                    = total 16 + 32 + 8 = 56 B
-    sk seed         = SHA-256("mt-test-seed" || "vector-B1") — fixed deterministic
-                      ML-DSA-65 keypair derivation per ML-DSA-65 KeyGen ξ ∈ B32
-  Expected output (hex):
-    seed (32 B):                   f6 40 57 69 ec bf 3d 1f 5b 65 93 c9 71 f1 41 09
-                                   ef 9d 57 62 8b fc 46 b8 f4 d5 c0 b6 6d 0f f1 b9
-    sha256(pk):                    ee 74 16 1e ee dc f4 61 89 73 96 bb e6 55 bc 9c
-                                   35 39 f6 15 a3 ed ce f9 f8 7a 9e 58 82 b3 00 c2
-    sha256(proof signature 3309B): ac 26 a9 ca 84 a9 ae ba 3a af 2f 3f c9 ba 2f 0b
-                                   e9 0c 6d 98 f6 55 ad db 0f 87 5b ca ad ff ef da
-    (mt-net::tests + reference impl byte-exact, regenerated after rename
-     mt-tunnel → mt-tunnel-online per critic-fix P-C2)
+    domain                = "mt-tunnel-online" (utf-8 bytes)
+    server_node_id        = 32 B = byte_repeat(0x42, 32)
+    window_index W        = 1000 (u64); floor(W / 2) = 500 = 0x01F4 в derivation
+    online_session_nonce  = 32 B = byte_repeat(0x55, 32)
+    derivation seed       = "mt-tunnel-online" || server_node_id || u64_LE(500) ||
+                            online_session_nonce
+                          = total 16 + 32 + 8 + 32 = 88 B
+    sk seed               = SHA-256("mt-test-seed" || "vector-B1") — fixed deterministic
+                            ML-DSA-65 keypair derivation per ML-DSA-65 KeyGen ξ ∈ B32
+  Expected output (hex):  TBD-A pending reference impl regeneration после wire format
+                          change (online_session_nonce введён в Network spec patch для
+                          закрытия MONT-002, см. Code/VERSION.md history)
 
 Vector B2: IBT mesh proof — fixed (sk, peer_node_id, cached_window, nonce)
   Input:
