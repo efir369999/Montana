@@ -166,6 +166,23 @@ All randomized decisions at the transport layer (stem routing, frame scheduling,
 
 Transport obfuscation is orthogonal to consensus. The TimeChain and state machine work over any transport without changes.
 
+#### Post-quantum transport migration (M6 milestone)
+
+**Current state (pre-M6).** The transport layer uses TLS 1.3 with classical X25519 ECDHE for the outer tunnel and Noise XK (Diffie-Hellman over X25519) for the inner peer authentication. Both classical handshakes are vulnerable to store-now-decrypt-later attacks by a future quantum adversary: an adversary recording today's traffic can later derive the session key once a sufficiently large quantum computer becomes available. The recorded traffic is then decryptable; identity authentication via ML-DSA-65 signatures is not affected, but transport confidentiality is. Consensus integrity is **not** affected — all consensus signatures are post-quantum (ML-DSA-65) and verified independently of transport.
+
+**M6 target.** Migration to a single post-quantum transport handshake: hybrid Noise_PQ combining X25519 with ML-KEM-768 as the KEM replacement for Diffie-Hellman. After M6 closure, transport confidentiality is post-quantum end-to-end and the TLS 1.3 outer layer is removed (it provided no security property beyond the IBT-authenticated Noise inner layer; its only role was DPI obfuscation, which is preserved by uniform framing on top of Noise_PQ).
+
+**Migration phases.**
+
+- **Phase 0 — Architecture & scaffolding (this spec patch).** Capability detection via a new wire field `pq_transport_version: u8` in the IBT advertisement (0 = classical TLS+Noise, 1 = Noise_PQ hybrid). DEV-014 tracker entry in `Code/docs/SPEC_DEVIATIONS.md` documents the migration plan and current Phase 0 status.
+- **Phase 1 — Noise_PQ handshake implementation.** Implement an ML-KEM-768-augmented Noise XK variant. Two viable paths: (a) fork the `snow` crate to add a ML-KEM-768 DH replacement and contribute upstream, (b) write a custom Noise_PQ handler outside libp2p's noise upgrade and wrap it as a `libp2p::core::upgrade::OutboundConnectionUpgrade`. Implementation cost: 3–5 weeks for production-grade implementation including KAT vectors against the Noise specification's hybrid PQ draft and differential testing against any reference implementation that emerges.
+- **Phase 2 — Hybrid coexistence period.** During roll-out, nodes advertise both classical and Noise_PQ capability via `pq_transport_version`. Peers negotiate the highest mutually supported version. A network-wide chain_length-weighted majority signal (≥67% of active_chain_length advertising Noise_PQ for ≥ τ₂) triggers the deprecation of classical TLS+Noise inbound. Each operator decides individually when to drop classical outbound; the chain_length-weighted majority becomes the floor, not the ceiling, for the deprecation timeline.
+- **Phase 3 — Classical removal.** TLS 1.3 outer layer dropped entirely. The transport stack becomes TCP → Noise_PQ → Yamux. Uniform framing layer is preserved (it provides DPI obfuscation orthogonally to the handshake). Spec bump removes the `pq_transport_version` field once consensus state no longer requires capability negotiation.
+
+**Verification on the genesis 3-node network.** Each phase is verified on the three production nodes (Moscow, Helsinki, Frankfurt) for ≥24 hours of continuous operation before being declared closed. Phase 1 closure requires byte-exact KAT vectors checked into `mt-conformance` and cross-node handshake success with zero classical fallback during the observation window.
+
+**[I-1] compliance status after M6.** Until Phase 3 closure, classical X25519 ECDHE is the open path for store-now-decrypt-later transport confidentiality. After Phase 3 closure, the entire protocol stack is post-quantum end-to-end (signatures via ML-DSA-65, encryption via ML-KEM-768, transport via Noise_PQ). Until then, the threat-model section «Quantum-capable adversary» explicitly documents this as an open exposure with documented closure path.
+
 ### Peer selection
 
 An open entry with a VDF barrier makes Sybil nodes expensive: each Sybil = τ₂ windows of VDF (sequential SHA-256, not parallelizable) + a selection event. Peer selection uses diversity constraints from protocol-level data (start_window) and network-level data (/16, ASN).
