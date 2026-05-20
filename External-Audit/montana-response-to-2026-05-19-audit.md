@@ -142,36 +142,28 @@ Spec change:
 
 ### 3.1 MONT-003 — apply_proposal race condition
 
-**Rejected.** The audit asserts:
+**Rejected.** Citations below are translated from Russian (the protocol specification is currently maintained in Russian; English translation is in progress). Line numbers refer to `Montana Protocol v35.25.1.md`.
+
+The audit asserts:
 
 > "The specification describes apply_proposal as deterministic, but does not explicitly specify the order for multiple operations from the same sender within a window. An attacker can submit two valid operations with the same prev_hash (frontier_hash). The specification does not clarify how conflicts within the same proposal are resolved."
 
 This claim is contradicted by explicit specification text. Citations from Montana Protocol v35.25.0:
 
-**Line 1141:**
-> Каждый аккаунт имеет одну цепочку. Две операции с одним prev_hash = equivocation.
+**Line 1141 (translated from Russian):**
+> Each account has one chain. Two operations with the same prev_hash = equivocation.
 
-(Translation: Each account has one chain. Two operations with the same prev_hash = equivocation.)
+**Line 1147 (translated from Russian):**
+> A node receives operation X with prev_hash = H. The node has already seen operation Y with prev_hash = H, Y ≠ X. A fork is detected. Both operations are marked as equivocated.
 
-**Line 1147:**
-> Узел получает операцию X с prev_hash = H. Узел уже видел операцию Y с prev_hash = H, Y ≠ X. Форк обнаружен. Обе операции помечаются как equivocated.
+**Line 1186 (translated from Russian):**
+> Each account chain: 1 operation per τ₁.
 
-(Translation: A node receives operation X with prev_hash = H. The node has already seen operation Y with prev_hash = H, Y ≠ X. A fork is detected. Both operations are marked as equivocated.)
+**Line 1194 (translated from Russian):**
+> Dependency rule. The operation of an account in a window references frontier_hash from the settled state of the previous window. N > 1 operations of one account in one window would require intra-window ordering — either subjective (mempool-dependent, violation of [I-3]), or canonical hash composition (expansion of [I-8] surface). With N = 1, the problem is absent: the order of the operation is unique.
 
-**Line 1186:**
-> Каждая цепочка аккаунта: 1 операция за τ₁.
-
-(Translation: Each account chain: 1 operation per τ₁.)
-
-**Line 1194:**
-> Dependency rule. Операция аккаунта в окне ссылается на frontier_hash из settled state предыдущего окна. N>1 операций одного аккаунта в одном окне потребовали бы intra-window ordering — либо subjective (mempool-зависимое, нарушение [I-3]), либо canonical hash composition (расширение поверхности [I-8]). При N=1 проблема отсутствует: порядок операции единственный.
-
-(Translation: The operation of an account in a window references frontier_hash from the settled state of the previous window. N > 1 operations of one account in one window would require intra-window ordering — either subjective (mempool-dependent, violation of [I-3]), or canonical hash composition (expansion of [I-8] surface). With N = 1, the problem is absent: the order of the operation is unique.)
-
-**Line 1198:**
-> Бинарная разрешимость double-spend. Правило «67% active_chain_length за одну операцию по одному prev_hash» работает потому что конфликт двоичен: либо A, либо B. N>1 операций за окно делает конфликт multi-way и требует дополнительного механизма выбора между тремя и более ветвями за окно — блокер liveness и новая поверхность атаки.
-
-(Translation: Binary resolution of double-spend. The rule "67% active_chain_length for one operation per one prev_hash" works because the conflict is binary: either A, or B. N > 1 operations per window makes the conflict multi-way and requires an additional mechanism for choosing between three or more branches per window — a liveness blocker and new attack surface.)
+**Line 1198 (translated from Russian):**
+> Binary resolution of double-spend. The rule "67% active_chain_length for one operation per one prev_hash" works because the conflict is binary: either A, or B. N > 1 operations per window makes the conflict multi-way and requires an additional mechanism for choosing between three or more branches per window — a liveness blocker and new attack surface.
 
 The specification therefore:
 1. Limits each sender to exactly one operation per τ_1 by design.
@@ -225,7 +217,7 @@ These items are research-grade work appropriate for a journal or conference subm
 
 The Montana project thanks the CISO-as-a-Service Team for the thorough review. The critical findings on terminology and abstract precision (WP-1, WP-2, WP-3) are valuable and would have torpedoed publication if left unaddressed. The methodology of separating Adversarial Protocol Design Review from Technical Vulnerability Analysis is sound and recommended for future external reviews of the project.
 
-The two false claims (MONT-003 race condition, WP-8 sub-claim "does not explain") are noted as procedural reminders that audit reviewers should verify negative claims through reading the relevant specification sections, not through keyword grep. The project's own internal architect role (`Протокол/CLAUDE.md` Gate −1, step 5) formalizes this discipline; the same discipline applies to external review verification.
+The two false claims (MONT-003 race condition, WP-8 sub-claim "does not explain") are noted as procedural reminders that audit reviewers should verify negative claims through reading the relevant specification sections, not through keyword grep. The project's own internal architect role (`Montana-Protocol/CLAUDE.md` (Russian) Gate −1, step 5) formalizes this discipline; the same discipline applies to external review verification.
 
 Path A whitepaper revision is committed alongside this response. Spec patches MONT-001 (constant-time) and MONT-002 (online IBT nonce tracking) are committed separately. The project is ready for Metzdowd Cryptography List submission upon the author's go-ahead.
 
