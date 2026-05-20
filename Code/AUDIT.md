@@ -278,7 +278,7 @@ Each primitive with secret material has a detailed Security Card in [docs/securi
 1. **OpenSSL internal correctness** — out of scope; OpenSSL Foundation's responsibility. The auditor may assume the OpenSSL implementations of FIPS 204 / 203 Algorithms 1 / 2 / 16 are correct (audited and deployed at scale)
 2. **Consensus protocol correctness M3-M5** — separate layers (mt-account, mt-consensus, mt-lottery, mt-entry, mt-store) — internal-tested with 255+ tests green, but not yet audit-prepared (TODO for subsequent audit phases)
 3. **Network protocol** — M6+ (mt-net does not yet exist)
-4. **Application layer** — a separate workspace in the future (Juno agent, messaging, file storage)
+4. **Application layer** — a separate workspace in the future (Junona agent, messaging, file storage)
 5. **Hardware side-channel attacks** — software-only assumption; embedded-deployment audit is separate
 
 ### Known limitations (deferred, with rationale)
