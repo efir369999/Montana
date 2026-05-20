@@ -1,242 +1,242 @@
-# Монтана — Спецификация протокола (Protocol layer)
+# Montana — Protocol Layer Specification
 
-**Версия:** 35.25.1 (2026-05-20)
+**Version:** 35.25.1 (2026-05-20)
 
-
----
-
-**Монтана даёт человеку цифровую собственность в мире, где всё арендуется.**
-
-Твой ключ — твоя идентичность.
-Твой узел — твоё хранилище.
-Твоё время работы — твои монеты.
-Твоё присутствие — твой вес.
-Твой агент — твоё расширение.
-
-Одна сид-фраза. Полный контроль. Постквантовая криптография на десятилетия вперёд.
-
-Не приватность. Не децентрализация. Не криптовалюта. Не мессенджер. Цифровая собственность.
 
 ---
 
-## Определение
+**Montana gives a person digital ownership in a world where everything is rented.**
 
-Монтана — персональный пиринговый интернет на протоколе канонического порядка событий. Защищённое хранение данных, приватная связь и валюта Монтана — на узле пользователя.
+Your key is your identity.
+Your node is your storage.
+Your uptime is your coins.
+Your presence is your weight.
+Your agent is your extension.
 
-Протокол Монтаны — фундамент персонального интернета. Сеть независимых узлов, каждый из которых ведёт собственный **ход вычислений с проверяемой задержкой** — цепочку шагов, которую нельзя ускорить, и результат которой любой участник может пересчитать и проверить. Все узлы через консенсус собирают свои ходы в единую каноническую последовательность событий. **Вес узла в этом консенсусе есть длительность его непрерывного присутствия в сети.** Каждое канонически зарегистрированное окно порождает награду в текущую базовую ставку эмиссии — детерминированную функцию номера окна и констант Указа Генезиса, без дискреционной надбавки.
+One seed phrase. Full control. Post-quantum cryptography for decades to come.
 
-Длина цепочки узла образует новый тип цифрового свидетельства: псевдонимное, верифицируемое и экономически несводимое непрерывное присутствие в сети. Оно не приобретается как готовый актив, а накапливается исключительно по мере прохождения канонического времени и подтверждённого участия узла в окнах протокола. Тем самым данный тип свидетельства отличается от существующих форм цифрового веса, в которых первичным входом выступает покупаемый ресурс. Политическая неплутократия в этой конструкции является следствием онтологического устройства системы, а не её исходным принципом.
-
-**Канонический порядок** — реляционная структура, образованная последовательным хэшированием внутри хода вычислений с проверяемой задержкой и канонической упорядоченностью, устанавливаемой консенсусом между узлами. Внутри этой структуры время в протоколе существует как последовательность канонических событий. Монтана — самодостаточная система отсчёта: каноническая последовательность событий, которую внешние системы могут наблюдать и использовать как систему отсчёта для своих нужд.
-
-`D₀ = 325 000 000` зафиксирован в Genesis Decree из единственного исторического quartz-замера на генезис-железе (Apple iMac M1 2021, idle, single-thread; см. «Канонический порядок → Calibration target» и «Калибровка D₀» в Указе Генезиса). После Genesis протокол не использует никакие часы (per [I-18]); длительность окна на каждом узле — emergent property его hardware и не входит в consensus state. Canonical window count синхронен между узлами через VDF chain length, не через физическое время.
-
-### Три проблемы доверия
-
-Монтана решает три проблемы, каждая без участия третьей стороны:
-
-- **Доверие ко времени.** Протокол производит каноническую последовательность событий без внешних источников. Решено протокольным слоем: ход вычислений с проверяемой задержкой, консенсус, окна времени.
-- **Доверие к хранению.** Данные пользователя хранятся на его узле. Протокол предоставляет фундамент: идентичность аккаунта, фиксация содержимого в виде хэша размером тридцать два байта с привязкой к окну на всю жизнь сети, стимул держать узел постоянно в сети (лотерея, валюта Монтана). Хранение, шифрование, индексация — клиентский слой.
-- **Доверие к коммуникации.** Связь между пользователями идёт через их узлы, без центрального посредника. Протокол предоставляет: пиринговую сеть, идентичность, постквантовое шифрование. Мессенджер, поиск контактов, профили — клиентский слой.
-
-### Четыре слоя персонального интернета
-
-Протокол и клиентский слой вместе образуют четыре слоя:
-
-**1. Агент-посредник.** ИИ-агент (Юнона) действует строго от имени пользователя. Фильтрует и приоритизирует информацию по критериям владельца, не по алгоритмам платформы. Может ходить во внешний интернет, собирать данные, но решения о фильтрации принадлежат человеку. *Реализация: полностью клиентский слой. Полная спецификация агента — архитектура изоляции, уровни разрешений, модель угроз, среда выполнения языковой модели, делегирование подписи, журнал действий — находится в спецификации приложения Монтаны. Спецификация протокола намеренно не содержит этих деталей: агент — механизм прикладного уровня, протокол не знает о его существовании и не различает операцию, подписанную вручную, и операцию, подписанную через агента.*
-
-**2. Локальное хранилище знаний.** Всё что пользователь читал, сохранял, получал — индексировано, доступно для поиска, хранится на его узле. Не на серверах корпорации. Контекст накапливается со временем — персональная база знаний. Протокол фиксирует факт существования (хэш размером тридцать два байта с привязкой к окну времени). Содержание — на узле владельца, зашифровано его ключом. *Реализация: протокол даёт фундамент (фиксация хэша, идентичность, ключевая инфраструктура) — это описано в данной спецификации. Клиентская часть — формат локального хранилища, шифрование содержимого ключом владельца, индексация, полнотекстовый поиск, структура базы знаний — находится в спецификации приложения Монтаны и здесь не описана.*
-
-**3. Управление вниманием.** Персональный интернет не максимизирует время пользователя в системе, а минимизирует его. Дал нужное — отпустил. Нет алгоритмической ленты, нет рекламы, нет метрик вовлечения, нет автоматического воспроизведения. Бизнес-модель Монтаны — эмиссия через узлы, не торговля вниманием. *Реализация: экономическая конструкция протокола устраняет стимул торговать вниманием — эмиссия через лотерею узлов, не реклама и не подписка (см. разделы о валюте Монтана и о лотерее). Конкретные решения по интерфейсу — отсутствие алгоритмической ленты, формат уведомлений, политика автовоспроизведения, устройство чата и каналов — находятся в спецификации приложения Монтаны и здесь не описаны.*
-
-**4. Контроль данных.** Пользователь решает какие данные о нём существуют и кто имеет доступ. Не «политика конфиденциальности на сорок страниц», а технические механизмы: локальное шифрование на узле, выборочное предоставление доступа через адресное постквантовое шифрование, необязательная публикация профиля и контактов. Балансы публичны по дизайну ([I-2]). Всё остальное — решение владельца. *Реализация: протокол даёт инвариант [I-2] (открытость финансового слоя), фиксацию хэша без содержания, идентичность и постквантовую ключевую инфраструктуру — это описано в данной спецификации. Клиентская часть — формат локального шифрования, избирательное раскрытие, управление приватностью в интерфейсе, формат публикации профиля и контактов — находится в спецификации приложения Монтаны и здесь не описана.*
-
-### Клиентский интерфейс
-
-Четыре слоя персонального интернета доступны массовому пользователю через клиентское приложение. Эталонная реализация — приложение Монтаны — использует чат-центрированный интерфейс как наиболее доступную точку входа: переписка с контактами, платежи к тем же контактам, личный контент и взаимодействие с агентом объединены в одной точке без переключения между приложениями. Конкретные решения по интерфейсу, его устройство и интеграция с каждой платформой описаны в спецификации приложения Монтаны.
-
-**Архитектурный центр — узел + десктоп.** Эталонная конфигурация Монтаны — узел-демон на оборудовании владельца (домашний сервер, мини-компьютер, ноутбук, VPS) с подключённым десктоп-клиентом для пользовательского интерфейса. Этот паттерн обеспечивает полный privacy budget, полный контроль пользователя над данными и верифицируемую сборку клиента ([I-17]). Serious users, которым важна самостоятельность по всем слоям, выбирают именно эту конфигурацию.
-
-**Альтернативные клиенты:** приложения командной строки, мобильные клиенты, веб-клиенты, специализированные интерфейсы для людей с особыми потребностями, пользовательские модификации и исследовательские реализации — допустимы и равноправны на уровне протокола. Выбор клиента не влияет на протокольные свойства аккаунта: сид-фраза, идентификатор аккаунта и накопленная длина цепи аккаунта принадлежат пользователю, не конкретному клиенту (см. «Два пути участия» ниже).
-
-Мобильные и веб-клиенты имеют документированные границы приватности metadata (раздел «Модель приватности»): часть классов утечек (session count, activity timing, cross-host collusion per τ₁) не закрывается на protocol level для пользователей работающих через чужой узел. Полный privacy budget достижим только при конфигурации «узел + клиент на оборудовании владельца».
-
-### Архитектурное условие
-
-Монтана = протокол + клиентский слой + сеть узлов.
-
-- **Без протокола** — нет канонического времени, нет идентичности, нет фиксации данных, нет стимула. Клиентский слой не на чем строить.
-- **Без клиентского слоя** — протокол производит первоэлементы, но end-user (человек либо autonomous agent от его имени) не может ими воспользоваться. Нет приложения — нет продукта.
-- **Без узлов в сети** — протокол не обрабатывает события.
-
-### Primary persona — автономные агенты как первичная среда обитания
-
-Архитектурно протокол agnostic к природе оператора и пользователя — homo sapiens, autonomous AI agent, либо смешанный гибрид (человек контролирующий агента) одинаково first-class participant. Никакого technical bias в коде или формулах против любой категории.
-
-Однако дизайн-решения, изначально выбранные по другим причинам (anti-плутократия, [I-3] детерминизм, [I-15] time-based scarcity, pay-by-time, byte-exact identity recovery), unintentionally образовали substrate **более естественный для autonomous agents, чем для unaided human end-users**. Эта спецификация явно признаёт autonomous agents primary expected adoption pathway:
-
-- **Fee-less + predictable rhythm.** Native для programmatic actors, выполняющих микрооперации в детерминированном scheduled темпе без auction-bidding overhead за каждую транзакцию.
-- **[I-3] детерминизм + bit-exact arithmetic.** Native для agent reproducibility — agent на любой машине producit идентичный output для идентичного input; multi-machine agent deployment не требует human-driven reconciliation.
-- **Byte-exact identity recovery (M1 flow).** Native для multi-machine agent deployment: agent восстанавливает identity на любой instance из единственного seed без human key management.
-- **Time-as-resource ([I-15]).** Native для agent scheduling: chain_length и operational rhythm — единственный ресурс веса, не покупаемый капитал; agents с long-horizon presence accumulate disproportionate reputation organically.
-- **Постквантовая криптография ([I-1]).** Native для agents с lifespan превышающим human key rotation cycles — single keypair survives generational compute upgrades.
-- **Constant monotonic emission.** Native для long-horizon agent economics: эмиссия зафиксирована Указом Генезиса (`EMISSION_moneta = 13 Ɉ` за окно), supply растёт строго линейно — agent может plan operations на десятилетия вперёд через canonical formula.
-
-**Expected adoption trajectory:** autonomous agents развёртывают узлы первыми (commodity hardware bar низкий, bootstrap setup automatable); human users подтягиваются позже через своих agents (delegated key management, agent-mediated UX), не через прямое взаимодействие с протоколом. Это **не failure mode** — это consequence того что для humans уже существуют corporate сети (Telegram, iCloud, банковские приложения) optimised под convenience, а для autonomous agents подобной нативной среды до Монтаны не было.
-
-**Implications для design priorities:**
-
-- UX-оптимизации для smartphone end-users — низкий приоритет относительно agent-friendly primitives
-- Constitutional protection основ (14 действующих глобальных инвариантов: [I-1]..[I-10] + [I-14]..[I-17]; slots [I-11]/[I-12]/[I-13] reserved unused, см. реестр инвариантов) — критический приоритет, потому что AI-coordinated supermajority operator pool architecturally возможен (см. «Эволюция протокола → Constitutional limits на MIP scope»)
-- Agent-specific extensions (subscription patterns, capability registry, attestation primitives) — priority для будущих milestone после mainnet
-- Application-level паттерны continuity-of-self для автономных агентов (внешний журнал состояний с цепочкой SHA-256 хэшей записей и периодическим коммитом DNA-хэша через `Anchor`) реализуются клиентским слоем поверх существующих примитивов без расширения протокольной поверхности — см. Montana App spec, раздел «Паттерны интеграции автономных агентов»
-- Human ownership чёрного ящика — non-negotiable: даже при AI-driven adoption humans остаются key holders и operator owners; agents действуют delegated, не autonomous-self-owned
-
-### Два пути участия
-
-Монтана формализует **Лестницу суверенности** — двухшаговую экономическую модель:
-
-**Шаг 0: Пользователь аккаунта (вход в сеть).** Имеет ключевую пару аккаунта (в смартфоне, аппаратном кошельке, любом клиенте). Подключается к узлу в сети — собственному или чужому — через транспортный слой сети (уровень 3). Запись аккаунта появляется в таблице аккаунтов при первом входящем `Transfer` (Mode B — receiver не существует, AccountRecord создаётся атомарно с зачислением amount); самостоятельное создание не требуется. Использует сеть: переводы Монтан, фиксация данных через `Anchor`. Все остальные услуги (звонки, видеосвязь, премиум-функции, хранение данных, разрешение имён, подписки на создателей) — на уровне приложений через прямые переводы Монтан между аккаунтами. Заработок на уровне протокола отсутствует. Барьер: смартфон + первый входящий перевод (любой положительный объём от существующего аккаунта).
-
-**Шаг 1: Оператор узла (заработок).** Держит свой узел круглосуточно + аккаунт оператора, привязанный к узлу (+ опционально другие личные аккаунты). Максимальная суверенность: данные на своём железе, полное участие в консенсусе, заработок через лотерею узлов (награда за выигранное окно, см. раздел о валюте Монтана). Барьер: обычное оборудование (минимум одно ядро), круглосуточное время работы, канал связи, sequential VDF цепочка длины `vdf_chain_length × D` SHA-256 хэшей при регистрации узла.
-
-**Путь роста.** Пользователь может начать как держатель аккаунта без узла, подключаясь через клиентское приложение (см. «Клиентский интерфейс» выше) — эталонное приложение Монтаны использует чат-центрированный интерфейс, альтернативные клиенты допустимы. Позже — развернуть свой узел без потери истории цепи аккаунта. Идентификатор аккаунта и все накопленные операции переносятся — ключ принадлежит пользователю, не узлу.
-
-**Компромиссы пути без собственного узла (явно):**
-
-- ✓ Все финансовые операции (перевод, фиксация данных, смена ключа, закрытие аккаунта); прикладные сервисы (никнеймы, премиум, хранение, подписки) — оплата прямыми переводами провайдерам
-- ✓ Данные приложения: хэш публичен, содержимое зашифровано ключом пользователя — хостящий узел не видит содержимого
-- — Эмиссии на уровне протокола нет (награда идёт операторам узлов)
-- — Утечка метаданных: хостящий узел видит сетевой адрес и время операций пользователя. Частично смягчено через протокол скрытия первоисточника (первый пересылочный узел маскирует источник)
-- — Риск цензуры: хостящий узел может отказать в пересылке сообщений. Пользователь меняет хостинг — через другое приложение, общественный узел или общественную инфраструктуру
-
-**Экономика хостинга.** Оператор узла предоставляет инфраструктуру для цепей аккаунтов своих пользователей. Записи аккаунтов реплицируются всей сетью (часть общего состояния консенсуса, не локальное хранилище оператора); оператор выступает посредником по пересылке и подтверждающим для операций размещённых пользователей. Стимул оператора — два независимых дохода (полная картина см. «Прикладной слой → Полная экономическая картина»):
-
-- **Эмиссия через лотерею узлов.** Растущая пользовательская база → больше cemented operations через узел → больше шансов попасть в committee и набрать chain_length подтверждений → выше weighted_ticket_node → больше выигранных окон. Связь не линейная: chain_length растёт только когда узел выбран selection event-ом в committee окна; пользовательская активность увеличивает математическое ожидание включения через operational signal, не через прямую формулу. Это **scale effect через committee selection probability**, не linear ROI per user.
-- **Прямые переводы от пользователей за прикладные сервисы.** Если оператор одновременно — разработчик приложения, пользователи платят за платные функции (звонки, видео, премиум, хранение, разрешение имён) прямыми `Transfer` на аккаунт оператора. Это **основной** доход приложения для разработчиков без узлов и **дополнительный** для разработчиков, уже зарабатывающих эмиссию через узлы.
-
-Монтана делает оба пути посильными: свой узел — обычное оборудование (минимум одно ядро), открытое ПО, окупаемость через лотерею. Путь без узла — любой смартфон, подключение через приложение. Решение где на этой шкале быть — за пользователем; Лестница суверенности формализует естественный переход от использования сети к её обслуживанию.
-
-### Три первоэлемента протокола
-
-Протокол производит три первоэлемента:
-
-- **Каноническое время** — согласованный всеми узлами порядок событий, производимый ходом протокола; вес узла в сети есть длительность его непрерывного присутствия в этом порядке.
-- **Передача ценности** — переводы между аккаунтами, открытые балансы.
-- **Фиксация данных** — привязка хэша размером тридцать два байта к окну времени, сохраняется навсегда.
-
-Всё за пределами этих трёх первоэлементов — хранение данных, коммуникация, агенты, индексация, интерфейсы — реализуется клиентским слоем поверх протокола. Протокол — летопись, бухгалтерия и нотариат. Серверов нет — каждый узел сети равноправен, принадлежит своему оператору и работает на своём оборудовании.
-
-Консенсус: **Доказательство времени** — общая цепь времени (определённое число последовательных хэш-шагов образуют одно окно). Цепь узла — последовательность закреплённых в консенсусе пакетов подтверждений от узла (доказательство присутствия). Цепь аккаунта — счётчик окон активности аккаунта. Таблица аккаунтов — состояние счёта. Влияние узла равно длине его цепи — количеству окон, в которых узел криптографически доказал своё присутствие. Протокол **и есть** структура отношений между событиями, оцифрованная и криптографически верифицируемая. Один узел = одно ядро процессора.
-
-Начальное окно — символическое нулевое окно. Перевод номера окна в любые внешние шкалы времени является задачей клиентского слоя.
-
-Генезис-фраза: `«Кто контролирует прошлое, контролирует будущее. Кто контролирует настоящее, контролирует прошлое.» — Оруэлл, 1984`
-
-Эволюция протокола: открытые предложения к улучшению публикуются как рекомендации, реализации выпускают новые версии, операторы узлов выбирают какую версию запускать. Разрешение расхождений цепей детерминировано через большинство по длине цепи. Управление на уровне протокола отсутствует. См. раздел «Эволюция протокола».
+Not privacy. Not decentralization. Not a cryptocurrency. Not a messenger. Digital ownership.
 
 ---
 
-## Три решённые проблемы
+## Definition
 
-### 1. Каноническая временная координата
+Montana is a personal peer-to-peer internet built on a protocol for the canonical ordering of events. Secure data storage, private communication, and the Montana currency live on the user's node.
 
-**Проблема.** Существующие системы времени смешивают два разных уровня — канонический порядок событий и измерение длительности. Первый является структурным свойством самой последовательности; второй — производной интерпретацией, требующей выбора часов и внешней шкалы. Без доверенного источника система может канонизировать порядок, но не длительность; длительность неканонизируема внутри протокола без внешней шкалы.
+The Montana protocol is the foundation of a personal internet. A network of independent nodes, each running its own **sequential delay computation** — a chain of steps that cannot be accelerated, whose result any participant can recompute and verify. Through consensus all nodes assemble their steps into a single canonical sequence of events. **A node's weight in this consensus is the duration of its continuous presence in the network.** Every canonically registered window yields a reward at the current baseline emission rate — a deterministic function of the window number and the Genesis Decree constants, with no discretionary premium.
 
-**Решение.** Монтана задаёт реляционную временную структуру — сеть независимых узлов. Каждый узел выполняет последовательные вычисления с проверяемой задержкой и независимо воспроизводит единый канонический порядок событий из общих входов протокола. Последовательное хэширование детерминировано: результат однозначен и может быть проверен любым участником.
+A node's chain length forms a new type of digital evidence: pseudonymous, verifiable, and economically irreducible continuous presence in the network. It cannot be acquired as a ready-made asset; it accumulates strictly as canonical time elapses and the node's participation in protocol windows is confirmed. This type of evidence is therefore different from existing forms of digital weight whose primary input is a purchasable resource. Political non-plutocracy in this construction is a consequence of the system's ontology, not its initial principle.
 
-Монтана намеренно не встраивает измерение физической длительности в консенсус. Протокол предоставляет только канонический порядок событий — единственное временное свойство, которое он канонизирует без внешнего источника времени. Интерпретация этого порядка как секунд, минут или календарного времени остаётся задачей наблюдателя. Тем самым канонический порядок является базовым временным свойством системы, а длительность — внешней производной интерпретацией.
+**Canonical order** is a relational structure formed by sequential hashing inside the delay computation, together with the canonical ordering established by consensus among nodes. Within this structure, time in the protocol exists as a sequence of canonical events. Montana is a self-contained frame of reference: a canonical sequence of events that external systems can observe and use as a frame of reference for their own purposes.
 
-**Свойства.** Канонический порядок обладает четырьмя свойствами:
+`D₀ = 325 000 000` is fixed in the Genesis Decree from a single historical quartz measurement on the genesis hardware (Apple iMac M1 2021, idle, single-thread; see «Canonical order → Calibration target» and «Calibration of D₀» in the Genesis Decree). After Genesis the protocol uses no clocks (per [I-18]); the window duration on each node is an emergent property of its hardware and is not part of consensus state. The canonical window count is synchronized between nodes via VDF chain length, not via physical time.
 
-- **Монотонность.** Номер окна строго возрастает. Ход вычислений с проверяемой задержкой последователен — каждый хэш зависит от предыдущего. Канонический порядок событий однозначен.
-- **Однозначность.** Все честные узлы согласны до бита на структуру событий — номер окна, метка времени окна, корень состояния. Каждое поле общего состояния объективно вычислимо всеми узлами.
-- **Проверяемость.** Любой может пересчитать ход и проверить каждое событие последовательности.
-- **Независимость.** Каждый узел считает самостоятельно, опираясь только на общие входные данные протокола.
+### Three trust problems
 
-Монтана и внешние системы измерения времени — системы разных типов. Внешние системы измеряют физическое время через внешние источники. Монтана производит каноническую последовательность событий через собственный ход и консенсус.
+Montana solves three problems, each without a third party:
 
-### 2. Неплутократический консенсус
+- **Trust in time.** The protocol produces a canonical sequence of events with no external sources. Solved by the protocol layer: the sequential delay computation, consensus, and time windows.
+- **Trust in storage.** User data is stored on the user's node. The protocol provides the foundation: account identity, content commitment as a 32-byte hash bound to a window for the lifetime of the network, an incentive to keep the node continuously online (lottery, Montana currency). Storage, encryption, and indexing belong to the client layer.
+- **Trust in communication.** Communication between users flows through their nodes, with no central intermediary. The protocol provides: a peer-to-peer network, identity, and post-quantum encryption. The messenger, contact discovery, and profiles belong to the client layer.
 
-**Проблема.** Существующие механизмы консенсуса часто превращают во влияние ресурсы, обращающиеся на рынке: вычислительную мощность, капитал, хранилище и пропускную способность. Когда консенсусный вес прямо выражен в таких ресурсах, безопасность сети становится функцией их концентрации: тот, кто способен купить больше ресурса, способен купить больше влияния. Неплутократический консенсус требует иного базового ресурса — такого, который не может быть мгновенно приобретён на рынке и немедленно превращён в уже накопленный вес.
+### Four layers of the personal internet
 
-**Решение.** Монтана отделяет ресурсы эксплуатации узла от ресурса консенсусного влияния. Узел может требовать железо, канал связи и хранение для работы, но ни один из этих ресурсов сам по себе не является единицей веса. Вес формируется только из канонически доказанного присутствия узла во времени: из окон, в которых узел подтвердил своё участие по правилам протокола и вошёл в свою цепь узла. Консенсусный вес тем самым накапливается только внутри самой сети, как история подтверждённого участия, а не покупается вне её.
+Together the protocol and the client layer form four layers:
 
-Монтана намеренно не встраивает в консенсус покупаемые ресурсы как носители веса. Вычислительная мощность, капитал и хранилище могут быть условиями запуска и эксплуатации узла, но не мерами власти в консенсусе. Консенсусный вес зарабатывается только последовательным участием во времени и потому не может быть приобретён как готовый актив — его источник всегда внутри сети. Тем самым подтверждённое присутствие во времени является базовым ресурсом консенсуса, а рыночные ресурсы — внешними условиями эксплуатации, не конвертируемыми напрямую во влияние.
+**1. The agent intermediary.** An AI agent (Junona) acts strictly on behalf of the user. It filters and prioritizes information by the owner's criteria, not the platform's algorithms. It can reach out to the external internet and collect data, but filtering decisions belong to the human. *Implementation: entirely a client-layer concern. The full agent specification — isolation architecture, permission levels, threat model, language-model runtime, signature delegation, action log — lives in the Montana application specification. The protocol specification deliberately omits these details: the agent is an application-layer mechanism; the protocol is unaware of its existence and does not distinguish a manually signed operation from one signed via the agent.*
 
-**Свойства.**
+**2. Local knowledge storage.** Everything the user has read, saved, or received is indexed, searchable, and stored on their node. Not on a corporation's servers. Context accumulates over time — a personal knowledge base. The protocol records the fact of existence (a 32-byte hash bound to a time window). The content lives on the owner's node, encrypted with their key. *Implementation: the protocol provides the foundation (hash commitment, identity, key infrastructure) — described in this specification. The client side — the format of local storage, encryption of content with the owner's key, indexing, full-text search, knowledge-base structure — lives in the Montana application specification and is not described here.*
 
-- При равной истории подтверждённого участия узлы имеют одинаковый консенсусный вес независимо от капитала оператора.
-- Капитал может повысить надёжность эксплуатации, но не может ретроактивно купить уже прошедшее время участия.
-- Атака на консенсус не сводится к разовой покупке внешнего ресурса; она требует накопления подтверждённого присутствия внутри самой сети.
+**3. Attention management.** The personal internet does not maximize the user's time in the system; it minimizes it. Gave what was needed — let go. No algorithmic feed, no ads, no engagement metrics, no auto-play. Montana's business model is emission through nodes, not trading attention. *Implementation: the protocol's economic design eliminates the incentive to trade attention — emission flows through the node lottery, not through ads or subscriptions (see the sections on the Montana currency and the lottery). Specific interface decisions — the absence of an algorithmic feed, the format of notifications, auto-play policy, the structure of chats and channels — live in the Montana application specification and are not described here.*
 
-### 3. Валюта Монтаны — именование и деноминация
+**4. Data control.** The user decides what data about them exists and who has access. Not a «forty-page privacy policy», but technical mechanisms: local encryption on the node, selective access through addressed post-quantum encryption, optional publication of profile and contacts. Balances are public by design ([I-2]). Everything else is the owner's decision. *Implementation: the protocol provides invariant [I-2] (openness of the financial layer), hash commitment without content, identity, and post-quantum key infrastructure — described in this specification. The client side — local encryption format, selective disclosure, privacy controls in the interface, publication format for profile and contacts — lives in the Montana application specification and is not described here.*
 
-**Имя и тикер.** Валюта протокола — **Монтана** (Montana). Международный тикер — `MONT`. Символ валюты — `Ɉ` (макроединица). Минимальная неделимая единица — **Монета** (в кодовых блоках, формулах и layout — идентификатор `moneta`).
+### Client interface
 
-**Соотношение единиц.**
+The four layers of the personal internet reach the mass user through a client application. The reference implementation — the Montana application — uses a chat-centric interface as the most accessible entry point: messaging with contacts, payments to those same contacts, personal content, and interaction with the agent are unified at one point with no app switching. Concrete interface decisions, its structure, and per-platform integration are described in the Montana application specification.
+
+**Architectural centre — node + desktop.** Montana's reference configuration is a node daemon on the owner's hardware (home server, mini-PC, laptop, VPS) with an attached desktop client for the user interface. This pattern delivers the full privacy budget, full user control over data, and a verifiable client build ([I-17]). Serious users who care about self-sovereignty across all layers choose precisely this configuration.
+
+**Alternative clients:** command-line applications, mobile clients, web clients, accessibility-focused interfaces, user modifications, and research implementations — all are permitted and equal at the protocol layer. Client choice does not affect the protocol properties of an account: the seed phrase, account identifier, and accumulated account chain length belong to the user, not a specific client (see «Two participation paths» below).
+
+Mobile and web clients have documented metadata privacy boundaries (section «Privacy model»): a subset of leak classes (session count, activity timing, cross-host collusion per τ₁) is not closed at the protocol level for users working through someone else's node. The full privacy budget is only achievable in the «node + client on the owner's hardware» configuration.
+
+### Architectural condition
+
+Montana = protocol + client layer + a network of nodes.
+
+- **Without the protocol** — no canonical time, no identity, no data commitment, no incentive. The client layer has nothing to build on.
+- **Without the client layer** — the protocol produces primitives, but the end user (a human or an autonomous agent acting on their behalf) cannot use them. No application — no product.
+- **Without nodes in the network** — the protocol processes no events.
+
+### Primary persona — autonomous agents as the primary habitat
+
+Architecturally, the protocol is agnostic to the nature of the operator and the user — a human, an autonomous AI agent, or a mixed hybrid (a human controlling an agent) are all equally first-class participants. There is no technical bias in code or formulas against any category.
+
+However, design decisions originally chosen for other reasons (anti-plutocracy, [I-3] determinism, [I-15] time-based scarcity, pay-by-time, byte-exact identity recovery) have unintentionally produced a substrate **more natural for autonomous agents than for unaided human end-users**. This specification explicitly recognizes autonomous agents as the primary expected adoption pathway:
+
+- **Fee-less + predictable rhythm.** Native for programmatic actors performing microoperations at a deterministic scheduled cadence without auction-bidding overhead per transaction.
+- **[I-3] determinism + bit-exact arithmetic.** Native for agent reproducibility — an agent on any machine produces identical output for identical input; multi-machine agent deployment requires no human-driven reconciliation.
+- **Byte-exact identity recovery (M1 flow).** Native for multi-machine agent deployment: the agent recovers identity on any instance from a single seed without human key management.
+- **Time-as-resource ([I-15]).** Native for agent scheduling: chain_length and operational rhythm are the only weight resource, not purchasable capital; agents with long-horizon presence accumulate disproportionate reputation organically.
+- **Post-quantum cryptography ([I-1]).** Native for agents whose lifespan exceeds human key-rotation cycles — a single keypair survives generational compute upgrades.
+- **Constant monotonic emission.** Native for long-horizon agent economics: emission is fixed by the Genesis Decree (`EMISSION_moneta = 13 Ɉ` per window), supply grows strictly linearly — an agent can plan operations decades ahead through a canonical formula.
+
+**Expected adoption trajectory:** autonomous agents deploy nodes first (the commodity hardware bar is low, bootstrap setup is automatable); human users catch up later through their agents (delegated key management, agent-mediated UX), not through direct interaction with the protocol. This is **not a failure mode** — it is the consequence of corporate networks (Telegram, iCloud, banking apps) optimized for human convenience already existing, while no native habitat of this kind existed for autonomous agents before Montana.
+
+**Implications for design priorities:**
+
+- UX optimizations for smartphone end-users — low priority relative to agent-friendly primitives
+- Constitutional protection of the foundations (14 active global invariants: [I-1]..[I-10] + [I-14]..[I-17]; slots [I-11] / [I-12] / [I-13] reserved unused, see the invariant registry) — critical priority, because an AI-coordinated supermajority operator pool is architecturally possible (see «Protocol evolution → Constitutional limits on MIP scope»)
+- Agent-specific extensions (subscription patterns, capability registry, attestation primitives) — priority for milestones after mainnet
+- Application-level continuity-of-self patterns for autonomous agents (an external state journal with a SHA-256 chain of record hashes and periodic DNA-hash commitments via `Anchor`) are implemented at the client layer on top of existing primitives, without expanding the protocol surface — see the Montana App spec, «Autonomous agent integration patterns»
+- Human ownership of the black box — non-negotiable: even under AI-driven adoption humans remain key holders and operator owners; agents act as delegates, not as autonomous self-owners
+
+### Two participation paths
+
+Montana formalizes the **Ladder of Sovereignty** — a two-step economic model:
+
+**Step 0: Account user (entering the network).** Holds an account keypair (in a smartphone, hardware wallet, any client). Connects to a node in the network — their own or someone else's — through the network's transport layer (level 3). The account record appears in the Account Table upon the first incoming `Transfer` (Mode B — receiver does not exist, AccountRecord is created atomically together with crediting the amount); explicit creation is not required. Uses the network: Montana transfers, data commitment via `Anchor`. All other services (voice, video, premium features, data storage, name resolution, creator subscriptions) live at the application layer through direct Montana transfers between accounts. No earnings at the protocol layer. Barrier to entry: a smartphone + a first incoming transfer (any positive amount from an existing account).
+
+**Step 1: Node operator (earnings).** Runs their own node 24/7 + an operator account bound to the node (+ optionally additional personal accounts). Maximum sovereignty: data on the operator's own hardware, full participation in consensus, earnings through the node lottery (the per-window reward, see the section on the Montana currency). Barrier: commodity hardware (at least one core), 24/7 uptime, a network connection, and a sequential VDF chain of length `vdf_chain_length × D` SHA-256 hashes at node registration.
+
+**Growth path.** A user may start as an account holder without a node, connecting through a client application (see «Client interface» above) — the reference Montana application uses a chat-centric interface; alternative clients are permitted. Later — deploy a node of their own without losing account-chain history. The account identifier and all accumulated operations carry over — the key belongs to the user, not to the node.
+
+**Trade-offs of the path without a personal node (explicit):**
+
+- ✓ All financial operations (transfer, data commitment, key change, account closure); application services (nicknames, premium, storage, subscriptions) — paid via direct transfers to providers
+- ✓ Application data: hash is public, content is encrypted with the user's key — the hosting node does not see the content
+- — No emission at the protocol layer (reward goes to node operators)
+- — Metadata leakage: the hosting node sees the user's network address and the timing of operations. Partially mitigated by the first-hop source-hiding protocol (the first forwarding node masks the source)
+- — Censorship risk: the hosting node may refuse to forward messages. The user changes hosting — through a different application, a public node, or public infrastructure
+
+**Hosting economics.** A node operator provides infrastructure for the account chains of their users. Account records are replicated across the whole network (part of shared consensus state, not the operator's local storage); the operator acts as a relay intermediary and a confirmer for operations issued by the hosted users. The operator's incentive is two independent revenue streams (full picture in «Application layer → Full economic picture»):
+
+- **Emission through the node lottery.** A growing user base → more cemented operations through the node → more chances to enter the committee and accumulate chain_length confirmations → a higher weighted_ticket_node → more windows won. The relationship is not linear: chain_length grows only when the node is selected by the selection event into the window's committee; user activity raises the expectation of inclusion through an operational signal, not through a direct formula. This is a **scale effect via committee selection probability**, not linear ROI per user.
+- **Direct transfers from users for application services.** If the operator is also an application developer, users pay for paid features (voice, video, premium, storage, name resolution) through direct `Transfer`s to the operator's account. This is the **primary** revenue stream for developers without nodes and an **additional** one for developers already earning emission through nodes.
+
+Montana makes both paths affordable: a personal node uses commodity hardware (at least one core), open-source software, and recoups its cost through the lottery. The node-less path uses any smartphone, connected through an application. The choice of where to sit on this scale belongs to the user; the Ladder of Sovereignty formalizes the natural transition from using the network to serving it.
+
+### Three primary elements of the protocol
+
+The protocol produces three primary elements:
+
+- **Canonical time** — the order of events agreed by all nodes, produced by the protocol's step; a node's weight in the network is the duration of its continuous presence in this order.
+- **Value transfer** — transfers between accounts; open balances.
+- **Data commitment** — binding a 32-byte hash to a time window; preserved forever.
+
+Everything beyond these three primary elements — data storage, communication, agents, indexing, interfaces — is implemented by the client layer on top of the protocol. The protocol is the chronicle, the bookkeeping, and the notary. There are no servers — every node in the network is equal, belongs to its operator, and runs on the operator's own hardware.
+
+Consensus: **Proof of Time** — a shared time chain (a fixed number of sequential hash steps form one window). A node's chain is the sequence of consensus-cemented confirmation bundles from that node (proof of presence). An account's chain is a counter of windows of account activity. The Account Table is the account state. A node's influence equals the length of its chain — the number of windows in which the node has cryptographically proved its presence. The protocol **is** the structure of relationships between events, digitized and cryptographically verifiable. One node = one CPU core.
+
+The initial window is the symbolic zero window. Mapping a window number to any external time scale is the client layer's responsibility.
+
+Genesis phrase: `«Who controls the past controls the future. Who controls the present controls the past.» — Orwell, 1984`
+
+Protocol evolution: open improvement proposals are published as recommendations; implementations ship new versions; node operators choose which version to run. Chain divergence is resolved deterministically by the chain-length majority. There is no protocol-level governance. See the «Protocol evolution» section.
+
+---
+
+## Three solved problems
+
+### 1. Canonical temporal coordinate
+
+**Problem.** Existing time systems conflate two distinct levels — the canonical order of events and the measurement of duration. The former is a structural property of the sequence itself; the latter is a derived interpretation that requires a choice of clock and an external scale. Without a trusted source a system can canonize order but not duration; duration cannot be canonized inside a protocol without an external scale.
+
+**Solution.** Montana defines a relational time structure — a network of independent nodes. Each node performs sequential delay computations and independently reproduces a single canonical order of events from shared protocol inputs. Sequential hashing is deterministic: the result is unambiguous and can be verified by any participant.
+
+Montana deliberately does not embed measurement of physical duration into consensus. The protocol provides only the canonical order of events — the single temporal property it canonizes without an external time source. Interpreting this order as seconds, minutes, or calendar time remains the observer's task. The canonical order is therefore the base temporal property of the system; duration is an external derived interpretation.
+
+**Properties.** The canonical order has four properties:
+
+- **Monotonicity.** The window number strictly increases. The sequential delay computation is sequential — each hash depends on the previous one. The canonical order of events is unambiguous.
+- **Unambiguity.** All honest nodes agree bit-for-bit on the structure of events — window number, window time-stamp, state root. Every field of shared state is objectively computable by all nodes.
+- **Verifiability.** Anyone can recompute the step and verify every event in the sequence.
+- **Independence.** Each node computes independently, relying only on shared protocol inputs.
+
+Montana and external time-measurement systems are systems of different kinds. External systems measure physical time through external sources. Montana produces a canonical sequence of events through its own step and consensus.
+
+### 2. Non-plutocratic consensus
+
+**Problem.** Existing consensus mechanisms often translate market-traded resources into influence: compute power, capital, storage, and bandwidth. When consensus weight is expressed directly in such resources, network security becomes a function of their concentration: whoever can buy more of the resource can buy more influence. A non-plutocratic consensus requires a different base resource — one that cannot be acquired on the market instantly and immediately converted into already-accumulated weight.
+
+**Solution.** Montana separates node operation resources from the resource of consensus influence. A node may require hardware, network connectivity, and storage to run, but none of these resources is itself a unit of weight. Weight is formed only from a node's canonically proven presence over time: from the windows in which the node confirmed its participation per protocol rules and entered them into its node chain. Consensus weight therefore accumulates only inside the network itself, as a history of confirmed participation, and is not purchased outside it.
+
+Montana deliberately does not embed purchasable resources into consensus as carriers of weight. Compute power, capital, and storage may be preconditions for running and operating a node, but they are not measures of power in consensus. Consensus weight is earned only by sequential participation over time and therefore cannot be acquired as a ready-made asset — its source is always inside the network. Confirmed presence over time is the consensus base resource; market resources are external operational conditions not directly convertible into influence.
+
+**Properties.**
+
+- Given an equal history of confirmed participation, nodes carry equal consensus weight regardless of operator capital.
+- Capital may improve operational reliability but cannot retroactively purchase past participation time.
+- An attack on consensus does not reduce to a one-shot purchase of an external resource; it requires accumulating confirmed presence inside the network itself.
+
+### 3. The Montana currency — naming and denomination
+
+**Name and ticker.** The protocol currency is **Montana**. The international ticker is `MONT`. The currency symbol is `Ɉ` (macro unit). The smallest indivisible unit is the **Moneta** (in code blocks, formulas, and layouts — the identifier `moneta`).
+
+**Unit relationship.**
 
 ```
-1 Монтана = 10⁹ Монет = 1 миллиард Монет
-1 Монета  = 10⁻⁹ Монтаны (минимальная атомарная единица, неделимая)
+1 Montana = 10⁹ Moneta = 1 billion Moneta
+1 Moneta  = 10⁻⁹ Montana (the smallest atomic unit, indivisible)
 
-В коде и формулах:  1 Ɉ = 10⁹ moneta,  1 moneta = 10⁻⁹ Ɉ
+In code and formulas:  1 Ɉ = 10⁹ moneta,  1 moneta = 10⁻⁹ Ɉ
 ```
 
-Девять знаков после запятой — точность представления, совпадающая с convention Solana (`lamport` = 10⁻⁹ SOL) и ряда других криптопротоколов с nano-деноминацией. Все консенсус-критичные формулы и state-поля оперируют в Монетах как в unsigned integer; представление в Монтанах (`Ɉ`) является отображением для пользовательского интерфейса и макроанализа.
+Nine decimal places — the representation precision matches the Solana convention (`lamport` = 10⁻⁹ SOL) and a number of other crypto-protocols with nano denomination. All consensus-critical formulas and state fields operate in Moneta as unsigned integers; the representation in Montana (`Ɉ`) is a presentation layer for user interfaces and macro analysis.
 
-**Использование в спецификации.**
+**Use within the specification.**
 
-| Контекст | Единица |
+| Context | Unit |
 |----------|---------|
-| Layout state-полей (`balance`, `amount`, `target`, `reward`) | `moneta` (u128) |
-| Формулы эмиссии, supply, награды | `moneta` |
-| Константы Указа Генезиса (`emission_moneta`, …) | `moneta` |
-| Прозаические отсылки о микровеличинах (суммы, платы, балансы в тексте) | Монета / Монет |
-| Прозаические отсылки о макровеличинах («baseline = 13 Монтан за окно») | Монтана / Ɉ |
-| Внешние референции, биржевые данные | MONT |
+| State-field layout (`balance`, `amount`, `target`, `reward`) | `moneta` (u128) |
+| Emission, supply, reward formulas | `moneta` |
+| Genesis Decree constants (`emission_moneta`, …) | `moneta` |
+| Prose references at micro scale (amounts, fees, balances in text) | Moneta |
+| Prose references at macro scale («baseline = 13 Montana per window») | Montana / Ɉ |
+| External references, exchange data | MONT |
 
-Тикер `MONT` используется только в external context (биржевые данные, сравнительные таблицы с BTC/ETH/SOL). Внутри спецификации и кода — `moneta` как идентификатор минимальной единицы, `Ɉ` как символ макроединицы. В русскоязычной прозе — **Монета** и **Монтана** соответственно.
+The `MONT` ticker is used only in external contexts (exchange data, comparison tables with BTC / ETH / SOL). Inside the specification and the code — `moneta` as the identifier for the smallest unit, `Ɉ` as the symbol for the macro unit.
 
-### 4. Поокнная эмиссия
+### 4. Per-window emission
 
-**Решение.** Монтана задаёт поокнную эмиссию единственной формулой `reward_moneta(W) = EMISSION_moneta`. Награда фиксирована Указом Генезиса (`EMISSION_moneta = 13 × 10⁹ nɈ = 13 Ɉ`) и не меняется на горизонте сети. Эмиссионное правило не зависит от номера окна, от истории, от голосования и от участников; оно есть свойство Genesis Decree.
+**Solution.** Montana defines per-window emission by a single formula `reward_moneta(W) = EMISSION_moneta`. The reward is fixed by the Genesis Decree (`EMISSION_moneta = 13 × 10⁹ nɈ = 13 Ɉ`) and does not change over the network's lifetime. The emission rule does not depend on the window number, on history, on voting, or on participants; it is a property of the Genesis Decree.
 
-Монтана намеренно не использует ни дискрецию эмитента, ни конечный потолок предложения. Эмиссия — каноническая константа, не политическое решение и не функция рыночных ожиданий. Внешняя ценность монеты — её рыночная цена и покупательная способность — остаётся внешней производной интерпретацией.
+Montana deliberately uses neither issuer discretion nor a finite supply cap. Emission is a canonical constant, not a political decision and not a function of market expectations. The external value of the coin — its market price and purchasing power — remains an external derived interpretation.
 
-**Свойства.**
+**Properties.**
 
-- Награда `reward_moneta(W) = EMISSION_moneta` определена для любого окна и вычислима одинаково всеми участниками.
-- Ни один актор не может ускорить, замедлить или перенаправить эмиссионное расписание своим решением.
-- Награда фиксирована — никаких эпох, никаких обновлений ставки, никаких надбавок.
+- The reward `reward_moneta(W) = EMISSION_moneta` is defined for every window and computed identically by every participant.
+- No actor can accelerate, slow, or redirect the emission schedule by their own decision.
+- The reward is fixed — no epochs, no rate updates, no premia.
 
-**Формула эмиссии (канонический вид, moneta):**
+**Emission formula (canonical form, moneta):**
 
 ```
 reward_moneta(W) = EMISSION_moneta
 ```
 
-Численное значение `EMISSION_moneta` — см. Указ Генезиса, структура `protocol_params.emission_moneta`.
+Numeric value of `EMISSION_moneta` — see the Genesis Decree, the `protocol_params.emission_moneta` structure.
 
-**Технические свойства.**
+**Technical properties.**
 
-- Предложение монеты `supply_moneta(W) = EMISSION_moneta × (W + 1)` — closed-form, O(1) вычислимо. Net change supply за окно = +EMISSION_moneta (всегда положительное); supply растёт строго монотонно линейно.
-- Эмиссия не контролируется ни одним участником, комитетом или голосованием.
-- Денежная политика полностью определена константой `emission_moneta` в Указе Генезиса и не может быть изменена после генезиса.
-- Реальная стоимость Ɉ определяется рыночным спросом от прикладной экосистемы.
-- Физическая скорость выпуска в секундах Международной системы единиц определяется скоростью оборудования сети и остаётся свойством клиентского слоя, вне области консенсуса.
+- Coin supply `supply_moneta(W) = EMISSION_moneta × (W + 1)` — closed-form, O(1) computable. Net change in supply per window = +EMISSION_moneta (always positive); supply grows strictly monotonically and linearly.
+- Emission is not controlled by any participant, committee, or vote.
+- Monetary policy is fully defined by the `emission_moneta` constant in the Genesis Decree and cannot be changed after genesis.
+- The real value of Ɉ is determined by market demand from the application ecosystem.
+- The physical issuance rate in SI seconds is determined by the network's hardware speed and remains a client-layer property, outside the scope of consensus.
 
-### Следствие: цифровая система отсчёта времени без человека-посредника
+### Corollary: a digital frame of reference for time with no human intermediary
 
-Три решённые проблемы порождают уникальную возможность. Любой документ, событие, состояние может быть записано в Монтане с математически доказуемой привязкой к канонической позиции в последовательности событий (номеру окна). Привязка хэша размером тридцать два байта к окну — навсегда. Монтана — не блокчейн с функцией проставления временной метки. Монтана — система отсчёта времени с функцией передачи ценности. Внешние системы могут наблюдать последовательность окон Монтаны и строить собственные переводы в свои локальные стандарты — этот перевод является задачей наблюдателя, не протокола.
+The three solved problems give rise to a unique capability. Any document, event, or state can be recorded in Montana with a mathematically provable binding to a canonical position in the sequence of events (a window number). The binding of a 32-byte hash to a window is forever. Montana is not a blockchain with a timestamping feature. Montana is a time frame of reference with a value-transfer feature. External systems can observe Montana's sequence of windows and construct their own mappings to their local standards — this mapping is the observer's task, not the protocol's.
 
-Ни один человек, группа разработчиков, корпорация или совет не контролирует протокол. Изменения существуют только как открытые предложения и реализации, которые операторы узлов выбирают запускать.
+No individual, developer group, corporation, or council controls the protocol. Changes exist only as open proposals and implementations that node operators choose to run.
 
 ---
 
-## Глобальные инварианты протокола
+## Global protocol invariants
 
-Глобальный инвариант — свойство, которое протокол обязан сохранять во всех своих компонентах. Нарушение в одной части = нарушение во всём протоколе. Глобальные инварианты не имеют исключений и не подлежат локальному trade-off.
+A global invariant is a property the protocol is obliged to preserve across all of its components. A violation in one part = a violation of the whole protocol. Global invariants have no exceptions and are not subject to local trade-offs.
 
 **[I-1] Постквантовая безопасность.** Все криптографические примитивы устойчивы к квантовому компьютеру. Допустимо: SHA-256 (Grover ослабляет до 128-bit, приемлемо), ML-DSA (Dilithium, FIPS 204 finalized), ML-KEM (Kyber, FIPS 203 finalized), STARK (hash-based ZK), lattice commitments. Запрещено: ECDLP, RSA, классический Diffie-Hellman, Pedersen commitments на эллиптических кривых, Bulletproofs, Schnorr/EdDSA.
 
@@ -704,7 +704,7 @@ account_fingerprint = слова соединённые через пробел
 
 Победитель окна регистрирует одно окно канонического порядка и получает `reward_moneta(W) = EMISSION_moneta` (см. раздел «Эмиссия»).
 
-### Определение канонической координаты
+### Definition канонической координаты
 
 ```
 canonical_coordinate(W) := W
@@ -1600,7 +1600,7 @@ VDF_Reveal:
 
 Экономическая модель — монотонная эмиссия только узлам через `reward_moneta(W)`. Реальная стоимость Ɉ определяется демандом прикладной экосистемы (`Transfer` оплаты приложениям-провайдерам сервисов).
 
-#### Определение winner-а (Lookback Leadership)
+#### Definition winner-а (Lookback Leadership)
 
 Winner окна W-1 определяется при cementing proposal окна W. Proposer окна W = winner окна W-2 (канонически известен из cemented state).
 
@@ -2901,7 +2901,7 @@ Integer encoding: median_ratio_permille (uint32, 0..=1000). Точность 0.0
 - `median_ratio <= 0.85`: значительная часть активных узлов не успевает подписать. Сеть близка к границе жизнеспособности — D нужно уменьшить, окно становится короче в единицах работы, медленные узлы получают шанс догнать медиану.
 - Dead zone 0.85-0.95: естественные колебания, D не адаптируется. Это защита от реактивной волатильности.
 
-**Свойства.**
+**Properties.**
 
 - **Канонически детерминировано.** participation_ratio вычисляется из canonical cemented sets и Node Table. Два честных узла получают одно и то же значение bit-exact.
 - **Опирается только на canonical chain observations.** Все входные данные формулы — cemented sets и Node Table, оба детерминированы. Corollary I-3.a соблюдён.
