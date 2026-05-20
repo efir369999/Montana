@@ -53,7 +53,7 @@ Montana состоит из двух слоёв, физически реализ
 
 ## 4. Слой 1 — TimeChain (резюме)
 
-Полное описание — в спецификации `Montana Protocol v35.25.0` и в whitepaper TimeChain. Здесь только то, что необходимо для понимания связи со слоем 2.
+Полное описание — в спецификации `Montana Protocol v35.25.1` и в whitepaper TimeChain. Здесь только то, что необходимо для понимания связи со слоем 2.
 
 **Окно.** Пусть `T_r` — выход VDF на окне `r`. Цепь продвигается по правилу `T_r = SHA-256^D (T_{r-1})`, где `T_0` — genesis seed, `D` — параметр итераций per-окно. На текущей эпохе `D = 325 000 000`, что калибрует окно на ≈60 секунд commodity x86_64. `D` пересчитывается каждые `τ₂ = 20160` окон (≈14 дней) по канонической формуле.
 
@@ -230,7 +230,7 @@ Reality маскирует handshake под публичный TLS к легит
 [7] Pietrzak K. *Simple Verifiable Delay Functions*. ITCS 2019.
 [8] Shor P. *Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer*. SIAM J. Comput., 1997.
 [9] Grover L. *A Fast Quantum Mechanical Algorithm for Database Search*. STOC 1996.
-[10] *Montana Protocol v35.25.0*. Montana spec, 2026.
+[10] *Montana Protocol v35.25.1*. Montana spec, 2026.
 [11] Dingledine R., Mathewson N., Syverson P. *Tor: The Second-Generation Onion Router*. USENIX Security 2004.
 [12] Donenfeld J. *WireGuard: Next Generation Kernel Network Tunnel*. NDSS 2017.
 [13] *Whitepaper Montana RU* (TimeChain layer) — `Montana/Montana-Protocol/Whitepaper Montana RU.md`.

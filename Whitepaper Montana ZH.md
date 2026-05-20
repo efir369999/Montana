@@ -139,7 +139,7 @@ ticket(运营者, r) = SHA-256(运营者.node_id || cemented_bundle_aggregate(r-
 
 ## 11. 网络与同步
 
-协议的线协议格式与同步机制描述于参考实现中的 [`mt-net`](https://github.com/efir369999/Montana/tree/main/Код/crates/mt-net) 与 [`mt-net-transport`](https://github.com/efir369999/Montana/tree/main/Код/crates/mt-net-transport)。运营者发现对等节点,交换 `VdfReveal` 与 `BundledConfirmation` 消息,经由 libp2p 在 TCP+TLS 之上复制已固化的链。
+协议的线协议格式与同步机制描述于参考实现中的 [`mt-net`](https://github.com/efir369999/Montana/tree/main/Code/crates/mt-net) 与 [`mt-net-transport`](https://github.com/efir369999/Montana/tree/main/Code/crates/mt-net-transport)。运营者发现对等节点,交换 `VdfReveal` 与 `BundledConfirmation` 消息,经由 libp2p 在 TCP+TLS 之上复制已固化的链。
 
 新节点的同步流程为:从任一诚实对等节点获取当前时间链头,本地验证 VDF 链,并复制以当前 Merkle 承诺为根的账户表快照。同步仅为验证;除 TLS 连接之外,无需对源对等节点施加任何信任。
 

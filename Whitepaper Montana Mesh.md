@@ -53,7 +53,7 @@ The metaphor is not decorative. It enforces three implementation invariants:
 
 ## 4. Layer 1 — TimeChain (summary)
 
-The full description is in `Montana Protocol v35.25.0` and in the TimeChain whitepaper [13]. Only the part relevant to Layer 2 is given here.
+The full description is in `Montana Protocol v35.25.1` and in the TimeChain whitepaper [13]. Only the part relevant to Layer 2 is given here.
 
 **Window.** Let `T_r` denote the VDF output at window `r`. The chain advances by `T_r = SHA-256^D (T_{r-1})`, where `T_0` is the genesis seed and `D` the per-window iteration count. At the current epoch, `D = 325 000 000`, calibrating the window to ≈60 seconds on commodity x86_64. `D` is recalibrated every `τ₂ = 20 160` windows (≈14 days) by a canonical formula.
 
@@ -230,7 +230,7 @@ Layer estimates:
 [7] Pietrzak K. *Simple Verifiable Delay Functions*. ITCS 2019.
 [8] Shor P. *Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer*. SIAM J. Comput., 1997.
 [9] Grover L. *A Fast Quantum Mechanical Algorithm for Database Search*. STOC 1996.
-[10] *Montana Protocol v35.25.0*. Montana spec, 2026.
+[10] *Montana Protocol v35.25.1*. Montana spec, 2026.
 [11] Dingledine R., Mathewson N., Syverson P. *Tor: The Second-Generation Onion Router*. USENIX Security 2004.
 [12] Donenfeld J. *WireGuard: Next Generation Kernel Network Tunnel*. NDSS 2017.
 [13] *Whitepaper Montana* (TimeChain layer) — `Montana/Montana-Protocol/Whitepaper Montana.md`.

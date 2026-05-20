@@ -3779,7 +3779,7 @@ mesh_used_nonces:
 - **Montana Protocol** (родительский слой) — state machine, crypto, consensus.
 - **Montana App** (дочерний слой) — UI клиенты на основе этого сетевого API.
 
-История версий читается через git log и `Код/VERSION.md`.
+История версий читается через git log и `Code/VERSION.md`.
 
 ---
 

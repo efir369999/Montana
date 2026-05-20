@@ -15,23 +15,23 @@ We follow **responsible disclosure**: vulnerability is fixed before public discl
 ## Scope
 
 In scope:
-- Cryptographic primitives in `Код/crates/mt-crypto/` and `Код/crates/mt-crypto-native/`
-- Consensus & VDF logic in `Код/crates/mt-consensus/`, `Код/crates/mt-vdf/`
-- Network layer in `Код/crates/mt-net/`, `Код/crates/mt-net-transport/`
+- Cryptographic primitives in `Code/crates/mt-crypto/` and `Code/crates/mt-crypto-native/`
+- Consensus & VDF logic in `Code/crates/mt-consensus/`, `Code/crates/mt-vdf/`
+- Network layer in `Code/crates/mt-net/`, `Code/crates/mt-net-transport/`
 - Wallet, anchor, transfer logic in respective `mt-*` crates
 - Specification ambiguities or contradictions in `Montana v*.md`
 
 Out of scope:
 - Issues only reproducible with non-default `protocol_params`
 - Performance issues without security impact
-- Anything outside `Код/` and the Montana spec files
+- Anything outside `Code/` and the Montana spec files
 
 ## Security Architecture
 
 - **Post-quantum primitives**: ML-DSA-65 (FIPS 204), ML-KEM-768 (FIPS 203), SHA-256, HKDF-SHA256, PBKDF2.
 - **Single Source of Truth (SSOT)**: every constant lives in exactly one place; no duplication.
-- **Audit trail**: see `Код/docs/audit-checklist.md` (53/53 findings closed for M6 + M9).
-- **Reproducible builds**: `Код/docs/build-from-source.md` provides verification steps.
+- **Audit trail**: see `Code/docs/audit-checklist.md` (53/53 findings closed for M6 + M9).
+- **Reproducible builds**: `Code/docs/build-from-source.md` provides verification steps.
 
 ## Audit Status
 

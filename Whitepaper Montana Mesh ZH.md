@@ -53,7 +53,7 @@ Montana 节点 = 地图上的一座城市。截至 2026-05-10,网络由三座城
 
 ## 4. 第 1 层——TimeChain(摘要)
 
-完整描述见 `Montana Protocol v35.25.0` 与 TimeChain 白皮书 [13]。此处仅给出与第 2 层相关的部分。
+完整描述见 `Montana Protocol v35.25.1` 与 TimeChain 白皮书 [13]。此处仅给出与第 2 层相关的部分。
 
 **窗口。** 设 `T_r` 为窗口 `r` 的 VDF 输出。链按 `T_r = SHA-256^D (T_{r-1})` 推进,其中 `T_0` 为创世种子,`D` 为每窗口迭代数。在当前 epoch,`D = 325 000 000`,将窗口校准至 commodity x86_64 上约 60 秒。`D` 每 `τ₂ = 20 160` 窗口(约 14 天)按典范公式重新校准。
 
@@ -230,7 +230,7 @@ Reality 将握手伪装为对合法公开目标的常规 TLS。观察握手的 D
 [7] Pietrzak K. *Simple Verifiable Delay Functions*. ITCS 2019.
 [8] Shor P. *Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer*. SIAM J. Comput., 1997.
 [9] Grover L. *A Fast Quantum Mechanical Algorithm for Database Search*. STOC 1996.
-[10] *Montana Protocol v35.25.0*. Montana spec, 2026.
+[10] *Montana Protocol v35.25.1*. Montana spec, 2026.
 [11] Dingledine R., Mathewson N., Syverson P. *Tor: The Second-Generation Onion Router*. USENIX Security 2004.
 [12] Donenfeld J. *WireGuard: Next Generation Kernel Network Tunnel*. NDSS 2017.
 [13] *Whitepaper Montana ZH*(TimeChain layer)—— `Montana/Montana-Protocol/Whitepaper Montana ZH.md`。
