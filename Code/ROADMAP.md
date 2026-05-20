@@ -54,7 +54,7 @@
 | 9 | `mt-consensus` | M4 | mt-state, mt-lottery, mt-timechain | Proposal + Lookback Leadership + fallback | ✅ Closed (5 phases, 60 тестов) |
 | 10 | `mt-entry` | M4 | mt-state, mt-timechain | NodeRegistration + selection event + adaptive VDF | ✅ Closed (5 phases, 39 тестов) |
 | 11 | `mt-store` | M5 | mt-state, mt-consensus | Filesystem persistence | ✅ Closed (5 phases, 24 теста) |
-| 12 | `mt-net` + `mt-net-transport` | M6 | mt-consensus, libp2p | libp2p + IBT + Wire format + Dandelion++ + Mesh + S&F | ✅ Closed (Phase A-G + C.0-C.4, 124 tests, in-process e2e; cross-machine pairing defer M8) |
+| 12 | `mt-net` + `mt-net-transport` | M6 | mt-consensus, libp2p | libp2p + IBT + Wire format + Dandelion++ + Mesh + S&F | ✅ Closed (Phase A-G + C.0-C.4 + MONT-002 nonce replay closure, 127 tests, in-process e2e; cross-machine pairing defer M8) |
 | 13 | `mt-sync` | M7 | mt-state, mt-net | Fast Sync | ⏳ TODO |
 | 14 | `montana-node` | M8 | все | Бинарь + CLI | ✅ Closed (byte-exact rewrite через canonical apply_proposal, commit fb204ef; DEV-001..DEV-009 closed; DEV-010 acknowledged genesis bootstrap) |
 | 15 | `mt-conformance` | M9 | все | Test vectors + conformance suite | ✅ READY initial (envelope A1-A3 + IBT B1 + PoW F1/F2); expansion в работе (12 TBD-A markers) |
@@ -1047,8 +1047,8 @@ Critic checklist:
 
 ### M6 — Network ✅ ЗАКРЫТ (in-process e2e); cross-machine pairing defer M8
 
-- [x] `mt-net` (~2700 LOC, no_std) — wire format envelope + 12 structured payloads + IBT online/mesh proofs + Bootstrap PoW + Uniform Framing + peer selection (4-level diversity + LRU) + Dandelion++ stem-fluff + NAT traversal + Mesh Transport + Store-and-Forward. **110 unit + integration tests PASS.**
-- [x] `mt-net-transport` (~470 LOC, std + libp2p) — libp2p TCP+TLS 1.3+Noise+Yamux upgrade chain + MontanaCodec для request-response + MontanaBehaviour + IBT classify_proof. **14 tests PASS включая 3 e2e two-node communication.**
+- [x] `mt-net` (~2700 LOC, no_std) — wire format envelope + 12 structured payloads + IBT online/mesh proofs + Bootstrap PoW + Uniform Framing + peer selection (4-level diversity + LRU) + Dandelion++ stem-fluff + NAT traversal + Mesh Transport + Store-and-Forward. **112 tests PASS.**
+- [x] `mt-net-transport` (~470 LOC, std + libp2p) — libp2p TCP+TLS 1.3+Noise+Yamux upgrade chain + MontanaCodec для request-response + MontanaBehaviour + IBT classify_proof with online nonce replay tracking. **15 tests PASS включая 3 e2e two-node communication.**
 
 Phases закрытия:
 - Phase A wire envelope + payloads (commits `9de287b`, `bc694a5`)

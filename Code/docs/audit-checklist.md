@@ -365,4 +365,4 @@ cd "<repo-root>" && cargo fmt --all -- --check && cargo clippy --all-targets -- 
 
 ---
 
-**Status:** READY FOR EXTERNAL AUDIT (M1 + M2 + M3 + M4 + M5 + M6 + M9 layers scope, 16 крейтов, ~14640 LOC, 255+ invariants + 14 e2e network tests, 53/53 findings closed: 40 prior + 13 P-C1..P-C8 + P-S1..P-S5 critic-fix bundle; spec v35.23.0 — M6 transport closure + Genesis Decree network params restructure).
+**Status:** READY FOR EXTERNAL AUDIT (M1 + M2 + M3 + M4 + M5 + M6 + M9 layers scope, 19 крейтов, 127 focused mt-net/mt-net-transport tests passed on 2026-05-20, MONT-001/MONT-002 sync applied; protocol spec v35.25.1 + network spec v1.1.0 + app spec v3.12.0).

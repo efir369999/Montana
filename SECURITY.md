@@ -16,10 +16,10 @@ We follow **responsible disclosure**: vulnerability is fixed before public discl
 
 In scope:
 - Cryptographic primitives in `Code/crates/mt-crypto/` and `Code/crates/mt-crypto-native/`
-- Consensus & VDF logic in `Code/crates/mt-consensus/`, `Code/crates/mt-vdf/`
+- Consensus and sequential-delay TimeChain logic in `Code/crates/mt-consensus/`, `Code/crates/mt-timechain/`, `Code/crates/mt-lottery/`
 - Network layer in `Code/crates/mt-net/`, `Code/crates/mt-net-transport/`
 - Wallet, anchor, transfer logic in respective `mt-*` crates
-- Specification ambiguities or contradictions in `Montana v*.md`
+- Specification ambiguities or contradictions in `Montana Protocol v*.md`, `Montana Network v*.md`, or `Montana App v*.md`
 
 Out of scope:
 - Issues only reproducible with non-default `protocol_params`

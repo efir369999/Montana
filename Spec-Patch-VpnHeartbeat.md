@@ -1,6 +1,6 @@
 # Spec Patch: opcode `0x06 VpnHeartbeat`
 
-**Целевая версия спеки:** Montana Protocol v35.25.0 → **v35.26.0**
+**Целевая версия спеки:** Montana Protocol v35.25.1 → **v35.26.0**
 **Дата проекта патча:** 2026-05-19
 **Применимый раздел:** §11 «Account operations», §13 «apply_proposal»
 **Зависимые инварианты:** [I-1] PQ-secure, [I-3] Determinism, [I-9] Bit-exact arithmetic, [I-13] Deflationary sink, [I-14] State lifecycle

@@ -1,22 +1,27 @@
 Subject: Montana — post-quantum blockchain reference paper
 
-I've been working on a new blockchain whose security rests entirely on
-post-quantum cryptographic primitives, with no transaction fees and time as
-the scarce resource in place of money.
+I've been working on a new pre-mainnet blockchain reference design whose
+consensus signatures use post-quantum cryptography, with no transaction fees
+and time as the scarce resource in place of money.
 
 The paper is available at:
 https://github.com/efir369999/Montana/blob/main/Whitepaper Montana.md
 
 The main properties:
-  Post-quantum signatures (ML-DSA-65) and key encapsulation (ML-KEM-768)
-  from primitives up. No ECDSA, no curve25519, no RSA in the protocol.
-  Consensus is a verifiable delay function over SHA-256 producing a globally
-  ordered chain of windows of approximately 60 seconds each.
+  Consensus signatures use ML-DSA-65. Application-layer encryption uses
+  ML-KEM-768. Network transport is currently TLS 1.3 with classical ECDHE;
+  the paper calls out this limitation and schedules hybrid PQ Noise_PQ.
+  Consensus is a sequential delay function over SHA-256 producing a globally
+  ordered chain of windows of approximately 60 seconds each; verification cost
+  equals computation cost, so this is not a VDF in the Boneh/Pietrzak/
+  Wesolowski efficient-verification sense.
   Anti-spam operates on time, not on fees: per-identity per-window rates,
   account chain-length thresholds, seniority gating.
   No mint, no premine, no transaction fee. The single emission is 13 base
-  units of Ɉ to the operator who completed each window's VDF.
-  Architecturally targets one billion active accounts as the design baseline.
+  units of Ɉ to the operator who completes each window.
+  Architecturally targets one billion active accounts as the design baseline;
+  the paper quantifies state size (~2.06 TB for AccountRecord state) and marks
+  snapshot fast-sync benchmarks as an M7 gate.
 
 Full paper and reference implementation in Rust:
 https://github.com/efir369999/Montana
