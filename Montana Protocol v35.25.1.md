@@ -238,106 +238,106 @@ No individual, developer group, corporation, or council controls the protocol. C
 
 A global invariant is a property the protocol is obliged to preserve across all of its components. A violation in one part = a violation of the whole protocol. Global invariants have no exceptions and are not subject to local trade-offs.
 
-**[I-1] Постквантовая безопасность.** Все криптографические примитивы устойчивы к квантовому компьютеру. Допустимо: SHA-256 (Grover ослабляет до 128-bit, приемлемо), ML-DSA (Dilithium, FIPS 204 finalized), ML-KEM (Kyber, FIPS 203 finalized), STARK (hash-based ZK), lattice commitments. Запрещено: ECDLP, RSA, классический Diffie-Hellman, Pedersen commitments на эллиптических кривых, Bulletproofs, Schnorr/EdDSA.
+**[I-1] Post-quantum security.** All cryptographic primitives are resistant to a quantum computer. Allowed: SHA-256 (Grover weakens it to 128-bit, acceptable), ML-DSA (Dilithium, FIPS 204 finalized), ML-KEM (Kyber, FIPS 203 finalized), STARK (hash-based ZK), lattice commitments. Forbidden: ECDLP, RSA, classical Diffie-Hellman, Pedersen commitments over elliptic curves, Bulletproofs, Schnorr / EdDSA.
 
-**[I-2] Открытость финансового слоя.** Балансы, суммы переводов, отправители, получатели — публичны. Никакого криптографического сокрытия на уровне протокола. См. «Модель приватности».
+**[I-2] Openness of the financial layer.** Balances, transfer amounts, senders, recipients — public. No cryptographic hiding at the protocol layer. See «Privacy model».
 
-**[I-3] Детерминизм consensus state.** Любое состояние, входящее в consensus root, объективно вычислимо одинаково всеми узлами.
+**[I-3] Determinism of consensus state.** Any state that enters the consensus root is objectively computable identically by all nodes.
 
-**Corollary I-3.a.** Любой механизм, результат которого в consensus state или в protocol-level behavior (mempool prioritization, gossip ordering, fork-choice, peer scoring) зависит от измерения физического мира — астрономического, геофизического, атомного, биологического или любого другого — отклоняется по нарушению I-3. Corollary применяется независимо от точности модели измерения.
+**Corollary I-3.a.** Any mechanism whose result in consensus state or in protocol-level behaviour (mempool prioritization, gossip ordering, fork-choice, peer scoring) depends on a measurement of the physical world — astronomical, geophysical, atomic, biological, or any other — is rejected as a violation of I-3. The corollary applies independently of the accuracy of the measurement model.
 
-**[I-4] Независимость TimeChain от Account state.** TimeChain продвигается из canonical inputs без зависимости от состояния Account Table. Зависимости однонаправленные: TimeChain → NodeChain (presence tracking) → AccountChain → AccountTable.
+**[I-4] TimeChain independence from Account state.** The TimeChain advances from canonical inputs without depending on the Account Table state. Dependencies are one-way: TimeChain → NodeChain (presence tracking) → AccountChain → AccountTable.
 
-**[I-5] Реализуемость без специализированного оборудования.** Все примитивы имеют production-ready open-source реализации, работающие на commodity CPU узла без TEE, без обязательного GPU, без обязательного ASIC.
+**[I-5] Implementability without specialized hardware.** All primitives have production-ready open-source implementations running on commodity CPU of the node, without TEE, without mandatory GPU, without mandatory ASIC.
 
-Граница «commodity hardware» (контекст Монтана, ориентир конца 2020-х):
+The «commodity hardware» boundary (Montana context, late-2020s reference):
 
-- **Включено** — premium consumer tier:
-  - Хранилище: NVMe SSD до 8 TB consumer-grade (ценовой диапазон $400–$500)
-  - Оперативная память: 32–128 GB DDR5
-  - Процессор: x86_64 desktop либо ARM64 (Apple Silicon, Snapdragon X)
-  - Сеть: gigabit symmetric внутри городской зоны
-- **Исключено** — datacenter enterprise tier: NVMe ≥16 TB enterprise-grade, ECC RAM, серверные Xeon/EPYC процессоры, multi-socket системы.
+- **Included** — premium consumer tier:
+  - Storage: consumer-grade NVMe SSD up to 8 TB ($400–$500 price range)
+  - Memory: 32–128 GB DDR5
+  - CPU: x86_64 desktop or ARM64 (Apple Silicon, Snapdragon X)
+  - Network: symmetric gigabit within a city zone
+- **Excluded** — datacenter enterprise tier: enterprise-grade NVMe ≥16 TB, ECC RAM, server Xeon / EPYC CPUs, multi-socket systems.
 
-Узел Монтаны предполагает power-user конфигурацию — выше типового consumer baseline (ноутбук / mini PC), ниже data-center enterprise. Совместимо с архитектурой Light-Node-at-Home: оператор поднимает один узел дома на персональном железе и обслуживает свои приложения и пиров без зависимости от облачной инфраструктуры.
+A Montana node assumes a power-user configuration — above the typical consumer baseline (laptop / mini PC), below datacenter enterprise. Compatible with the Light-Node-at-Home architecture: the operator runs a single node at home on personal hardware and serves their own applications and peers with no dependence on cloud infrastructure.
 
-Граница не consensus-critical: узлы с менее производительным железом продолжают участвовать в консенсусе, но получают пониженный participation_ratio через адаптацию D и могут отставать на пиковой нагрузке. Граница задаёт целевой profile для калибровки констант (D₀, mempool budgets, snapshot sizing) и для оценки экономики оператора.
+The boundary is not consensus-critical: nodes on less performant hardware continue to participate in consensus but get a reduced participation_ratio via D adaptation and may lag at peak load. The boundary defines the target profile for calibrating constants (D₀, mempool budgets, snapshot sizing) and for evaluating operator economics.
 
-**[I-6] Регуляторная совместимость.** Протокол опирается на механизмы, совместимые с FATF/AML/MiCA/ETF. Запрещено: privacy mixers на уровне протокола, anonymous addresses, hidden flows, ring signatures, stealth addresses.
+**[I-6] Regulatory compatibility.** The protocol relies on mechanisms compatible with FATF / AML / MiCA / ETF. Forbidden: protocol-layer privacy mixers, anonymous addresses, hidden flows, ring signatures, stealth addresses.
 
-**[I-7] Минимальная криптографическая поверхность.** Каждый новый примитив требует обоснования закрытием конкретного механизма. Дублирование функциональности через два разных примитива запрещено.
+**[I-7] Minimal cryptographic surface.** Each new primitive requires a justification by closing a concrete mechanism. Duplicating functionality through two different primitives is forbidden.
 
-**[I-8] Network-Bound Unpredictability of Consensus Seeds.** Любая hash-композиция в consensus-critical output (lottery endpoint, selection sort_key, admission ordering, weight distribution, emission, ranking) обязана содержать хотя бы один canonical & unpredictable-offline компонент — вычислимый детерминистически ВСЕМИ честными узлами ТОЛЬКО после фиксации cemented state с подписями honest participants. Canonical-predictable-offline (VDF output, state counters, любые forward-computable canonical inputs) недостаточны как единственный источник non-grindability. Реализация: `cemented_bundle_aggregate(W-k)`, future cemented signatures, honest-participant-signed future state. [I-8] нарушение = автоматический блокер mainnet.
+**[I-8] Network-Bound Unpredictability of Consensus Seeds.** Any hash composition entering a consensus-critical output (lottery endpoint, selection sort_key, admission ordering, weight distribution, emission, ranking) MUST contain at least one canonical & unpredictable-offline component — computable deterministically by ALL honest nodes ONLY after a cemented state with signatures from honest participants is fixed. Canonical-predictable-offline inputs (VDF output, state counters, any forward-computable canonical inputs) are insufficient as the only source of non-grindability. Realisation: `cemented_bundle_aggregate(W-k)`, future cemented signatures, honest-participant-signed future state. An [I-8] violation = an automatic mainnet blocker.
 
-**[I-9] Bit-exact deterministic arithmetic for consensus formulas.** Любая formula output которой прямо ИЛИ через transitive цепочку попадает в consensus-critical output обязана удовлетворять трём требованиям: (1) binding integer specification в спеке (u8..u256, fixed-point Q-format, integer div с явным rounding direction); (2) unsigned operands (signed arithmetic запрещена в consensus formulas); (3) минимум 3 test vectors в спеке на formula (typical, boundary, edge). Real-valued форма (ln, exp, %, ×0.67) допустима ТОЛЬКО как commentary; authoritative — integer. Запрещено: f32/f64 в consensus коде, rounding без direction, real-valued без parallel integer form. [I-9] — procedural enforcement [I-3] для numerical formulas. Статусы: «закрыто» (integer spec + test vectors), «conformance pending» (integer spec, vectors defer в следующий patch), «нарушение» (real без integer) = автоматический блокер mainnet.
+**[I-9] Bit-exact deterministic arithmetic for consensus formulas.** Any formula whose output, directly or through a transitive chain, enters a consensus-critical output MUST satisfy three requirements: (1) a binding integer specification in the spec (u8..u256, fixed-point Q-format, integer division with explicit rounding direction); (2) unsigned operands (signed arithmetic is forbidden in consensus formulas); (3) at least 3 test vectors per formula in the spec (typical, boundary, edge). The real-valued form (ln, exp, %, ×0.67) is allowed ONLY as commentary; the authoritative one is integer. Forbidden: f32 / f64 in consensus code, rounding without a direction, real-valued forms without a parallel integer form. [I-9] is procedural enforcement of [I-3] for numerical formulas. Statuses: «closed» (integer spec + test vectors), «conformance pending» (integer spec, vectors deferred to the next patch), «violation» (real-valued without integer) = an automatic mainnet blocker.
 
-**[I-10] Single Source of Truth (SSOT).** Любая значимая сущность протокола существует **ровно в одном месте** — одном authoritative определении. Все остальные упоминания ссылаются на источник, не дублируют его содержимое.
+**[I-10] Single Source of Truth (SSOT).** Any significant entity of the protocol exists **in exactly one place** — a single authoritative definition. All other mentions reference the source; they do not duplicate its content.
 
-Относится к:
-- **Версия спеки** — только в header документа (строка `**Версия:** X.Y.Z` на второй строке). Нигде больше в теле спеки версия не указывается. Inline ссылки на версию (например в `conformance pending` labels) допустимы только когда явно маркируют связанное состояние: `conformance pending v<spec-version-at-time-of-status>`. При bump спеки все такие labels обновляются синхронно либо status закрывается.
-- **Имя файла спеки** — синхронно с header: `Montana vX.Y.Z.md`. При bump файл переименовывается.
+Applies to:
+- **Spec version** — only in the document header (the line `**Version:** X.Y.Z` on the second line). Nowhere else in the spec body is the version stated. Inline version references (for example in `conformance pending` labels) are allowed only when they explicitly mark a state: `conformance pending v<spec-version-at-time-of-status>`. On a spec bump all such labels are updated synchronously or the status is closed.
+- **Spec file name** — synchronous with the header: `Montana vX.Y.Z.md`. The file is renamed on a bump.
 - **Протокольные константы** (`D₀`, `τ₂_windows`, `EMISSION_moneta`, `τ₁`, `quorum`, `confirmation_threshold_divisor`, `admission_divisor`, `selection_interval`, `candidate_expiry_windows`, `pruning_idle_windows`, `vdf_entry_windows`, `adaptive_vdf_threshold`, `adaptive_vdf_multiplier`, `participation_dead_zone_low/high`, `d_adjustment_rate_num/den`, etc.) — только в Genesis Decree `protocol_params` layout. Все остальные разделы ссылаются на эти значения по имени, не повторяют численное значение. Inline числа в прозе допустимы только как comment/intuition (не authoritative).
-- **Размеры криптопримитивов** (1952/4032/3309 для ML-DSA-65 public/secret/signature, 1184/2400 для ML-KEM-768 public/secret, etc.) — только в разделе «Криптографические примитивы». Все layout blocks ссылаются по имени схемы (`ML-DSA-65 pubkey = 1952 B`) через определение там.
-- **Domain separators** (`"mt-op"`, `"mt-proposal"`, `"mt-bundle"`, `"mt-vdf-reveal"`, `"mt-lottery"`, `"mt-bc-aggregate"`, `"mt-selection"`, etc.) — только в «Consensus encoding layer», раздел «Domain separators registry». Все формулы ссылаются на имя domain из registry, не дублируют literal string с новым именем.
-- **Формулы** (одна формула = одно authoritative определение). Если формула используется в нескольких местах — одно место канонично, остальные ссылаются.
-- **Структуры объектов** (layout Proposal header, BundledConfirmation, VDF_Reveal, NodeRegistration, UserObjects, Account/Node/Candidate records) — одно authoritative layout block + одна секция `**Инварианты X:**` (per Gate 13). Illustrative ASCII-схемы НЕ содержат type annotations (per Gate 13c — раздел роли архитектора).
-- **Algorithm description** (Selection event, Settle window, Pruning procedure, Fast sync, etc.) — один раздел с полным описанием. Краткие упоминания в других разделах явно ссылаются («см. раздел X»), не переписывают.
+- **Crypto primitive sizes** (1952 / 4032 / 3309 for ML-DSA-65 public / secret / signature, 1184 / 2400 for ML-KEM-768 public / secret, etc.) — only in the «Cryptographic primitives» section. All layout blocks refer to the scheme by name (`ML-DSA-65 pubkey = 1952 B`) through the definition there.
+- **Domain separators** (`"mt-op"`, `"mt-proposal"`, `"mt-bundle"`, `"mt-vdf-reveal"`, `"mt-lottery"`, `"mt-bc-aggregate"`, `"mt-selection"`, etc.) — only in the «Consensus encoding layer», «Domain separators registry». All formulas refer to the domain by name from the registry; they do not duplicate the literal string under a new name.
+- **Formulas** (one formula = one authoritative definition). If a formula is used in several places — one place is canonical, the others reference it.
+- **Object structures** (layouts for Proposal header, BundledConfirmation, VDF_Reveal, NodeRegistration, UserObjects, Account / Node / Candidate records) — one authoritative layout block + one `**Invariants X:**` section (per Gate 13). Illustrative ASCII diagrams do NOT contain type annotations (per Gate 13c — the architect-role section).
+- **Algorithm description** (Selection event, Settle window, Pruning procedure, Fast sync, etc.) — one section with the full description. Brief mentions in other sections explicitly reference it («see section X»); they do not rewrite it.
 
-Правила применения:
-- **При введении новой сущности** — сначала проверить существование authoritative определения. Если есть — ссылаться. Если нет — создать в логически правильном разделе (тот что владеет сущностью по domain).
-- **При обнаружении дублирования** — немедленный refactor: один источник сохраняется, другие превращаются в pointer-ы (`см. раздел X`). Принцип «сначала разрешить дубликат, потом продолжить работу» (pre-edit duplicate scan).
-- **Ссылка вместо копии** — «эмиссия = EMISSION_moneta (см. Genesis Decree)», не «эмиссия = 13 000 000 000 moneta» повторно. Для документов — ссылка на раздел, не повторение значения.
-- **Единственное исключение** — inline commentary/intuition без binding claim: «13 Ɉ за окно» в прозе как объяснение масштаба. Такие упоминания не normative и явно маркированы как illustrative.
+Application rules:
+- **When introducing a new entity** — first check whether an authoritative definition exists. If it does — reference it. If not — create one in the logically appropriate section (the section that owns the entity by domain).
+- **When duplication is found** — immediate refactor: one source is kept; the others become pointers (`see section X`). Principle: «resolve the duplicate first, then continue» (pre-edit duplicate scan).
+- **Reference, not a copy** — «emission = EMISSION_moneta (see the Genesis Decree)», not «emission = 13 000 000 000 moneta» repeated. For documents — a reference to a section, not a repetition of the value.
+- **The only exception** — inline commentary / intuition without a binding claim: «13 Ɉ per window» in prose to convey scale. Such mentions are not normative and are explicitly marked as illustrative.
 
-[I-10] нарушение = автоматический finding класса type/value-divergence, severity определяется типом дубликата:
-- **Consensus-critical сущность дублирована** (формула, константа, layout, domain separator) → блокер mainnet (гарантированный silent drift при evolution спеки, cross-implementation fork)
-- **Не-consensus сущность дублирована** (документация, prose summary) → finding, severity средний (document hygiene, читатель-implementer получает неоднозначный signal)
+[I-10] violation = an automatic finding of class type / value-divergence; severity is determined by the type of duplicate:
+- **Consensus-critical entity duplicated** (formula, constant, layout, domain separator) → mainnet blocker (guaranteed silent drift on spec evolution, cross-implementation fork)
+- **Non-consensus entity duplicated** (documentation, prose summary) → finding, severity medium (document hygiene; the reader-implementer gets an ambiguous signal)
 
-[I-10] — meta-level procedural enforcement против спецификационного дрifта. Родственные gates: Gate 13 (exhaustive invariants per signed object), Gate 13c (type annotations только в authoritative). [I-10] покрывает более широкий scope — любую значимую сущность, не только type annotations.
+[I-10] is meta-level procedural enforcement against specification drift. Related gates: Gate 13 (exhaustive invariants per signed object), Gate 13c (type annotations only in the authoritative location). [I-10] covers a broader scope — any significant entity, not just type annotations.
 
-**Прецедент scope spec rewrite — breaking change криптографического примитива.** При замене основного подписи обязательный pre-edit duplicate scan выполняется по всем числовым размерам и именам старого примитива до начала правок. Минимальный набор grep-паттернов:
+**Precedent — scope of a spec rewrite for a breaking change to a cryptographic primitive.** When replacing the main signature, a mandatory pre-edit duplicate scan is performed over all numeric sizes and names of the old primitive before any edits begin. Minimum set of grep patterns:
 
-- численные размеры старого primitive (pubkey size, secretkey size, signature size, seed size в байтах) — каждое hit классифицируется как «обновить под новое значение» либо «удалить вместе с упоминанием старого primitive»; контекст hits проверяется явно (числа могут встречаться в других контекстах — таймстемпах, индексах — и не везде это размер ключа)
-- идентификаторы старых seed-констант (`<algo>_seed_<N>` функции, `<ALGO>_SEED_LEN`, `L = <N>` в derivation формулах)
-- имена старого primitive (canonical name, alternative form, related submission name)
-- ссылки на устаревшие стандарты (draft FIPS статусы, submission references)
+- numeric sizes of the old primitive (pubkey size, secretkey size, signature size, seed size in bytes) — each hit is classified as «update to the new value» or «remove together with the mention of the old primitive»; the context of hits is checked explicitly (numbers may appear in other contexts — timestamps, indices — and it is not always a key size)
+- identifiers of the old seed constants (`<algo>_seed_<N>` functions, `<ALGO>_SEED_LEN`, `L = <N>` in derivation formulas)
+- names of the old primitive (canonical name, alternative form, related submission name)
+- references to outdated standards (draft FIPS statuses, submission references)
 
-После массовых замен обязателен post-edit grep по тем же паттернам с целью 0 hits (легитимные исключения — explicit migration notes если они нужны, явно маркированные как historical reference). Прохождение обоих этапов scan фиксируется явно в Gate 15 отчёте при breaking removal.
+After mass replacements a post-edit grep over the same patterns is required, with a target of 0 hits (legitimate exceptions — explicit migration notes if needed, clearly marked as historical references). Passing both scan stages is recorded explicitly in the Gate 15 report for the breaking removal.
 
-**Разрешение имён и аппликативные сервисы реализуются прикладным слоем** (без выделенной consensus-state таблицы и без аукциона на уровне протокола). Денежный механизм единственный: эмиссия через лотерею операторов с константной наградой `EMISSION_moneta = 13 Ɉ` за окно (раздел «Эмиссия»). Все экономические потоки — переводы между аккаунтами через `Transfer`. Свободные слоты идентификаторов глобальных инвариантов между [I-10] и [I-14] не выделяются вновь.
+**Name resolution and application services are implemented at the client layer** (no dedicated consensus-state table and no protocol-level auction). The single monetary mechanism is emission via the operator lottery with a constant reward `EMISSION_moneta = 13 Ɉ` per window (the «Emission» section). All economic flows are transfers between accounts via `Transfer`. Free invariant slots between [I-10] and [I-14] are not re-assigned.
 
-**[I-14] State lifecycle & bloat resistance.** Каждая persistent запись в consensus state обязана удовлетворять хотя бы одному из трёх требований:
+**[I-14] State lifecycle & bloat resistance.** Every persistent record in consensus state MUST satisfy at least one of three requirements:
 
-1. **Sequential time barrier.** Создание записи требует sequential VDF iteration count integer-specified в Genesis Decree (например `vdf_chain_length × D` SHA-256 хэшей для NodeRegistration). Sequential time — неприобретаемый дефицит, симметричный для всех участников. Применимо к validator-class записям где sequential cost оправдан target throughput.
+1. **Sequential time barrier.** Creating the record requires a sequential VDF iteration count integer-specified in the Genesis Decree (for example `vdf_chain_length × D` SHA-256 hashes for NodeRegistration). Sequential time is a non-acquirable scarcity, symmetric for all participants. Applicable to validator-class records where the sequential cost is justified by the target throughput.
 
-2. **Lifecycle bound.** При явно заданных условиях запись удаляется из persistent state. Допустимые варианты:
-   - **Activity-based.** Запись удаляется когда `current_window - last_activity_window > N_INACTIVE_*_WINDOWS` (existing pruning AccountRecord `balance == 0` + 4τ₂; NodeTable inactivity 8τ₂).
-   - **Temporal expiry.** Запись удаляется через фиксированный horizon после создания (existing Candidate Pool — 3τ₂ expiry).
-   - **Explicit removal operation.** Отдельный opcode явного удаления с reward за cleanup (sweep incentive); reward строго меньше storage cost записи чтобы не создать противоположный стимул.
+2. **Lifecycle bound.** Under explicitly defined conditions the record is removed from persistent state. Allowed variants:
+   - **Activity-based.** The record is removed when `current_window - last_activity_window > N_INACTIVE_*_WINDOWS` (existing AccountRecord pruning `balance == 0` + 4τ₂; NodeTable inactivity 8τ₂).
+   - **Temporal expiry.** The record is removed after a fixed horizon since creation (existing Candidate Pool — 3τ₂ expiry).
+   - **Explicit removal operation.** A separate opcode for explicit removal with a reward for cleanup (sweep incentive); the reward is strictly less than the record's storage cost so as not to create the opposite incentive.
 
-3. **Hard quota.** Явный upper bound на общее количество записей либо per creator (например «≤1 запись per аккаунт» для какой-либо прикладной квоты), либо глобальный (например «≤N одновременных регистраций кандидатов» через `selection_interval` + `admission_divisor`). Integer-specified в Genesis Decree, enforceable в `apply_proposal`.
+3. **Hard quota.** An explicit upper bound on the total number of records, either per creator (for example «≤1 record per account» for some application quota) or global (for example «≤N simultaneous candidate registrations» via `selection_interval` + `admission_divisor`). Integer-specified in the Genesis Decree, enforced in `apply_proposal`.
 
-Persistent запись создаваемая через legitimate операцию без одного из трёх механизмов = **блокер mainnet**. Класс атаки — slow bloat: атакующий выполняет серию legitimate операций с суммарным ущербом через раздутие state. Защита либо через sequential time barrier (путь 1), либо через алгоритмическое ограничение роста (путь 2 или 3).
+A persistent record created through a legitimate operation without one of these three mechanisms = a **mainnet blocker**. The attack class is slow bloat: the attacker performs a series of legitimate operations whose cumulative damage comes from state bloat. The defence is either through a sequential time barrier (path 1) or through an algorithmic growth limit (path 2 or 3).
 
-Applicable к: `AccountRecord`, Anchor records, `NodeTable`, Candidate Pool, любой таблице consensus state которая может расти через user-driven операции. При закрытии каждого механизма в карточке явно указывается применённый путь ([I-14].1 / [I-14].2 / [I-14].3 / комбинация).
+Applies to: `AccountRecord`, Anchor records, `NodeTable`, Candidate Pool, any consensus-state table that can grow through user-driven operations. When each mechanism is closed, the applied path is stated explicitly in the card ([I-14].1 / [I-14].2 / [I-14].3 / combination).
 
-Обоснование: Sybil на голосование/лотерею закрывается chain_length-weighted механизмами (узлы) и activity-based pruning (аккаунты), но это не адресует resource consumption через fan-out. Миллион аккаунтов не меняет распределения лотерейных весов, но занимает ×миллион `AccountRecord` в state trie. Time-based cooldown создания AccountRecord `1 Transfer Mode B per sender per τ₂` для пользовательских аккаунтов и sequential VDF `vdf_chain_length × D` для кандидатур узлов вместе закрывают оба вектора через канонические time-based примитивы.
+Rationale: Sybil on voting / lottery is closed by chain_length-weighted mechanisms (nodes) and activity-based pruning (accounts), but this does not address resource consumption through fan-out. A million accounts does not change the distribution of lottery weights but occupies ×million `AccountRecord` entries in the state trie. The time-based cooldown for AccountRecord creation `1 Transfer Mode B per sender per τ₂` for user accounts and the sequential VDF `vdf_chain_length × D` for node candidacies together close both vectors via canonical time-based primitives.
 
-Conformance audit существующих persistent tables:
+Conformance audit of existing persistent tables:
 
-| Таблица                | Защитный путь                                  | Статус       |
+| Table                  | Defensive path                                 | Status       |
 |------------------------|------------------------------------------------|--------------|
-| `AccountRecord`        | [I-14].2 activity-based: account-creation cooldown `1 Transfer Mode B per sender per τ₂` (через поле `last_account_creation_window`) + 1-op-per-τ₁ rate-limit + pruning (`balance == 0` + 4τ₂) | закрыто     |
-| Anchor records         | [I-14].2 activity-based: 1-op-per-τ₁ rate-limit + amortized через AccountChain TTL (dormant account prune убирает все Anchor вместе с аккаунтом) | закрыто     |
-| `NodeTable`            | [I-14].1 sequential time barrier (NodeRegistration VDF `vdf_chain_length × D` SHA-256) + [I-14].2 activity-based (inactivity prune 8τ₂) + [I-14].3 hard quota (`selection_interval` 336 окон, admission ≤1% active per event) | закрыто     |
-| Candidate Pool         | [I-14].2 temporal expiry (3τ₂)               | закрыто     |
-| Proposals chain        | [I-14] N/A: proposals не user-driven, growth = consensus structure invariant (ровно один header per τ₁); slow-bloat attack class категориально не применим (атакующий не может создать дополнительные proposals независимо от ресурсов); permanent retention — design feature для Anchor canonical-position proof verification + Fast Sync chain verification | n/a (вне scope [I-14]) |
+| `AccountRecord`        | [I-14].2 activity-based: account-creation cooldown `1 Transfer Mode B per sender per τ₂` (via the `last_account_creation_window` field) + 1-op-per-τ₁ rate-limit + pruning (`balance == 0` + 4τ₂) | closed       |
+| Anchor records         | [I-14].2 activity-based: 1-op-per-τ₁ rate-limit + amortized via AccountChain TTL (dormant-account pruning removes all Anchors together with the account) | closed       |
+| `NodeTable`            | [I-14].1 sequential time barrier (NodeRegistration VDF `vdf_chain_length × D` SHA-256) + [I-14].2 activity-based (inactivity prune 8τ₂) + [I-14].3 hard quota (`selection_interval` 336 windows, admission ≤1% active per event) | closed       |
+| Candidate Pool         | [I-14].2 temporal expiry (3τ₂)               | closed       |
+| Proposals chain        | [I-14] N/A: proposals are not user-driven; growth = consensus-structure invariant (exactly one header per τ₁); the slow-bloat attack class is categorically inapplicable (an attacker cannot create extra proposals regardless of resources); permanent retention is a design feature for Anchor canonical-position proof verification + Fast Sync chain verification | n/a (out of scope of [I-14]) |
 
-Все persistent state tables закрыты. [I-14] compliance полный.
+All persistent state tables are closed. [I-14] compliance is complete.
 
 #### Storage Cards per persistent table
 
-Каждая persistent state table protocol-а имеет Storage Card с фиксированными метриками. Поскольку Montana — protocol без денежных комиссий ([I-15]), cost-based section помечается `n/a` единообразно для всех таблиц. Защита через time-based primitives (sequential VDF, lifecycle bound, hard quota) — выражена в bytes-per-τ₂ от одного актора (sabotage time horizon), не в budget-per-USD (sabotage budget horizon).
+Every persistent state table in the protocol has a Storage Card with fixed metrics. Since Montana is a protocol without monetary fees ([I-15]), the cost-based section is marked `n/a` uniformly for all tables. Defence through time-based primitives (sequential VDF, lifecycle bound, hard quota) is expressed in bytes-per-τ₂ from a single actor (a sabotage time horizon), not in budget-per-USD (a sabotage budget horizon).
 
 **Storage Card — AccountRecord**
 
