@@ -15,7 +15,7 @@ The protocol is specified as three layered documents — each independently audi
 |-------|------|-------|-------|
 | 1. Protocol | [`Montana Protocol v35.25.1.md`](Montana%20Protocol%20v35.25.1.md) | 4412 | State machine, crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256), sequential-delay TimeChain, lottery, Account / Node tables, Genesis Decree, `apply_proposal` pipeline, consensus operations |
 | 2. Network | [`Montana Network v1.1.0.md`](Montana%20Network%20v1.1.0.md) | 3803 | libp2p transport, Identity-Bound Tunnel (IBT), transport randomness, PeerRecord, mesh transport, sync protocols, network-layer threat model, binding KAT vectors, Final Gate audit M6 |
-| 3. App | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | 3780 | UI, wallet, messenger (Double Ratchet PQ), channels, contacts, profile, Juno AI agent, browser, premium, application-layer economy |
+| 3. App | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | 3780 | UI, wallet, messenger (Double Ratchet PQ), channels, contacts, profile, Junona AI agent, browser, premium, application-layer economy |
 
 Layer dependency direction: Protocol (low) ← Network (mid) ← App (high). Each layer depends on layers below it; no upward dependency.
 

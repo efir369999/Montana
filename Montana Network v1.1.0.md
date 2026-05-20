@@ -28,8 +28,8 @@ Montana's network layer covers transport and discovery between consensus nodes a
 **What this spec does NOT cover:**
 
 - State machine, apply_proposal, operations (Transfer / OpenAccount / ...) — see Montana Protocol
-- Crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256, PBKDF2 / HKDF) — see Montana Protocol §«Cryptography»
-- UI / Wallet / Messenger / Channels / Contacts / Profile / Juno / Browser — see Montana App
+- Crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256, PBKDF2 / HKDF) — see Montana Protocol §«Криптография» (Cryptography section)
+- UI / Wallet / Messenger / Channels / Contacts / Profile / Junona / Browser — see Montana App
 
 ---
 
