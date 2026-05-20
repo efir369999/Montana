@@ -6,34 +6,34 @@
 
 ## Abstract
 
-A post-quantum cryptocurrency would allow value to be transferred between parties without reliance on classical cryptographic primitives that quantum adversaries can break. Existing chains rely on signatures (ECDSA, EdDSA) whose security collapses under Shor's algorithm and on transaction-fee-based anti-spam mechanisms that price out small users at scale. We propose a blockchain whose security rests entirely on post-quantum primitives standardized by NIST in 2024 (ML-DSA-65, ML-KEM-768) and on hashing (SHA-256), and whose anti-spam mechanism operates on time rather than money. A verifiable delay function over SHA-256 produces a globally ordered chain of windows of approximately 60 seconds each. Each window is sealed by a sequential proof of work whose computation cannot be parallelized and cannot be skipped. Operations within a window are rate-limited per identity, by the cumulative chain length of the operating account, and by seniority constraints — three different scarcities derived from time elapsed, not balance held. As long as honest operators run the verifiable delay function, the chain extends, regardless of how many actors hold tokens or what fees they would have paid.
+A post-quantum cryptocurrency would allow value to be transferred between parties without reliance on classical cryptographic primitives that quantum adversaries can break. Existing chains rely on signatures (ECDSA, EdDSA) whose security collapses under Shor's algorithm and on transaction-fee-based anti-spam mechanisms that price out small users at scale. We propose a blockchain whose consensus signatures and application-layer key encapsulation rest on post-quantum primitives standardized by NIST in 2024 (ML-DSA-65, ML-KEM-768) and whose anti-spam mechanism operates on time rather than money. A sequential delay function over SHA-256 produces a globally ordered chain of windows of approximately 60 seconds each. Each window is sealed by an iterated hash computation that cannot be parallelized and cannot be skipped; verification cost equals computation cost. Operations within a window are rate-limited per identity, by the cumulative chain length of the operating account, and by seniority constraints — three different scarcities derived from time elapsed, not balance held. As long as honest operators run the sequential delay function, the chain extends, regardless of how many actors hold tokens or what fees they would have paid. Network transport currently uses TLS 1.3 with classical ECDHE; hybrid post-quantum key exchange (Noise_PQ) is scheduled for integration at milestone M6 to close store-now-decrypt-later confidentiality on transport.
 
 
 ## 1. Introduction
 
-Bitcoin and its descendants demonstrate that decentralized monetary consensus is achievable without trusted intermediaries. Two limitations prevent these systems from serving as a general financial substrate at the scale of a billion users.
+Bitcoin and its descendants demonstrate that decentralized monetary consensus is achievable without trusted intermediaries. Two limitations prevent these systems from serving as a general financial substrate at the scale of billions of users.
 
-First, all production cryptocurrencies derive their signature security from elliptic-curve discrete logarithm assumptions. Shor's algorithm [8], when run on a sufficiently large quantum computer, breaks these assumptions in polynomial time. The U.S. National Institute of Standards and Technology standardized post-quantum signature and key encapsulation mechanisms in 2024 (FIPS 203 [2], 204 [3], 205); existing major chains have not migrated. The migration is not a trivial parameter change — wire formats, address derivation, multisig schemes, light-client proofs all depend on the underlying primitive.
+First, all production cryptocurrencies derive their signature security from elliptic-curve discrete logarithm assumptions. Shor's algorithm [8], when run on a sufficiently large quantum computer, breaks these assumptions in polynomial time. The U.S. National Institute of Standards and Technology standardized post-quantum signature and key encapsulation mechanisms in 2024 (FIPS 203 [2], FIPS 204 [3]); existing major chains have not migrated. The migration is not a trivial parameter change — wire formats, address derivation, multisig schemes, light-client proofs all depend on the underlying primitive.
 
 Second, the anti-spam mechanism in fee-based chains scales poorly under adoption. As block space becomes scarce, small operations are priced out, defeating the original use case of low-friction online payments. Layer-two systems (state channels, rollups) shift the economics rather than remove the underlying scarcity.
 
-We propose Montana, a chain whose security rests on post-quantum primitives only and whose anti-spam mechanism operates on time rather than money. The chain advances by a verifiable delay function over SHA-256, producing globally ordered windows of approximately 60 seconds. Operations are rate-limited by per-identity windows, account chain length, and seniority — three independent scarcities derived from time elapsed.
+We propose Montana, a chain whose consensus signatures rest on post-quantum primitives and whose anti-spam mechanism operates on time rather than money. The chain advances by a sequential delay function over SHA-256, producing globally ordered windows of approximately 60 seconds. Operations are rate-limited by per-identity windows, account chain length, and seniority — three independent scarcities derived from time elapsed.
 
 
 ## 2. Time as a Scarce Resource
 
 In a fee-based chain, the scarce resource is block space; access is allocated by willingness to pay. Spam is deterred by the price of inclusion. Two failure modes follow. Under congestion, ordinary users are excluded by price. Under abundance, spammers re-enter at marginal cost. The mechanism does not converge on a stable point; it oscillates with demand.
 
-We replace block-space scarcity with time scarcity. The verifiable delay function (VDF) [5,6,7] over SHA-256 forces a sequential computation that cannot be parallelized: D iterations of SHA-256 must be performed in series, where D is calibrated so that the computation takes approximately 60 seconds on commodity x86_64 hardware. The output of one window is the input to the next. The total length of the chain measures wall-clock time elapsed since genesis, recoverable by anyone who can verify the VDF output.
+We replace block-space scarcity with time scarcity. A sequential delay function over SHA-256 forces a sequential computation that cannot be parallelized: D iterations of SHA-256 must be performed in series, where D is calibrated so that the computation takes approximately 60 seconds on commodity x86_64 hardware. The output of one window is the input to the next. The total length of the chain measures wall-clock time elapsed since genesis, recoverable by anyone who can verify the chain by replaying the iterations.
 
-Time is uniformly available to all participants. An attacker with one hundred times the resources of an honest operator does not get one hundred times more time. The attacker may run more parallel chains, but each chain still advances at the same wall-clock rate. Sybil identities do not produce more time per identity — they produce more identities, each subject to the same per-identity per-window rate limit.
+Time is uniformly available to all participants. An attacker with one hundred times the resources of an honest operator does not get one hundred times more time per chain. The attacker may run more parallel chains, but each chain still advances at the same wall-clock rate. Sybil identities do not produce more time per identity — they produce more identities, each subject to the same per-identity per-window rate limit within the protocol.
 
-Time as scarcity does not require a price feed, an exchange, a pricing oracle. Its valuation is fixed by the protocol: one window equals one window, regardless of currency value.
+Time as scarcity does not require a price feed, an exchange, or a pricing oracle. Its valuation is fixed by the protocol: one window equals one window, regardless of currency value.
 
 
 ## 3. The TimeChain
 
-Let `T_r` denote the VDF output at window `r`. The TimeChain advances by
+Let `T_r` denote the chain output at window `r`. The TimeChain advances by
 
 ```
 T_r = SHA-256^D (T_{r-1})
@@ -41,21 +41,49 @@ T_r = SHA-256^D (T_{r-1})
 
 where `T_0` is the genesis seed and `D` is the per-window iteration count. `D` is initialized at 325 000 000 and recalibrated every 20 160 windows (approximately fourteen days) according to a formula tied to median observed wall-clock window times across honest operators. The recalibration is canonical: every honest operator computes the same new `D` from public inputs.
 
-The verifiability of the VDF allows any node to confirm `T_r` from `T_{r-1}` by performing the same `D` iterations. There is no trusted setup; the output is a public function of the input and the parameter.
+This construction is a sequential delay function: the iteration must be performed in order, and verification requires re-running the same `D` iterations. Verification cost equals computation cost — there is no asymmetric verification shortcut as in verifiable delay functions of Boneh, Bonneau, Bünz, and Fisch [5], Pietrzak [6], or Wesolowski [7]. Those constructions operate over RSA groups or class groups of imaginary quadratic fields and achieve O(log T) or O(1) verification. Montana adopts the simpler primitive for two reasons: (i) the cryptographic surface is minimized, depending only on SHA-256 (FIPS 180-4 [4]) which is already required for hashing, addressing, and Merkle commitments; (ii) verification asymmetry is not strictly required when the verifier is itself an operator running the chain — operators verify by extending the chain, which is the same work they perform for the next window.
 
-A new operator joining the network is required to produce a candidate VDF chain of length at least 20 160 windows (approximately ten hours of wall-clock time on commodity hardware). This requirement is the protocol's Sybil defense: producing N false identities requires N candidate chains, each consuming N times the wall-clock time. There is no shortcut.
+A new operator joining the network is required to produce a candidate sequential hash chain of length at least 20 160 windows (approximately ten hours of wall-clock time on commodity hardware) before becoming eligible to participate in the lottery. This requirement is the protocol's Sybil entry barrier.
+
+The cost of producing N candidate identities scales linearly. Each candidate chain has the same per-chain wall-clock cost T (approximately 10 hours). An attacker with N machines can compute all N chains in parallel at wall-clock T, paying N × T machine-hours of computation. With one machine, the attacker pays N × T wall-clock hours. There is no quadratic multiplier and no time-non-parallelizability across distinct identities. Sybil cost is therefore linear in hardware and linear in energy expenditure, not super-linear in either.
+
+Sybil resistance within Montana derives from the composition of this entry cost with the in-protocol per-identity rate limits (Section 8) and the seniority gating of the lottery (Section 6). The combined effect is that attacker influence over consensus grows linearly with hardware budget and not at all with token holdings.
 
 
 ## 4. Post-Quantum Primitives
 
-Signatures are produced and verified by ML-DSA-65, the FIPS 204 module-lattice signature scheme. Key encapsulation, where used (operator handshake, encrypted application payloads), is performed by ML-KEM-768, the FIPS 203 module-lattice scheme. Both are members of the NIST PQC standardization output. Key sizes are: public key 1952 bytes (ML-DSA-65), secret key 4032 bytes, signature 3309 bytes; ML-KEM-768 public key 1184 bytes, ciphertext 1088 bytes, shared secret 32 bytes.
+Signatures are produced and verified by ML-DSA-65, the FIPS 204 module-lattice signature scheme [3]. Key encapsulation, where used (operator handshake, encrypted application payloads), is performed by ML-KEM-768, the FIPS 203 module-lattice scheme [2]. Both are members of the NIST PQC standardization output at NIST security level 3 (approximately 192-bit symmetric-equivalent strength). Key sizes: ML-DSA-65 public key 1952 bytes, secret key 4032 bytes, signature 3309 bytes; ML-KEM-768 public key 1184 bytes, ciphertext 1088 bytes, shared secret 32 bytes.
 
-Hashing is SHA-256 (FIPS 180-4 [4]). Grover's algorithm [9] reduces the effective preimage security of SHA-256 from 256 to 128 bits in the quantum model, which remains adequate.
+ML-DSA-65 is used in deterministic mode (RND = 0x00 × 32 per FIPS 204 §3.7) to ensure byte-identical signatures for identical (sk, message) pairs. All implementations are required to use constant-time operations to resist timing and power side-channel attacks.
 
-Key derivation from a 24-word mnemonic uses PBKDF2-HMAC-SHA-256 with iter=2^20 to compute a master seed, then HKDF-SHA-256 to derive per-purpose keys (account signing, node signing, encrypted app payloads). The mnemonic wordlist is 256 Russian-language words selected for distinguishability under typing, listening, and transcription. The protocol is alphabet-agnostic; the wordlist is a deployment choice and may be substituted with any 256-word set whose entropy claim per word is identical (8 bits).
+Hashing is SHA-256 (FIPS 180-4 [4]). Grover's algorithm [9] reduces the effective preimage security of SHA-256 from 256 to 128 bits in the quantum model, which remains adequate. Collision resistance against quantum attackers is bounded by 85 bits (BHT algorithm); this affects only protocols that depend on collision resistance for adversarially chosen inputs. Montana's domain-separated hash compositions and signed-input constructions avoid this dependence: the inputs to consensus-critical hashes are either canonical and unpredictable-offline, or signed by honest participants, eliminating the collision attack surface in practice.
+
+Key derivation from a 24-word mnemonic uses PBKDF2-HMAC-SHA-256 with iter = 2^20 to compute a master seed, then HKDF-SHA-256 to derive per-purpose keys (account signing, node signing, encrypted app payloads). The mnemonic wordlist is 256 Russian-language words selected for distinguishability under typing, listening, and transcription. The protocol is alphabet-agnostic; the wordlist is a deployment choice and may be substituted with any 256-word set whose entropy claim per word is identical (8 bits). The current wordlist file is maintained in the project repository as `Montana wordlist.txt`; formal publication of the wordlist with its selection methodology is committed to milestone M9.
 
 
-## 5. Operations and the Account Table
+## 5. Threat Model
+
+Montana's threat model is formulated explicitly to delimit security properties that are claimed from those that are not.
+
+**Attacker classes.** We consider three classes:
+- **Profit-seeking adversaries** — adversaries with rational economic motivation, bounded by a budget and seeking positive expected return.
+- **Sabotage adversaries** — adversaries with fixed budgets seeking to inflict damage on the network without expectation of monetary return (state-level adversaries, large competitors, disgruntled insiders).
+- **Network-level adversaries** — adversaries with control over substantial fractions of network paths, capable of dropping, reordering, or delaying messages between operators.
+
+**Assumed honest majority.** Honest operators control more than 67% of total `active_chain_length` (the sum of cemented operations across all active operator chains). Quorum is weighted by `active_chain_length`, not by headcount, so Sybil identity inflation does not weaken the quorum requirement.
+
+**Hardware-bounded influence.** Attacker advantage in consensus participation scales linearly with hardware budget (parallel SHA-256 compute) and not at all with token holdings. Capital does not buy more time. An adversary with k times the hardware of an honest median operator obtains at most k times the operator share in expectation.
+
+**What Montana defends.** Consensus integrity (no operation is cemented without honest quorum signature); signature unforgeability (post-quantum, ML-DSA-65); Sybil-bounded influence (linear in hardware); chain liveness under honest > 67% (sections 9 and below).
+
+**What Montana does not defend, at present milestone.** Transport-layer confidentiality against quantum adversaries (TLS 1.3 with classical ECDHE remains vulnerable to store-now-decrypt-later until Noise_PQ integration at M6); application-layer metadata anonymity beyond what Anchor encryption provides (the network observes operation timing and counts even when content is encrypted); fairness of the bootstrap period before the operator population stabilizes (Section 7).
+
+**Failure conditions.** Safety fails when an attacker controls > 50% of active_chain_length and > 50% of operator SHA-256 compute simultaneously and for a sustained duration. Liveness halts (without safety loss) when fewer than 67% of active operators are responsive within the fallback cascade (Section 9).
+
+This threat model is the basis for the security claims in subsequent sections. Properties beyond this model — including any privacy property beyond explicit content encryption — are out of scope for the protocol layer.
+
+
+## 6. Operations and the Account Table
 
 The state is a single Account Table mapping account identifiers to records:
 
@@ -71,14 +99,16 @@ AccountRecord {
 }
 ```
 
-Operations transform state through `apply_proposal(state, proposal) → state'`. The transformation is deterministic, byte-exact reproducible by any node from the same `(state, proposal)` pair. The set of operation classes is closed: Transfer, OpenAccount, ChangeKey, NodeRegistration, Anchor, NicknameBid, TransferActivation, CloseAccount. Each operation has a fixed canonical encoding, a fixed validation rule, and a fixed apply function.
+Total AccountRecord size is 2 059 bytes including all fields. Operations transform state through `apply_proposal(state, proposal) → state'`. The transformation is deterministic, byte-exact reproducible by any node from the same `(state, proposal)` pair. The set of operation classes is closed: Transfer, OpenAccount, ChangeKey, NodeRegistration, Anchor, NicknameBid, TransferActivation, CloseAccount. Each operation has a fixed canonical encoding, a fixed validation rule, and a fixed apply function.
+
+Each account chain is restricted to one operation per τ_1 window. Two operations with the same `prev_hash` from the same sender constitute equivocation; both operations are marked equivocated and neither is cemented. The intra-window ordering problem is eliminated by construction at N = 1, removing both subjective ordering surface (violation of [I-3] determinism) and additional consensus seed surface ([I-8]).
 
 Conservation invariants hold per operation: the sum of balance deltas across all affected records equals the emission delta plus the burn delta. No operation creates or destroys value silently.
 
 
-## 6. Lottery
+## 7. Lottery
 
-The operator who completes the VDF for window `r` is selected by a deterministic lottery from the set of registered operators. Each operator submits a `VdfReveal` with the window's VDF output and a signature; the lottery winner is
+The operator who completes the chain for window `r` is selected by a deterministic lottery from the set of registered operators. Each operator submits a `VdfReveal` with the window's chain output and a signature; the lottery winner is
 
 ```
 winner = argmin_{operator}  ticket(operator, r)
@@ -90,32 +120,51 @@ where
 ticket(operator, r) = SHA-256(operator.node_id || cemented_bundle_aggregate(r-2) || r)
 ```
 
-The `cemented_bundle_aggregate(r-2)` term is the lottery's network-bound unpredictability source: it incorporates signatures from honest operators in window `r-2`, which an attacker cannot precompute without privkeys held by honest participants. This closes the class of attacks where an adversary with hardware advantage precomputes future windows and grinds attacker-chosen fields against them.
+The `cemented_bundle_aggregate(r-2)` term is the lottery's network-bound unpredictability source. It incorporates signatures from honest operators in window `r-2` — values that an attacker cannot precompute without the private keys of honest participants. This closes the class of grinding attacks where an adversary with hardware advantage precomputes future chain outputs and grinds attacker-chosen fields against them.
+
+The grinding attack proceeds as follows. An adversary with k times the SHA-256 throughput of a commodity operator can precompute k hours of chain output in one hour of wall-clock. If the lottery seed were `H(node_id || T_r || r)` with `T_r` predictable offline, the adversary could generate many candidate keypairs, compute their tickets against precomputed `T_r`, and select the keypair giving the lowest ticket for each future window. This grants disproportionate consensus share for fixed hardware. The `cemented_bundle_aggregate(r-2)` component blocks this attack: the adversary cannot precompute the aggregate without forging honest signatures, which the lattice-based ML-DSA-65 scheme prevents at NIST security level 3 (192-bit quantum-equivalent strength). The grinding horizon collapses to already-cemented windows, where attacker-chosen fields are frozen by the registered `node_id` committed at registration. This is the protocol's invariant [I-8], network-bound unpredictability of consensus seeds.
 
 
-## 7. Incentive
+## 8. Liveness
 
-The lottery winner of window `r` receives 13 base units of Ɉ (`13 × 10^9 nɈ`), credited to the operator account. There are no transaction fees. There is no second-tier inflation. There is no premine, no presale, no founder allocation. The total emission at window `r` is exactly `13 × r` units, a closed-form function of window count.
+The chain extends as long as quorum signatures are collected. The mechanism is the fallback cascade, defined in the protocol specification.
 
-Storage of accumulated value is not separately incentivized. The protocol does not pay for holding tokens. The single reward path is operating the VDF for a window and winning that window's lottery.
+The canonical proposer of window `W` is `winner_{W-2}`, the operator whose ticket achieved `argmin(weighted_ticket)` in window `W-2`. If this proposer is offline or submits an invalid proposal, the role passes to `fallback_1 = second_min(weighted_ticket)`, then `fallback_2 = third_min`, and so on. The cascade is canonical — every honest operator computes the same ordering of fallbacks from the cemented set of window `W-2`.
 
-For any operator, the expected income per unit time depends on the share of cemented `VdfReveal`s contributed by that operator across windows. With `N` operators of equal computational power running honest VDF, the expected reward per operator per window is `13/N` Ɉ. With unequal power, the share is proportional to the number of valid `VdfReveal`s submitted in time.
+Quorum threshold for `BundledConfirmation` is 67% of `active_chain_length`. With more than 67% honest active_chain_length, quorum is reached at the canonical proposer or one of the early fallbacks, and the proposal is cemented within the window.
+
+The cascade is depth-bounded by `fallback_depth = 255`. If 255 successive fallbacks fail to produce quorum, the protocol halts by liveness — not by safety. Safety is preserved (no invalid proposal is cemented); only progress stops until honest participation exceeds 67% again.
+
+Full mechanism, including BundledConfirmation construction, signature aggregation, and the participation_ratio feedback into D recalibration, is described in the protocol specification.
 
 
-## 8. Anti-Spam Without Fees
+## 9. Incentive and Bootstrap
+
+The lottery winner of window `r` receives 13 base units of Ɉ (`13 × 10^9 nɈ`), credited to the operator account at the following window's settlement. There are no transaction fees. There is no second-tier inflation. There is no premine, no presale, no founder allocation. The total emission at window `r` is exactly `13 × r` base units, a closed-form function of window count.
+
+Storage of accumulated value is not separately incentivized. The protocol does not pay for holding tokens. The single reward path is operating the chain for a window and winning that window's lottery.
+
+For any operator, the expected income per unit time depends on the share of cemented `VdfReveal`s contributed by that operator across windows. With `N` operators of equal computational power running honest sequential hashing, the expected reward per operator per window is `13/N` Ɉ. With unequal power, the share is proportional to the number of valid `VdfReveal`s submitted in time.
+
+**Bootstrap economics.** At small `N`, the per-operator reward is large: a single operator receives all `13` Ɉ per window, two operators split as `6.5` each. As `N` grows, individual share dilutes toward the asymptotic `13/N`. This creates an incentive for early entry while the network is small and a corresponding equilibrium where new entry becomes marginal as `13/N` approaches the operational cost.
+
+Formal Nash equilibrium analysis (excluding rational-delay strategies, characterizing the equilibrium `N*` at varying hardware costs and electricity prices) is deferred to the academic publication at milestone M9. The whitepaper does not claim that rational-delay equilibria are excluded; the bootstrap period is acknowledged as an area of open research within the time-as-scarcity model.
+
+
+## 10. Anti-Spam Without Fees
 
 Spam protection is the composition of three time-based mechanisms:
 
-**Per-identity rate.** Operations of class A (Transfer, NicknameBid, etc.) are limited to one per account per window τ_1 = 1 window. An attacker with N Sybil identities can perform at most N operations per window, but each Sybil identity has its own creation cost (see below). The rate is uniform across identities; there is no fast lane.
+**Per-identity rate.** Operations of class A (Transfer, NicknameBid, etc.) are limited to one per account per window τ_1 = 1 window. An attacker with `N` Sybil identities can perform at most `N` operations per window, but each Sybil identity has its own creation cost (Section 3). The rate is uniform across identities; there is no fast lane.
 
-**Chain-length threshold.** Privileged operations (e.g. NodeRegistration, NicknameBid) require the operating account's `account_chain_length` to exceed a threshold k. An account must be active for at least k windows before issuing such an operation. The threshold cannot be purchased; it can only be earned by elapsed activity.
+**Chain-length threshold.** Privileged operations (NodeRegistration, NicknameBid) require the operating account's `account_chain_length` to exceed a threshold `k`. An account must be active for at least `k` windows before issuing such an operation. The threshold cannot be purchased; it can only be earned by elapsed activity.
 
 **Seniority gating.** Lottery weight in the operator selection scales with the operator's `account_chain_length` up to a saturation point. New operators have lower weight; they accrue weight by participating across windows. This dampens flash-mob attacks where many adversarial operators register simultaneously.
 
 These mechanisms together close DoS without monetary barriers. The protocol contains no `fee` field on any operation.
 
 
-## 9. State Lifecycle and Pruning
+## 11. State Lifecycle and Scaling
 
 Every persistent record in consensus state has either a cost-based barrier, a lifecycle bound, or a hard quota. Account creation requires the creator to submit an opening operation whose validation includes a chain-length precondition. Accounts whose balance falls below `MIN_ACCOUNT_BALANCE = 1 nɈ` and whose `last_active_window` precedes the current window by more than `8 × 20 160` windows are pruned by `apply_candidate_expiry` at the next epoch boundary.
 
@@ -127,41 +176,53 @@ Pruning is not optional; it is part of the canonical state transition. Two hones
 
 which is independent of accumulated wall-clock time, ensuring that long-running chains do not produce unbounded state.
 
+**Scaling to one billion accounts.** AccountRecord is 2 059 bytes. State at 1 × 10^9 active accounts is approximately 2.06 TB, holdable on commodity disks. NodeRecord at 4 034 bytes adds a smaller term proportional to operator count (typically much less than 1% of account count). State growth is dominated by the active account population, bounded by the pruning rule above.
 
-## 10. Privacy
+Fast synchronization of new operators against a 2 TB state is supported by snapshot-based sync rooted in the current Merkle commitment, with state delivery in independently verifiable chunks. The full implementation of snapshot-based fast-sync is scheduled for milestone M7. Until then, new operators perform full historical sync, suitable at the current population scale but unsuitable at the billion-account target. Benchmark results from M7 will determine the maximum population at which the protocol can comfortably onboard new operators; this is one of the empirical questions that the academic publication at M9 will address quantitatively.
+
+State size is not unbounded by time. The pruning rule guarantees that state grows with active population, not with chain age.
+
+
+## 12. Privacy
 
 The protocol exposes balances, transfers, account graphs, and operator identities by default. Application-layer privacy is achieved through Anchor objects: an account commits a 32-byte hash to chain, and the contents (encrypted under the owner's key) are held off-chain by the owner or by a delegated peer. The Anchor mechanism does not give the protocol visibility into the contents.
 
 Privacy is a user choice rather than a protocol-imposed feature. Mass-surveillance through privacy-by-protocol is not within scope; selective privacy through user-managed encryption is. This boundary aligns the protocol with regulatory frameworks (FATF, MiCA) that have rejected protocol-level privacy mixers while accepting end-user encryption of off-chain content.
 
-
-## 11. Network and Synchronization
-
-The protocol's wire format and synchronization mechanism are described in [`mt-net`](https://github.com/efir369999/Montana/tree/main/Код/crates/mt-net) and [`mt-net-transport`](https://github.com/efir369999/Montana/tree/main/Код/crates/mt-net-transport) of the reference implementation. Operators discover peers, exchange `VdfReveal` and `BundledConfirmation` messages, and replicate the cemented chain via libp2p over TCP+TLS.
-
-A new node synchronizes by acquiring the current TimeChain head from any honest peer, verifying the VDF chain locally, and replicating the Account Table snapshot rooted in the current Merkle commitment. Synchronization is verify-only; no trust in the source peer is required beyond the TLS connection.
+Beyond content privacy, the protocol does not claim metadata anonymity. The network layer observes operation timing, counts, and operator identity. Operators concerned with metadata exposure run their own nodes and avoid third-party hosting. Tier-1 (self-hosted) and Tier-2 (Noise_PQ tunneled) deployments are differentiated in the Network specification.
 
 
-## 12. Calculations
+## 13. Network and Transport Security
 
-We consider a scenario where an honest operator and an attacker compete to win windows. The probability that the attacker wins a given window is proportional to the attacker's share of total VDF computational power. With attacker share `p` and honest share `1 − p`, the probability that the attacker wins `k` consecutive windows is `p^k`, decreasing geometrically.
+The protocol's wire format and synchronization mechanism are described in [`mt-net`](https://github.com/efir369999/Montana/tree/main/Code/crates/mt-net) and [`mt-net-transport`](https://github.com/efir369999/Montana/tree/main/Code/crates/mt-net-transport) of the reference implementation. Operators discover peers, exchange `VdfReveal` and `BundledConfirmation` messages, and replicate the cemented chain via libp2p over TCP+TLS.
 
-For the lottery to be biased in favor of the attacker, the attacker must control more than half of all registered operator power. With per-operator wall-clock VDF being constant (no parallelization), Sybil identity multiplication does not increase total power; it only fragments the same power across more identities. The attacker's share is bounded by the number of physical machines they operate, not by capital.
+Transport security at the current milestone uses TLS 1.3 with classical ECDHE (X25519). This is sufficient against classical adversaries but vulnerable to store-now-decrypt-later attacks by a future quantum adversary recording today's traffic. Note that this does not affect consensus integrity — all consensus signatures are post-quantum (ML-DSA-65) and verified independently of transport — but it does affect transport confidentiality.
 
-This is the security argument: monetary capital does not buy more time. The operator economy reduces to a hardware economy in which the unit good (one VDF window) is uniformly priced in joules.
+Hybrid post-quantum key exchange via Noise_PQ (combining X25519 with ML-KEM-768) is scheduled for integration at milestone M6. After M6, transport confidentiality is post-quantum as well. Operators with elevated confidentiality requirements at the present milestone are advised to wrap network traffic in a separate PQ-capable VPN tunnel; this is a Tier-2 deployment option described in the Network specification.
+
+A new node synchronizes by acquiring the current TimeChain head from any honest peer, verifying the chain locally, and replicating the Account Table snapshot rooted in the current Merkle commitment. Synchronization is verify-only; no trust in the source peer is required beyond the TLS connection.
+
+
+## 14. Calculations
+
+We consider a scenario where an honest operator and an attacker compete to win windows. The probability that the attacker wins a given window is proportional to the attacker's share of total registered operator computational power. With attacker share `p` and honest share `1 − p`, the probability that the attacker wins `k` consecutive windows is `p^k`, decreasing geometrically.
+
+For the lottery to be biased in favor of the attacker, the attacker must control more than half of all registered operator power. With per-operator wall-clock chain advancement being constant (no parallelization within a single chain), Sybil identity multiplication does not increase total power; it only fragments the same power across more identities. The attacker's share is bounded by the number of physical machines they operate, multiplied by the per-machine SHA-256 throughput.
 
 ```
 P(attacker wins k consecutive windows) = p^k
 ```
 
-For `p = 0.3` and `k = 10`, P = 5.9 × 10^-6, comparable to the Bitcoin probability of an attacker reorganizing a chain after 10 confirmations under analogous attacker share.
+For `p = 0.3` and `k = 10`, P = 5.9 × 10^-6. This is the probability of consecutive single-window wins; it does not correspond directly to chain reorganization probability in the Bitcoin sense, because Montana's cementing rule requires honest quorum signature on `BundledConfirmation` for any operation to take effect (Section 7). A run of consecutive lottery wins by an adversary does not allow the adversary to cement adversarial operations without 67% honest active_chain_length signatures — the lottery selects the proposer, but the proposal still requires quorum.
+
+This is the security argument: monetary capital does not buy more time. The operator economy reduces to a hardware economy in which the unit good (one chain window) is uniformly priced in joules.
 
 
-## 13. Conclusion
+## 15. Conclusion
 
-We have proposed a blockchain whose security rests on post-quantum cryptographic primitives and whose anti-spam mechanism operates on time rather than fees. The construction does not require trusted setup, does not require a price feed, and does not impose a monetary barrier on participation. The mechanism scales to a billion active accounts as a baseline architectural target.
+We have proposed a blockchain whose consensus security rests on post-quantum cryptographic primitives and whose anti-spam mechanism operates on time rather than fees. The construction does not require trusted setup, does not require a price feed, and does not impose a monetary barrier on participation. The architecture is designed to scale to billions of active accounts on commodity-disk hardware, subject to fast-sync benchmarks at milestone M7.
 
-The reference implementation in Rust is available at the cited URL under permissive license (Apache-2.0 / MIT). Further work includes the network-layer integration into the node binary (M6 multi-node deployment), the snapshot-based fast synchronization (M7), and the conformance suite expansion to second implementations in independent languages (M9).
+The reference implementation in Rust is available at the cited URL under permissive license (Apache-2.0 / MIT). Further work includes the network-layer integration into the node binary (M6 multi-node deployment with hybrid PQ Noise_PQ transport), the snapshot-based fast synchronization (M7), formal liveness analysis and bootstrap equilibrium analysis as an academic publication (M9), and the conformance suite expansion to second implementations in independent languages (M9).
 
 
 ## References
@@ -174,11 +235,11 @@ The reference implementation in Rust is available at the cited URL under permiss
 
 [4] National Institute of Standards and Technology, "Secure Hash Standard (SHS)," FIPS 180-4, 2015.
 
-[5] D. Boneh, J. Bonneau, B. Bünz, B. Fisch, "Verifiable Delay Functions," CRYPTO 2018.
+[5] D. Boneh, J. Bonneau, B. Bünz, B. Fisch, "Verifiable Delay Functions," CRYPTO 2018. Cited as related work with O(log T) verification on RSA groups; Montana's sequential delay function adopts a simpler primitive without efficient verification, per invariant [I-7] minimal cryptographic surface.
 
-[6] K. Pietrzak, "Simple Verifiable Delay Functions," ITCS 2019.
+[6] K. Pietrzak, "Simple Verifiable Delay Functions," ITCS 2019. Related work, class groups of imaginary quadratic fields.
 
-[7] B. Wesolowski, "Efficient verifiable delay functions," EUROCRYPT 2019.
+[7] B. Wesolowski, "Efficient verifiable delay functions," EUROCRYPT 2019. Related work, RSA groups with O(1) verification proof.
 
 [8] P. W. Shor, "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer," SIAM Journal on Computing, 1997.
 
