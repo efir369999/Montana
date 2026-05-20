@@ -384,6 +384,170 @@ cleanup:
     return rc;
 }
 
+/* Build an ML-KEM-768 EVP_PKEY from a raw public key. */
+static EVP_PKEY* mlkem_pkey_from_public(
+    const uint8_t* pk,
+    size_t pk_len
+) {
+    EVP_PKEY_CTX* ctx = NULL;
+    EVP_PKEY* pkey = NULL;
+    OSSL_PARAM params[2];
+
+    ctx = EVP_PKEY_CTX_new_from_name(NULL, "ML-KEM-768", NULL);
+    if (ctx == NULL) {
+        return NULL;
+    }
+
+    if (EVP_PKEY_fromdata_init(ctx) != 1) {
+        goto fail;
+    }
+
+    /* OpenSSL EVP convention: (void*)pk — backwards compat cast, not mutation. */
+    params[0] = OSSL_PARAM_construct_octet_string(
+        OSSL_PKEY_PARAM_PUB_KEY, (void*)pk, pk_len
+    );
+    params[1] = OSSL_PARAM_construct_end();
+
+    if (EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, params) != 1) {
+        pkey = NULL;
+        goto fail;
+    }
+
+fail:
+    EVP_PKEY_CTX_free(ctx);
+    return pkey;
+}
+
+/* Build an ML-KEM-768 EVP_PKEY from a raw secret key. */
+static EVP_PKEY* mlkem_pkey_from_secret(
+    const uint8_t* sk,
+    size_t sk_len
+) {
+    EVP_PKEY_CTX* ctx = NULL;
+    EVP_PKEY* pkey = NULL;
+    OSSL_PARAM params[2];
+
+    ctx = EVP_PKEY_CTX_new_from_name(NULL, "ML-KEM-768", NULL);
+    if (ctx == NULL) {
+        return NULL;
+    }
+
+    if (EVP_PKEY_fromdata_init(ctx) != 1) {
+        goto fail;
+    }
+
+    params[0] = OSSL_PARAM_construct_octet_string(
+        OSSL_PKEY_PARAM_PRIV_KEY, (void*)sk, sk_len
+    );
+    params[1] = OSSL_PARAM_construct_end();
+
+    if (EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_KEYPAIR, params) != 1) {
+        pkey = NULL;
+        goto fail;
+    }
+
+fail:
+    EVP_PKEY_CTX_free(ctx);
+    return pkey;
+}
+
+int mt_mlkem_encapsulate(
+    const uint8_t pk[MT_MLKEM768_PUBKEY_SIZE],
+    uint8_t ct_out[MT_MLKEM768_CIPHERTEXT_SIZE],
+    uint8_t ss_out[MT_MLKEM768_SS_SIZE]
+) {
+    EVP_PKEY* pkey = NULL;
+    EVP_PKEY_CTX* ctx = NULL;
+    int ret = MT_ERR_KEYGEN_FAILED;
+    size_t ct_len = MT_MLKEM768_CIPHERTEXT_SIZE;
+    size_t ss_len = MT_MLKEM768_SS_SIZE;
+
+    if (pk == NULL || ct_out == NULL || ss_out == NULL) {
+        return MT_ERR_INVALID_INPUT;
+    }
+
+    pkey = mlkem_pkey_from_public(pk, MT_MLKEM768_PUBKEY_SIZE);
+    if (pkey == NULL) {
+        return MT_ERR_INVALID_PUBLIC_KEY;
+    }
+
+    ctx = EVP_PKEY_CTX_new_from_pkey(NULL, pkey, NULL);
+    if (ctx == NULL) {
+        ret = MT_ERR_OPENSSL_INIT;
+        goto cleanup;
+    }
+
+    if (EVP_PKEY_encapsulate_init(ctx, NULL) != 1) {
+        ret = MT_ERR_OPENSSL_INIT;
+        goto cleanup;
+    }
+
+    if (EVP_PKEY_encapsulate(ctx, ct_out, &ct_len, ss_out, &ss_len) != 1) {
+        ret = MT_ERR_KEYGEN_FAILED;
+        goto cleanup;
+    }
+
+    if (ct_len != MT_MLKEM768_CIPHERTEXT_SIZE || ss_len != MT_MLKEM768_SS_SIZE) {
+        ret = MT_ERR_PARAM_SIZE_MISMATCH;
+        goto cleanup;
+    }
+
+    ret = MT_OK;
+
+cleanup:
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
+    return ret;
+}
+
+int mt_mlkem_decapsulate(
+    const uint8_t sk[MT_MLKEM768_SECRETKEY_SIZE],
+    const uint8_t ct[MT_MLKEM768_CIPHERTEXT_SIZE],
+    uint8_t ss_out[MT_MLKEM768_SS_SIZE]
+) {
+    EVP_PKEY* pkey = NULL;
+    EVP_PKEY_CTX* ctx = NULL;
+    int ret = MT_ERR_KEYGEN_FAILED;
+    size_t ss_len = MT_MLKEM768_SS_SIZE;
+
+    if (sk == NULL || ct == NULL || ss_out == NULL) {
+        return MT_ERR_INVALID_INPUT;
+    }
+
+    pkey = mlkem_pkey_from_secret(sk, MT_MLKEM768_SECRETKEY_SIZE);
+    if (pkey == NULL) {
+        return MT_ERR_INVALID_SECRET_KEY;
+    }
+
+    ctx = EVP_PKEY_CTX_new_from_pkey(NULL, pkey, NULL);
+    if (ctx == NULL) {
+        ret = MT_ERR_OPENSSL_INIT;
+        goto cleanup;
+    }
+
+    if (EVP_PKEY_decapsulate_init(ctx, NULL) != 1) {
+        ret = MT_ERR_OPENSSL_INIT;
+        goto cleanup;
+    }
+
+    if (EVP_PKEY_decapsulate(ctx, ss_out, &ss_len, ct, MT_MLKEM768_CIPHERTEXT_SIZE) != 1) {
+        ret = MT_ERR_KEYGEN_FAILED;
+        goto cleanup;
+    }
+
+    if (ss_len != MT_MLKEM768_SS_SIZE) {
+        ret = MT_ERR_PARAM_SIZE_MISMATCH;
+        goto cleanup;
+    }
+
+    ret = MT_OK;
+
+cleanup:
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(pkey);
+    return ret;
+}
+
 int mt_self_test(void) {
     uint8_t mldsa_seed[MT_MLDSA65_SEED_SIZE] = {0};
     uint8_t mldsa_pk[MT_MLDSA65_PUBKEY_SIZE];
