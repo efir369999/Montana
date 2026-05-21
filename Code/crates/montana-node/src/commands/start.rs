@@ -739,7 +739,11 @@ fn spawn_network_thread(
         .map_err(|e| NodeError::Network(format!("parse --listen {listen_str}: {e}")))?;
 
     let local_keypair = identity.libp2p_keypair();
-    let local_peer_id = identity.libp2p_peer_id();
+    let mldsa_id_pk = identity.node_pk.clone();
+    let mldsa_id_sk_bytes: [u8; mt_crypto::SECRET_KEY_SIZE] = *identity.node_sk.as_bytes();
+    let mldsa_id_sk = mt_crypto::SecretKey::from_array(mldsa_id_sk_bytes);
+    let local_peer_id = mt_net_transport::derive_peer_id(&identity.node_pk)
+        .map_err(|e| NodeError::Network(format!("derive XX peer_id: {e}")))?;
     let manifest_clone = manifest.clone();
 
     let (broadcast_tx, broadcast_rx) =
@@ -769,6 +773,8 @@ fn spawn_network_thread(
             if let Err(e) = runtime.block_on(crate::network::run_network_loop(
                 local_keypair,
                 local_peer_id,
+                mldsa_id_pk,
+                mldsa_id_sk,
                 manifest_clone,
                 listen_addr,
                 broadcast_rx,

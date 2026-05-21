@@ -1,14 +1,19 @@
-// Transport build helper для libp2p Swarm с TLS 1.3 + Noise + Yamux.
+// Transport build helper для libp2p Swarm с Noise_PQ + Yamux.
 //
-// Spec section "Connection lifecycle" Step 1-3:
-//   TCP SYN → TLS 1.3 handshake → Noise key agreement
+// Spec section "Connection lifecycle":
+//   TCP SYN → Noise_PQ XX handshake (ML-KEM-768 + ML-DSA-65) → Yamux
+//
+// Production transport — post-quantum через Noise_PQ XX pattern. Без TLS 1.3,
+// без classical Noise. ML-DSA-65 ID signature + ML-KEM-768 ephemeral KEM на
+// обе стороны handshake — identity discovered during the handshake.
 //
 // Step 4-5 (IBT proof + access level) — см. ibt_upgrade::classify_proof.
-// Step 6 (ProtocolMessage exchange) — caller responsibility поверх данного swarm.
 
-use libp2p::{noise, tcp, tls, yamux, Multiaddr, Swarm, SwarmBuilder};
+use libp2p::{tcp, yamux, Multiaddr, Swarm, SwarmBuilder};
 
 use crate::error::TransportError;
+use crate::xx_noise_pq_upgrade::NoisePqXxConfig;
+use mt_crypto::{PublicKey as MtPublicKey, SecretKey as MtSecretKey};
 
 pub struct NetworkConfig {
     pub listen_addrs: Vec<Multiaddr>,
@@ -18,8 +23,6 @@ pub struct NetworkConfig {
 
 impl NetworkConfig {
     pub fn defaults() -> Self {
-        // Defaults per spec Network section + critic-fix P-S3
-        // (operator-configurable, не Genesis Decree binding).
         NetworkConfig {
             listen_addrs: Vec::new(),
             max_inbound: 13,
@@ -28,18 +31,30 @@ impl NetworkConfig {
     }
 }
 
-pub fn build_swarm<B>(behaviour: B, config: &NetworkConfig) -> Result<Swarm<B>, TransportError>
+/// Build a libp2p Swarm with a randomly-generated libp2p transport keypair
+/// (suitable for unit tests). Production code paths must use
+/// `build_swarm_with_keypair` so the local PeerId is stable across restarts.
+///
+/// `mldsa_id_pk` + `mldsa_id_sk` provide the Montana ML-DSA-65 identity
+/// used by the Noise_PQ XX handshake to authenticate this side of every
+/// connection.
+pub fn build_swarm<B>(
+    behaviour: B,
+    config: &NetworkConfig,
+    mldsa_id_pk: MtPublicKey,
+    mldsa_id_sk: MtSecretKey,
+) -> Result<Swarm<B>, TransportError>
 where
     B: libp2p::swarm::NetworkBehaviour + Send,
 {
+    let xx_config = NoisePqXxConfig::new(mldsa_id_pk, mldsa_id_sk);
     let mut swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_tcp(
             tcp::Config::default(),
-            // TLS 1.3 (rustls) + Noise — двойное шифрование per spec
-            // Transport Obfuscation; TLS hides traffic от passive observer
-            // (DPI), Noise authenticates peer identity.
-            (tls::Config::new, noise::Config::new),
+            move |_libp2p_kp: &libp2p::identity::Keypair| -> Result<NoisePqXxConfig, std::convert::Infallible> {
+                Ok(xx_config.clone())
+            },
             yamux::Config::default,
         )
         .map_err(|e| TransportError::Setup(format!("transport upgrade: {e}")))?
@@ -55,25 +70,31 @@ where
     Ok(swarm)
 }
 
-/// Сборка swarm-а с фиксированным libp2p Keypair (production-режим).
+/// Build a libp2p Swarm pinned to a specific local Ed25519 transport keypair
+/// (production: derived deterministically from the operator's identity so the
+/// PeerId is reproducible).
 ///
-/// В отличие от `build_swarm` (генерит fresh keypair каждый запуск, для тестов),
-/// эта функция принимает готовый Ed25519 keypair, derived from operator's
-/// identity. PeerId узла стабилен между перезапусками — обязательно для
-/// genesis-cohort peer pinning через `GenesisManifest`.
+/// Noise_PQ XX is the security upgrade — ML-DSA-65 identity is authenticated
+/// in the handshake, derived PeerId is the SHA-256 multihash of the remote's
+/// ML-DSA-65 public key.
 pub fn build_swarm_with_keypair<B>(
     keypair: libp2p::identity::Keypair,
     behaviour: B,
     config: &NetworkConfig,
+    mldsa_id_pk: MtPublicKey,
+    mldsa_id_sk: MtSecretKey,
 ) -> Result<Swarm<B>, TransportError>
 where
     B: libp2p::swarm::NetworkBehaviour + Send,
 {
+    let xx_config = NoisePqXxConfig::new(mldsa_id_pk, mldsa_id_sk);
     let mut swarm = SwarmBuilder::with_existing_identity(keypair)
         .with_tokio()
         .with_tcp(
             tcp::Config::default(),
-            (tls::Config::new, noise::Config::new),
+            move |_libp2p_kp: &libp2p::identity::Keypair| -> Result<NoisePqXxConfig, std::convert::Infallible> {
+                Ok(xx_config.clone())
+            },
             yamux::Config::default,
         )
         .map_err(|e| TransportError::Setup(format!("transport upgrade: {e}")))?

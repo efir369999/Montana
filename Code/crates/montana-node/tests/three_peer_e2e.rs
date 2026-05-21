@@ -50,10 +50,19 @@ async fn build_listening_swarm(identity: &Identity) -> (Swarm<MontanaBehaviour>,
         max_inbound: 13,
         max_outbound: 24,
     };
-    let mut swarm =
-        build_swarm_with_keypair(identity.libp2p_keypair(), MontanaBehaviour::new(), &cfg)
-            .expect("build swarm");
-    let local_peer = identity.libp2p_peer_id();
+    let id_pk = identity.node_pk.clone();
+    let id_sk_bytes: [u8; mt_crypto::SECRET_KEY_SIZE] = *identity.node_sk.as_bytes();
+    let id_sk = mt_crypto::SecretKey::from_array(id_sk_bytes);
+    let mut swarm = build_swarm_with_keypair(
+        identity.libp2p_keypair(),
+        MontanaBehaviour::new(),
+        &cfg,
+        id_pk,
+        id_sk,
+    )
+    .expect("build swarm");
+    let local_peer =
+        mt_net_transport::derive_peer_id(&identity.node_pk).expect("derive XX peer_id");
     let listen_addr = loop {
         let ev = swarm.select_next_some().await;
         if let SwarmEvent::NewListenAddr { address, .. } = ev {
@@ -82,9 +91,9 @@ async fn three_peers_establish_full_mesh_and_ping_pong() {
     let (mut s1, addr1) = build_listening_swarm(&identities[1]).await;
     let (mut s2, addr2) = build_listening_swarm(&identities[2]).await;
 
-    let pid0 = identities[0].libp2p_peer_id();
-    let pid1 = identities[1].libp2p_peer_id();
-    let pid2 = identities[2].libp2p_peer_id();
+    let pid0 = mt_net_transport::derive_peer_id(&identities[0].node_pk).unwrap();
+    let pid1 = mt_net_transport::derive_peer_id(&identities[1].node_pk).unwrap();
+    let pid2 = mt_net_transport::derive_peer_id(&identities[2].node_pk).unwrap();
 
     // Шаг 2: построить mock GenesisManifest с тройкой
     let manifest = GenesisManifest {

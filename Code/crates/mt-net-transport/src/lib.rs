@@ -21,3 +21,5 @@ pub use ibt_upgrade::{IbtAccessLevel, IbtConfig};
 pub use transport::{build_swarm, build_swarm_with_keypair, NetworkConfig};
 
 pub mod noise_pq_upgrade;
+pub mod xx_noise_pq_upgrade;
+pub use xx_noise_pq_upgrade::{derive_peer_id, NoisePqXxConfig};

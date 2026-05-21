@@ -32,9 +32,18 @@ const MULTIHASH_CODE_SHA2_256: u64 = 0x12;
 pub fn derive_peer_id(ml_dsa_pk: &MtPublicKey) -> Result<PeerId, UpgradeError> {
     let digest: [u8; 32] = Sha256::digest(ml_dsa_pk.as_bytes()).into();
     let mh: multihash::Multihash<64> = multihash::Multihash::wrap(MULTIHASH_CODE_SHA2_256, &digest)
-        .map_err(|e| UpgradeError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, format!("multihash wrap: {e}"))))?;
-    PeerId::from_multihash(mh)
-        .map_err(|_| UpgradeError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, "PeerId::from_multihash rejected")))
+        .map_err(|e| {
+            UpgradeError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("multihash wrap: {e}"),
+            ))
+        })?;
+    PeerId::from_multihash(mh).map_err(|_| {
+        UpgradeError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "PeerId::from_multihash rejected",
+        ))
+    })
 }
 
 /// Local newtype wrapper around `NoisePqInitiatorConfig` enabling libp2p

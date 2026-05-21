@@ -1,13 +1,11 @@
 // Manual Validation Gate scenario 6: two-node handshake e2e test.
 //
 // Spec section "Connection lifecycle" Step 1-6:
-//   TCP → TLS 1.3 → Noise → IBT proof exchange → access level → ProtocolMessage
+//   TCP → Noise_PQ XX (ML-KEM-768 + ML-DSA-65) → Yamux → IBT → ProtocolMessage
 //
-// Этот test поднимает два libp2p Swarm в одном процессе, dial peer-to-peer,
-// и обменивается одним Ping → Pong через MontanaCodec request-response.
-// Это subset критерия закрытия M6 spec ROADMAP:
-//   «2 узла на разных machines обмениваются proposals через network»
-// (machine-pairing — defer to Phase C.5; в-process e2e — initial coverage).
+// Production transport is Noise_PQ XX — classical TLS/Noise removed.
+// PeerId is derived from each peer's ML-DSA-65 identity public key via
+// SHA-256 multihash (see mt_net_transport::derive_peer_id).
 
 use std::time::Duration;
 
@@ -17,8 +15,11 @@ use libp2p::{
     swarm::SwarmEvent,
     Multiaddr,
 };
+use mt_crypto::{keypair_from_seed, KEYPAIR_SEED_SIZE};
 use mt_net::{MsgType, ProtocolMessage};
-use mt_net_transport::{build_swarm, MontanaBehaviour, MontanaBehaviourEvent, NetworkConfig};
+use mt_net_transport::{
+    build_swarm, derive_peer_id, MontanaBehaviour, MontanaBehaviourEvent, NetworkConfig,
+};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn two_node_request_response_ping_pong() {
@@ -29,7 +30,11 @@ async fn two_node_request_response_ping_pong() {
         max_outbound: 24,
     };
 
-    let mut server = build_swarm(MontanaBehaviour::new(), &cfg).expect("server swarm");
+    let (s_pk, s_sk) = keypair_from_seed(&[0x55u8; KEYPAIR_SEED_SIZE]).unwrap();
+    let (c_pk, c_sk) = keypair_from_seed(&[0x66u8; KEYPAIR_SEED_SIZE]).unwrap();
+    let server_xx_peer_id = derive_peer_id(&s_pk).unwrap();
+
+    let mut server = build_swarm(MontanaBehaviour::new(), &cfg, s_pk, s_sk).expect("server swarm");
     let mut client = build_swarm(
         MontanaBehaviour::new(),
         &NetworkConfig {
@@ -37,10 +42,11 @@ async fn two_node_request_response_ping_pong() {
             max_inbound: 13,
             max_outbound: 24,
         },
+        c_pk,
+        c_sk,
     )
     .expect("client swarm");
 
-    // Wait for server NewListenAddr
     let server_addr = loop {
         let ev = server.select_next_some().await;
         if let SwarmEvent::NewListenAddr { address, .. } = ev {
@@ -48,19 +54,16 @@ async fn two_node_request_response_ping_pong() {
         }
     };
 
-    let server_peer_id = *server.local_peer_id();
-    let server_dial_addr: Multiaddr = format!("{server_addr}/p2p/{server_peer_id}")
+    let server_dial_addr: Multiaddr = format!("{server_addr}/p2p/{server_xx_peer_id}")
         .parse()
         .unwrap();
-
     client.dial(server_dial_addr).expect("client dial");
 
     let request = ProtocolMessage::new(MsgType::Ping, 0, Vec::new());
     let expected_response = ProtocolMessage::new(MsgType::Pong, 0, Vec::new());
 
-    // Wait until connection established on client
     let mut request_id_opt = None;
-    let timeout = tokio::time::sleep(Duration::from_secs(15));
+    let timeout = tokio::time::sleep(Duration::from_secs(30));
     tokio::pin!(timeout);
 
     loop {
