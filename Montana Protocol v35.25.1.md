@@ -29,7 +29,7 @@ A node's chain length forms a new type of digital evidence: pseudonymous, verifi
 
 **Canonical order** is a relational structure formed by sequential hashing inside the delay computation, together with the canonical ordering established by consensus among nodes. Within this structure, time in the protocol exists as a sequence of canonical events. Montana is a self-contained frame of reference: a canonical sequence of events that external systems can observe and use as a frame of reference for their own purposes.
 
-`D₀ = 325 000 000` is fixed in the Genesis Decree from a single historical quartz measurement on the genesis hardware (Apple iMac M1 2021, idle, single-thread; see «Canonical order → Calibration target» and «Calibration of D₀» in the Genesis Decree). After Genesis the protocol uses no clocks (per [I-18]); the window duration on each node is an emergent property of its hardware and is not part of consensus state. The canonical window count is synchronized between nodes via VDF chain length, not via physical time.
+`D₀ = 325 000 000` is fixed in the Genesis Decree from a single historical quartz measurement on the genesis hardware (Apple iMac M1 2021, idle, single-thread; see «Canonical order → Calibration target» and «Calibration of D₀» in the Genesis Decree). After Genesis the protocol uses no clocks (per [I-18]); the window duration on each node is an emergent property of its hardware and is not part of consensus state. The canonical window count is synchronized between nodes via sequential chain length, not via physical time.
 
 ### Three trust problems
 
@@ -98,7 +98,7 @@ Montana formalizes the **Ladder of Sovereignty** — a two-step economic model:
 
 **Step 0: Account user (entering the network).** Holds an account keypair (in a smartphone, hardware wallet, any client). Connects to a node in the network — their own or someone else's — through the network's transport layer (level 3). The account record appears in the Account Table upon the first incoming `Transfer` (Mode B — receiver does not exist, AccountRecord is created atomically together with crediting the amount); explicit creation is not required. Uses the network: Montana transfers, data commitment via `Anchor`. All other services (voice, video, premium features, data storage, name resolution, creator subscriptions) live at the application layer through direct Montana transfers between accounts. No earnings at the protocol layer. Barrier to entry: a smartphone + a first incoming transfer (any positive amount from an existing account).
 
-**Step 1: Node operator (earnings).** Runs their own node 24/7 + an operator account bound to the node (+ optionally additional personal accounts). Maximum sovereignty: data on the operator's own hardware, full participation in consensus, earnings through the node lottery (the per-window reward, see the section on the Montana currency). Barrier: commodity hardware (at least one core), 24/7 uptime, a network connection, and a sequential VDF chain of length `vdf_chain_length × D` SHA-256 hashes at node registration.
+**Step 1: Node operator (earnings).** Runs their own node 24/7 + an operator account bound to the node (+ optionally additional personal accounts). Maximum sovereignty: data on the operator's own hardware, full participation in consensus, earnings through the node lottery (the per-window reward, see the section on the Montana currency). Barrier: commodity hardware (at least one core), 24/7 uptime, a network connection, and a sequential SHA-256 chain of length `vdf_chain_length × D` iterations at node registration.
 
 **Growth path.** A user may start as an account holder without a node, connecting through a client application (see «Client interface» above) — the reference Montana application uses a chat-centric interface; alternative clients are permitted. Later — deploy a node of their own without losing account-chain history. The account identifier and all accumulated operations carry over — the key belongs to the user, not to the node.
 
@@ -267,7 +267,7 @@ The boundary is not consensus-critical: nodes on less performant hardware contin
 
 **[I-7] Minimal cryptographic surface.** Each new primitive requires a justification by closing a concrete mechanism. Duplicating functionality through two different primitives is forbidden.
 
-**[I-8] Network-Bound Unpredictability of Consensus Seeds.** Any hash composition entering a consensus-critical output (lottery endpoint, selection sort_key, admission ordering, weight distribution, emission, ranking) MUST contain at least one canonical & unpredictable-offline component — computable deterministically by ALL honest nodes ONLY after a cemented state with signatures from honest participants is fixed. Canonical-predictable-offline inputs (VDF output, state counters, any forward-computable canonical inputs) are insufficient as the only source of non-grindability. Realisation: `cemented_bundle_aggregate(W-k)`, future cemented signatures, honest-participant-signed future state. An [I-8] violation = an automatic mainnet blocker.
+**[I-8] Network-Bound Unpredictability of Consensus Seeds.** Any hash composition entering a consensus-critical output (lottery endpoint, selection sort_key, admission ordering, weight distribution, emission, ranking) MUST contain at least one canonical & unpredictable-offline component — computable deterministically by ALL honest nodes ONLY after a cemented state with signatures from honest participants is fixed. Canonical-predictable-offline inputs (sequential-chain output, state counters, any forward-computable canonical inputs) are insufficient as the only source of non-grindability. Realisation: `cemented_bundle_aggregate(W-k)`, future cemented signatures, honest-participant-signed future state. An [I-8] violation = an automatic mainnet blocker.
 
 **[I-9] Bit-exact deterministic arithmetic for consensus formulas.** Any formula whose output, directly or through a transitive chain, enters a consensus-critical output MUST satisfy three requirements: (1) a binding integer specification in the spec (u8..u256, fixed-point Q-format, integer division with explicit rounding direction); (2) unsigned operands (signed arithmetic is forbidden in consensus formulas); (3) at least 3 test vectors per formula in the spec (typical, boundary, edge). The real-valued form (ln, exp, %, ×0.67) is allowed ONLY as commentary; the authoritative one is integer. Forbidden: f32 / f64 in consensus code, rounding without a direction, real-valued forms without a parallel integer form. [I-9] is procedural enforcement of [I-3] for numerical formulas. Statuses: «closed» (integer spec + test vectors), «conformance pending» (integer spec, vectors deferred to the next patch), «violation» (real-valued without integer) = an automatic mainnet blocker.
 
@@ -308,7 +308,7 @@ After mass replacements a post-edit grep over the same patterns is required, wit
 
 **[I-14] State lifecycle & bloat resistance.** Every persistent record in consensus state MUST satisfy at least one of three requirements:
 
-1. **Sequential time barrier.** Creating the record requires a sequential VDF iteration count integer-specified in the Genesis Decree (for example `vdf_chain_length × D` SHA-256 hashes for NodeRegistration). Sequential time is a non-acquirable scarcity, symmetric for all participants. Applicable to validator-class records where the sequential cost is justified by the target throughput.
+1. **Sequential time barrier.** Creating the record requires a sequential SHA-256 iteration count integer-specified in the Genesis Decree (for example `vdf_chain_length × D` SHA-256 hashes for NodeRegistration). Sequential time is a non-acquirable scarcity, symmetric for all participants. Applicable to validator-class records where the sequential cost is justified by the target throughput.
 
 2. **Lifecycle bound.** Under explicitly defined conditions the record is removed from persistent state. Allowed variants:
    - **Activity-based.** The record is removed when `current_window - last_activity_window > N_INACTIVE_*_WINDOWS` (existing AccountRecord pruning `balance == 0` + 4τ₂; NodeTable inactivity 8τ₂).
@@ -321,7 +321,7 @@ A persistent record created through a legitimate operation without one of these 
 
 Applies to: `AccountRecord`, Anchor records, `NodeTable`, Candidate Pool, any consensus-state table that can grow through user-driven operations. When each mechanism is closed, the applied path is stated explicitly in the card ([I-14].1 / [I-14].2 / [I-14].3 / combination).
 
-Rationale: Sybil on voting / lottery is closed by chain_length-weighted mechanisms (nodes) and activity-based pruning (accounts), but this does not address resource consumption through fan-out. A million accounts does not change the distribution of lottery weights but occupies ×million `AccountRecord` entries in the state trie. The time-based cooldown for AccountRecord creation `1 Transfer Mode B per sender per τ₂` for user accounts and the sequential VDF `vdf_chain_length × D` for node candidacies together close both vectors via canonical time-based primitives.
+Rationale: Sybil on voting / lottery is closed by chain_length-weighted mechanisms (nodes) and activity-based pruning (accounts), but this does not address resource consumption through fan-out. A million accounts does not change the distribution of lottery weights but occupies ×million `AccountRecord` entries in the state trie. The time-based cooldown for AccountRecord creation `1 Transfer Mode B per sender per τ₂` for user accounts and the sequential SHA-256 chain `vdf_chain_length × D` for node candidacies together close both vectors via canonical time-based primitives.
 
 Conformance audit of existing persistent tables:
 
@@ -329,7 +329,7 @@ Conformance audit of existing persistent tables:
 |------------------------|------------------------------------------------|--------------|
 | `AccountRecord`        | [I-14].2 activity-based: account-creation cooldown `1 Transfer Mode B per sender per τ₂` (via the `last_account_creation_window` field) + 1-op-per-τ₁ rate-limit + pruning (`balance == 0` + 4τ₂) | closed       |
 | Anchor records         | [I-14].2 activity-based: 1-op-per-τ₁ rate-limit + amortized via AccountChain TTL (dormant-account pruning removes all Anchors together with the account) | closed       |
-| `NodeTable`            | [I-14].1 sequential time barrier (NodeRegistration VDF `vdf_chain_length × D` SHA-256) + [I-14].2 activity-based (inactivity prune 8τ₂) + [I-14].3 hard quota (`selection_interval` 336 windows, admission ≤1% active per event) | closed       |
+| `NodeTable`            | [I-14].1 sequential time barrier (NodeRegistration sequential SHA-256 chain `vdf_chain_length × D`) + [I-14].2 activity-based (inactivity prune 8τ₂) + [I-14].3 hard quota (`selection_interval` 336 windows, admission ≤1% active per event) | closed       |
 | Candidate Pool         | [I-14].2 temporal expiry (3τ₂)               | closed       |
 | Proposals chain        | [I-14] N/A: proposals are not user-driven; growth = consensus-structure invariant (exactly one header per τ₁); the slow-bloat attack class is categorically inapplicable (an attacker cannot create extra proposals regardless of resources); permanent retention is a design feature for Anchor canonical-position proof verification + Fast Sync chain verification | n/a (out of scope of [I-14]) |
 
@@ -337,7 +337,7 @@ All persistent state tables are closed. [I-14] compliance is complete.
 
 #### Storage Cards per persistent table
 
-Every persistent state table in the protocol has a Storage Card with fixed metrics. Since Montana is a protocol without monetary fees ([I-15]), the cost-based section is marked `n/a` uniformly for all tables. Defence through time-based primitives (sequential VDF, lifecycle bound, hard quota) is expressed in bytes-per-τ₂ from a single actor (a sabotage time horizon), not in budget-per-USD (a sabotage budget horizon).
+Every persistent state table in the protocol has a Storage Card with fixed metrics. Since Montana is a protocol without monetary fees ([I-15]), the cost-based section is marked `n/a` uniformly for all tables. Defence through time-based primitives (sequential SHA-256 chain, lifecycle bound, hard quota) is expressed in bytes-per-τ₂ from a single actor (a sabotage time horizon), not in budget-per-USD (a sabotage budget horizon).
 
 **Storage Card — AccountRecord**
 
