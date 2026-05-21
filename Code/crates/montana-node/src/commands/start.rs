@@ -239,6 +239,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
 
         let next_t_r = vdf_step_chunked(&timechain.t_r, effective_d, "TimeChain VDF", next_window);
 
+        // DEV-012 follower mode: set to true when this iteration is a follower
+        // (Active + NodeTable.len() > 1), in which case the post-match epilogue
+        // skips current_window advance — the only way the cemented head moves
+        // is via apply_proposal from the bootstrap proposer at the start of
+        // the next iteration. This keeps Frankfurt / Helsinki / Armenia in
+        // lockstep with Moscow until M9 Phase 2 multi-confirmer is wired.
+        let mut follower_skip = false;
+
         match lifecycle.phase {
             NodePhase::Bootstrap => unreachable!("Bootstrap → CandidateVdf transition выше"),
             NodePhase::CandidateVdf => {
@@ -330,9 +338,10 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 let is_singleton = state.nodes.len() == 1 && state.nodes.get(&my_node).is_some();
                 if !is_singleton {
                     eprintln!(
-                        "[active W={current}] singleton невозможен (NodeTable={} узлов), пропуск окна — жду peer Proposal (M9 Phase 2)",
+                        "[active W={current}] follower mode (NodeTable={} nodes) — waiting for peer Proposal",
                         state.nodes.len()
                     );
+                    follower_skip = true;
                     break 'active_arm;
                 }
                 let active_chain_length: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
@@ -557,6 +566,17 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             }
         }
 
+        if follower_skip {
+            // Follower idle: do not advance the cemented head, do not tick the
+            // local VDF (timechain.t_r unchanged). The only way `current`
+            // advances is through the apply_proposal loop at the top of the
+            // outer loop body (lines around 200), driven by an incoming
+            // Proposal envelope from the bootstrap proposer. Brief sleep so
+            // the outer loop does not spin while waiting for the next peer
+            // broadcast.
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            continue;
+        }
         timechain.t_r = next_t_r;
         timechain.last_window = next_window;
         current = next_window;
