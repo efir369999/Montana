@@ -42,6 +42,7 @@
 
 pub mod libp2p_upgrade;
 pub mod stream;
+pub mod xx_handshake;
 
 use mt_crypto::{
     keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate, sign, verify, MlkemCiphertext,
