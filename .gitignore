@@ -55,3 +55,6 @@ PDF/
 Apps/
 Archive/
 
+
+# Internal AI agent roles (Russian methodology, not for public Metzdowd repo)
+Agents/

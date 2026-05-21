@@ -171,7 +171,6 @@ The full installer prints a 24-word recovery mnemonic for the node and a VLESS U
 | [`Code/docs/SPEC_DEVIATIONS.md`](Code/docs/SPEC_DEVIATIONS.md) | Known deviations, acknowledgments, and closures |
 | [`Code/montana-vpn/`](Code/montana-vpn/) | Reality-VPN endpoint (optional, alongside the node) |
 | [`Code/scripts/install-vps-full.sh`](Code/scripts/install-vps-full.sh) | Node + VPN one-command installer |
-| [`Agents/`](Agents/) | Protocol AI agent roles (SPEC-ARCHITECT, SPEC-CRITIC, COORDINATOR, etc.) |
 | [`SECURITY.md`](SECURITY.md) | Security policy — how to report vulnerabilities |
 | [`Genesis.md`](Genesis.md) | Genesis statement, embedded in the protocol's Genesis Decree |
 | [`Archive/`](Archive/) | Historical specification versions |
