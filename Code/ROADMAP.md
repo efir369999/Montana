@@ -1048,7 +1048,7 @@ Critic checklist:
 ### M6 — Network ✅ ЗАКРЫТ (in-process e2e); cross-machine pairing defer M8
 
 - [x] `mt-net` (~2700 LOC, no_std) — wire format envelope + 12 structured payloads + IBT online/mesh proofs + Bootstrap PoW + Uniform Framing + peer selection (4-level diversity + LRU) + Dandelion++ stem-fluff + NAT traversal + Mesh Transport + Store-and-Forward. **112 tests PASS.**
-- [x] `mt-net-transport` (~470 LOC, std + libp2p) — libp2p TCP+TLS 1.3+Noise+Yamux upgrade chain + MontanaCodec для request-response + MontanaBehaviour + IBT classify_proof with online nonce replay tracking. **15 tests PASS включая 3 e2e two-node communication.**
+- [x] `mt-net-transport` (~470 LOC, std + libp2p) — libp2p TCP → Noise_PQ XX → Yamux upgrade chain (classical TLS 1.3 + Noise XK removed) + MontanaCodec for request-response + MontanaBehaviour + IBT classify_proof + new `NoisePqXxConfig` plugged into `with_tcp` auth slot. **17 tests in mt-net-transport + 7 in mt-noise-pq + 3 e2e two-node + e2e_noise_pq_with_libp2p_upgrade + e2e_proposal_exchange + KAT vectors PASS in release.**
 
 Phases закрытия:
 - Phase A wire envelope + payloads (commits `9de287b`, `bc694a5`)

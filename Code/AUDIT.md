@@ -36,7 +36,7 @@
 **mt-net-transport** (~470 LOC) — libp2p-based transport layer:
 - `src/codec.rs` — MontanaCodec for libp2p request-response with MAX_PROTOCOL_PAYLOAD_BYTES enforcement (Genesis Decree authoritative bound)
 - `src/behaviour.rs` — MontanaBehaviour wrapper (request-response for FastSync/PeerList/BatchLookup/RangeSubscribe; one-way gossip — Phase C.5+)
-- `src/transport.rs` — build_swarm() helper with TCP→TLS 1.3 (rustls)→Noise→Yamux upgrade chain
+- `src/transport.rs` — build_swarm() helper with TCP → Noise_PQ XX (ML-KEM-768 + ML-DSA-65) → Yamux upgrade chain
 - `src/ibt_upgrade.rs` — classify_proof() for access level determination (Node/Candidate/Account) with online_session_nonce + used_online_nonces replay tracking
 - `tests/e2e_two_node_handshake.rs` — Manual Validation Gate scenario 6 PASS (Ping/Pong through full transport chain)
 - `tests/e2e_proposal_exchange.rs` — scenario 7 PASS (synthetic Proposal payload + 512 KiB boundary test)
@@ -47,7 +47,7 @@
 - VectorPow (F1/F2 target derivation)
 - Public API: `all_envelope_vectors()`, `all_pow_vectors()`, `ibt_b1_online_proof()`
 
-**Capability checklist [C-5] for libp2p 0.56.0:** 8/8 PASS (TCP+TLS 1.3+Noise+Yamux+Swarm primitives; async tokio; rustls + snow constant-time; Linux+macOS+Windows; IPFS+Filecoin+Polkadot 5+ years production; MIT/Apache 2.0; ~120 transitive deps acceptable given isolation via own crate).
+**Capability checklist [C-5] for libp2p 0.56.0:** 8/8 PASS (TCP + Yamux + Swarm primitives + request_response; async tokio; classical TLS 1.3 + Noise XK removed in favor of Noise_PQ XX (`mt-noise-pq`); rustls / snow no longer in the auth chain; Linux+macOS+Windows; IPFS+Filecoin+Polkadot 5+ years production; MIT/Apache 2.0; ~120 transitive deps acceptable given isolation via own crate).
 
 ---
 
