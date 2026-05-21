@@ -183,7 +183,7 @@ Transport obfuscation is orthogonal to consensus. The TimeChain and state machin
 
 **[I-1] compliance status after M6.** Until Phase 3 closure, classical X25519 ECDHE is the open path for store-now-decrypt-later transport confidentiality. After Phase 3 closure, the entire protocol stack is post-quantum end-to-end (signatures via ML-DSA-65, encryption via ML-KEM-768, transport via Noise_PQ). Until then, the threat-model section «Quantum-capable adversary» explicitly documents this as an open exposure with documented closure path.
 
-**Wire format (normative, Phase 2 closure).** The Noise_PQ handshake is exactly three messages. Identifiers in formulas below match the reference implementation in `crates/mt-noise-pq/src/lib.rs`.
+**Wire format (normative, Phase 2 closure).** The Noise_PQ handshake is exactly three messages. Identifiers in formulas below match the reference implementation in `crates/mt-noise-pq/src/lib.rs`. The libp2p multistream-select protocol identifier for the handshake is **`/montana/noise-pq/1.0.0`** — this string is the authoritative protocol name used to negotiate the upgrade between two peers.
 
 ```
 msg1  (initiator → responder)        2272 B
@@ -220,7 +220,30 @@ transcript_hash = SHA-256("mt-noise-pq-v1-transcript" ‖ ke_pk ‖ ct_rs ‖ ct
 
 where `ss_rs = mlkem_decap(rs_kem_sk, ct_rs)` and `ss_e = mlkem_decap(ke_sk, ct_e)` on the receiving side respectively, and the corresponding `mlkem_encap(rs_kem_pk) → (ct_rs, ss_rs)` and `mlkem_encap(ke_pk) → (ct_e, ss_e)` on the sending side. Implicit-rejection semantics of FIPS 203 §6.3 are reconciled by the identity-signature check: a maliciously substituted ciphertext yields a different shared secret on the receiver, the transcript master diverges from the sender's, and the identity signature check fails (the receiver returns `BadResponderSignature` or `BadInitiatorSignature`).
 
-**Capability negotiation.** A 1-byte `pq_transport_version` field in the IBT advertisement signals the highest Noise_PQ wire version each peer supports. Negotiation rule: `min(local, peer)`. Values:
+**Post-handshake AEAD framing.** After the 3-message handshake completes, every application-layer byte stream between the peers is encrypted with ChaCha20-Poly1305 using the derived directional session keys. Wire format per direction:
+
+```
+direction = initiator → responder uses sk_i_to_r
+direction = responder → initiator uses sk_r_to_i
+
+per frame (each application message):
+  length_be     2 B    big-endian u16, total ciphertext length including
+                       16-byte Poly1305 tag (max 65 535 → max plaintext
+                       65 519 = u16::MAX − tag)
+  ciphertext+tag        ChaCha20-Poly1305 encryption of plaintext with
+                        nonce = 0x00000000 ‖ u64_be(counter), 12 bytes;
+                        counter starts at 0 and increments by 1 per
+                        outgoing frame in each direction independently;
+                        AAD = empty (none)
+```
+
+The 64-bit nonce counter is monotonic per direction and guaranteed not to overflow at any realistic message rate (2^64 frames at 1 Gbit / s with 64 KiB frames ≈ 2^48 years). Implementations MUST abort the connection (treat as protocol error) if the counter would overflow.
+
+Application-layer messages larger than 65 519 bytes are fragmented by the caller (e.g. by libp2p's stream multiplexer); the AEAD layer makes no provision for in-band fragmentation.
+
+**Capability negotiation.** The primary negotiation mechanism is libp2p multistream-select: each peer advertises the set of upgrade protocols it supports (`/montana/noise-pq/1.0.0` for the Noise_PQ handshake defined here, `/noise` or equivalent for the classical fallback) and the connection negotiates the highest mutually supported one. This is standard libp2p convention and requires no additional wire fields.
+
+A 1-byte `pq_transport_version` field is **reserved but not currently consumed** by the IBT advertisement layout — it is held in reserve for a future explicit out-of-band signal if multistream-select proves insufficient (for example, if some operator policy needs to express «I support Noise_PQ but refuse to fall back to classical»). Values when the field becomes active:
 
 | `pq_transport_version` | Meaning |
 |---|---|

@@ -3841,6 +3841,7 @@ SHA-256(sk) = 685c8c5299dde1176c4145a8af6dd08f2773f5551a7df29c3b1f7b6faba439b3
 | PBKDF2-HMAC-SHA-256 | RFC 8018 §5.2 | KDF деривации master_seed из мнемоники (Algorithm M-1) |
 | HKDF-Expand (поверх HMAC-SHA-256) | RFC 5869 §2.3 | Per-role key derivation ключей из master_seed |
 | ML-KEM-768 | FIPS 203; реализация ОБЯЗАНА быть constant-time для resistance к timing/power side-channel attacks per FIPS 140-3 §4.7.4 (non-invasive security) И использовать implicit rejection per FIPS 203 §6.3 (chosen-ciphertext robustness) | Шифрование сообщений на клиентском уровне (Application Layer) |
+| ChaCha20-Poly1305 | RFC 8439; реализация ОБЯЗАНА быть constant-time для resistance к timing side-channel attacks. Под Grover 256-битный ключ даёт 128 бит quantum-equivalent stability — приемлемо по [I-1]. | Post-handshake AEAD framing на Noise_PQ transport (см. Network spec «Post-handshake AEAD framing»). Обоснование введения по [I-7]: единственный fits-purpose primitive для symmetric authenticated encryption на uniform-rated post-quantum transport; AES-GCM был бы functionally equivalent но требует hardware AES-NI для constant-time — ChaCha20 имеет software-only constant-time implementations и работает uniformly на любом commodity CPU per [I-5] |
 
 #### HMAC-SHA-256 — integer спецификация
 
@@ -4124,6 +4125,12 @@ mt-crypto crate; значения генерируются через `cargo tes
 | `mt-mesh-session` | Derivation mesh_session_id из peer pubkey + session_nonce |
 | `mt-queue-rotation` | `info` для HKDF-SHA-256 при derivation ротируемой queue label сессии мессенджера (App spec раздел 23.2); ротация per τ₁ через window_index anchor |
 | `mt-recovery-fingerprint` | Derivation recovery-fingerprint для two-device manual validation per [C-4] (Manual Validation Gate Scenario 0 «User onboarding» в reference implementation `crates/mt-examples/examples/m1_mnemonic.rs`); SHA-256 от `("mt-recovery-fingerprint" \|\| 0x00 \|\| account_pubkey \|\| node_pubkey \|\| app_mlkem_pubkey)` даёт 32-байт fingerprint, отображаемый пользователю как 64-char hex для voice-comparison между двумя устройствами после recovery from mnemonic |
+| `mt-noise-pq-v1-master` | Noise_PQ handshake master key derivation: SHA-256("mt-noise-pq-v1-master" \|\| ss_rs \|\| ss_e \|\| ke_pk \|\| ct_rs \|\| ct_e \|\| rs_id_pk) — see «Post-quantum transport migration» section |
+| `mt-noise-pq-v1-i2r` | Noise_PQ initiator → responder directional session key derivation: SHA-256("mt-noise-pq-v1-i2r" \|\| master) |
+| `mt-noise-pq-v1-r2i` | Noise_PQ responder → initiator directional session key derivation: SHA-256("mt-noise-pq-v1-r2i" \|\| master) |
+| `mt-noise-pq-v1-sig-r` | Noise_PQ responder identity signature input: SHA-256("mt-noise-pq-v1-sig-r" \|\| ke_pk \|\| ct_rs \|\| ct_e), signed by responder ML-DSA-65 identity key |
+| `mt-noise-pq-v1-sig-i` | Noise_PQ initiator identity signature input: SHA-256("mt-noise-pq-v1-sig-i" \|\| ke_pk \|\| ct_rs \|\| ct_e \|\| rs_id_pk \|\| is_id_pk), signed by initiator ML-DSA-65 identity key |
+| `mt-noise-pq-v1-transcript` | Noise_PQ transcript hash exposed as channel-binding token: SHA-256("mt-noise-pq-v1-transcript" \|\| ke_pk \|\| ct_rs \|\| ct_e) |
 
 ### Слой протокола
 
