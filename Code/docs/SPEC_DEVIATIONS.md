@@ -274,7 +274,7 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 
 **Closure cost:** 3–5 weeks wall-clock for Phase 1 + 1–2 weeks for Phases 2 + 3 = total **5–7 weeks** for production-grade closure with KATs, differential testing, and three-node soak. This is M6 milestone scope, not single-session work.
 
-**Status:** Phase 0 + Phase 1 + Phase 2 + Phase 3 part 1 (wire loopback) + Phase 3 part 2 (AEAD stream + libp2p-style drive functions with identity auth) completed; final libp2p SwarmBuilder wiring + cross-machine 24h soak open
+**Status:** Phase 0 + Phase 1 + Phase 2 + Phase 3 part 1 + Phase 3 part 2 (AEAD stream + libp2p-style drive functions) + Phase 3 part 2c (libp2p UpgradeInfo / InboundConnectionUpgrade / OutboundConnectionUpgrade trait impls + PeerId derivation from ML-DSA-65) completed; final SwarmBuilder `with_tcp` plumbing + cross-machine 24h soak open
 
 **Phase 1 closure note (2026-05-21):** mt-crypto extended with FIPS 203 §6.2 / §6.3 ML-KEM-768 encapsulate / decapsulate primitives (`mlkem_encapsulate`, `mlkem_decapsulate`, types `MlkemCiphertext`, `MlkemSharedSecret` with zeroize-on-drop and mlock-protected shared secret allocation). Added C wrapper functions `mt_mlkem_encapsulate` / `mt_mlkem_decapsulate` over OpenSSL 3.5 EVP API.
 
