@@ -1906,6 +1906,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mt-sync"
+version = "0.1.1"
+dependencies = [
+ "mt-codec",
+ "mt-crypto",
+ "mt-merkle",
+ "mt-state",
+]
+
+[[package]]
 name = "mt-timechain"
 version = "0.1.1"
 dependencies = [
