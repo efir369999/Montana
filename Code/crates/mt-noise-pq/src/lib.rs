@@ -41,6 +41,7 @@
 //! in `tests/handshake_kat.rs`.
 
 pub mod stream;
+pub mod libp2p_upgrade;
 
 use mt_crypto::{
     keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate, sign, verify, MlkemCiphertext,
