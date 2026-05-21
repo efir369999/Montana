@@ -111,7 +111,7 @@ curl -sS https://efir.org/explorer/data.json | python3 -m json.tool | head -80
 
 The `updated` field must be within ~60 seconds of `date -u`. The `nodes` array must contain Moscow, Frankfurt, Helsinki entries with `status: active` and a `current_window` value advancing at roughly one window per minute. The `discovered_peers` array must contain the Yerevan operator (peer_id `Qma3XZ8mJZDD4MbtJVNxCyS2sYYn9BQRzxYvfiXiMbNCp9`, `remote_ip: yerevan`) with `last_heartbeat_seconds_ago` ≤ 60.
 
-**Establishes:** the explorer is a live read of the journal output of the Moscow orchestrator node, refreshed every 60 seconds. The auditor sees the same state any operator on the network sees.
+**Establishes:** the explorer is a live read of the journal output of the Moscow orchestrator node, refreshed every 30 seconds via the cron in `/etc/cron.d/montana-explorer`. The collector that produces `data.json` is mirrored in the repo at [`Code/scripts/montana-explorer-collect.py`](../Code/scripts/montana-explorer-collect.py) — the auditor reads the exact source that writes the file. Raw IPs are masked to city labels in the rendered JSON per the public-artifact rule; the auditor sees the same state any operator on the network sees.
 
 ---
 
