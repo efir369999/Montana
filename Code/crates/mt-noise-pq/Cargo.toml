@@ -9,3 +9,6 @@ mt-crypto = { path = "../mt-crypto" }
 sha2 = "0.10"
 zeroize = "1.8"
 getrandom = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["net", "io-util", "rt-multi-thread", "macros", "sync", "time"] }

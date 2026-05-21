@@ -183,6 +183,54 @@ Transport obfuscation is orthogonal to consensus. The TimeChain and state machin
 
 **[I-1] compliance status after M6.** Until Phase 3 closure, classical X25519 ECDHE is the open path for store-now-decrypt-later transport confidentiality. After Phase 3 closure, the entire protocol stack is post-quantum end-to-end (signatures via ML-DSA-65, encryption via ML-KEM-768, transport via Noise_PQ). Until then, the threat-model section «Quantum-capable adversary» explicitly documents this as an open exposure with documented closure path.
 
+**Wire format (normative, Phase 2 closure).** The Noise_PQ handshake is exactly three messages. Identifiers in formulas below match the reference implementation in `crates/mt-noise-pq/src/lib.rs`.
+
+```
+msg1  (initiator → responder)        2272 B
+  ke_pk        1184 B    initiator ephemeral ML-KEM-768 public key
+  ct_rs        1088 B    KEM ciphertext encapsulated to the responder's
+                         static ML-KEM-768 public key (rs_kem_pk, known a
+                         priori to the initiator via the IBT directory)
+
+msg2  (responder → initiator)        6349 B
+  ct_e         1088 B    KEM ciphertext encapsulated to ke_pk
+  rs_id_pk     1952 B    responder static ML-DSA-65 identity public key
+  sig_r        3309 B    ML-DSA-65 signature by rs_id over the
+                         signature-domain hash
+                         SHA-256("mt-noise-pq-v1-sig-r" ‖ ke_pk ‖ ct_rs ‖ ct_e)
+
+msg3  (initiator → responder)        5261 B
+  is_id_pk     1952 B    initiator static ML-DSA-65 identity public key
+  sig_i        3309 B    ML-DSA-65 signature by is_id over the
+                         signature-domain hash
+                         SHA-256("mt-noise-pq-v1-sig-i" ‖ ke_pk ‖ ct_rs ‖ ct_e
+                                                      ‖ rs_id_pk ‖ is_id_pk)
+```
+
+Both sides derive identical directional session keys (each 32 B) and a 32 B transcript hash exposed to higher layers as a channel-binding token:
+
+```
+master         = SHA-256("mt-noise-pq-v1-master" ‖ ss_rs ‖ ss_e
+                                                ‖ ke_pk ‖ ct_rs ‖ ct_e
+                                                ‖ rs_id_pk)
+sk_i_to_r       = SHA-256("mt-noise-pq-v1-i2r" ‖ master)
+sk_r_to_i       = SHA-256("mt-noise-pq-v1-r2i" ‖ master)
+transcript_hash = SHA-256("mt-noise-pq-v1-transcript" ‖ ke_pk ‖ ct_rs ‖ ct_e)
+```
+
+where `ss_rs = mlkem_decap(rs_kem_sk, ct_rs)` and `ss_e = mlkem_decap(ke_sk, ct_e)` on the receiving side respectively, and the corresponding `mlkem_encap(rs_kem_pk) → (ct_rs, ss_rs)` and `mlkem_encap(ke_pk) → (ct_e, ss_e)` on the sending side. Implicit-rejection semantics of FIPS 203 §6.3 are reconciled by the identity-signature check: a maliciously substituted ciphertext yields a different shared secret on the receiver, the transcript master diverges from the sender's, and the identity signature check fails (the receiver returns `BadResponderSignature` or `BadInitiatorSignature`).
+
+**Capability negotiation.** A 1-byte `pq_transport_version` field in the IBT advertisement signals the highest Noise_PQ wire version each peer supports. Negotiation rule: `min(local, peer)`. Values:
+
+| `pq_transport_version` | Meaning |
+|---|---|
+| `0x00` | Classical TLS 1.3 + Noise XK (pre-M6) |
+| `0x01` | Noise_PQ v1 (this spec, ML-KEM-768 + ML-DSA-65, no hybrid X25519) |
+
+Future versions (`0x02`, …) may add hybrid X25519+ML-KEM, larger PQ KEMs, or other refinements; the field reserves the negotiation surface.
+
+**Cross-implementation conformance.** Reference test vectors in `crates/mt-noise-pq/tests/kat.rs` fix the responder's static ML-KEM-768 keypair seed (`byte_repeat(0x42, 64)`) and the two ML-DSA-65 identity seeds (`byte_repeat(0x77, 32)` for responder, `byte_repeat(0xAA, 32)` for initiator). The 3-message handshake on those fixed inputs must produce byte-identical `sk_i_to_r`, `sk_r_to_i`, and `transcript_hash` across implementations. Per-message wire bytes will differ run to run because the encapsulation step uses fresh OS randomness per FIPS 203 §6.2; only the derived session material is byte-exact deterministic for cross-implementation verification.
+
 ### Peer selection
 
 An open entry with a VDF barrier makes Sybil nodes expensive: each Sybil = τ₂ windows of VDF (sequential SHA-256, not parallelizable) + a selection event. Peer selection uses diversity constraints from protocol-level data (start_window) and network-level data (/16, ASN).
