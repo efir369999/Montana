@@ -1,3 +1,5 @@
+#![allow(clippy::doc_overindented_list_items)]
+
 //! Noise_PQ — post-quantum handshake state machine for the Montana network
 //! transport layer.
 //!
@@ -5,28 +7,28 @@
 //! for Diffie-Hellman, and ML-DSA-65 for identity authentication.
 //!
 //! - msg1 (initiator → responder):
-//!     ke_pk     1184 B   — initiator ephemeral ML-KEM-768 public key
-//!     ct_rs     1088 B   — encapsulation of fresh shared secret to the
+//!   ke_pk     1184 B   — initiator ephemeral ML-KEM-768 public key
+//!   ct_rs     1088 B   — encapsulation of fresh shared secret to the
 //!                          responder's static ML-KEM-768 public key
 //!   Total: 2272 B
 //!
 //! - msg2 (responder → initiator):
-//!     ct_e      1088 B   — encapsulation to ke_pk (ephemeral)
-//!     rs_id_pk  1952 B   — responder static ML-DSA-65 identity public key
-//!     sig_r     3309 B   — ML-DSA-65 signature by rs_id over transcript
+//!   ct_e      1088 B   — encapsulation to ke_pk (ephemeral)
+//!   rs_id_pk  1952 B   — responder static ML-DSA-65 identity public key
+//!   sig_r     3309 B   — ML-DSA-65 signature by rs_id over transcript
 //!                          hash (ke_pk || ct_rs || ct_e)
 //!   Total: 6349 B
 //!
 //! - msg3 (initiator → responder):
-//!     is_id_pk  1952 B   — initiator static ML-DSA-65 identity public key
-//!     sig_i     3309 B   — ML-DSA-65 signature by is_id over transcript
+//!   is_id_pk  1952 B   — initiator static ML-DSA-65 identity public key
+//!   sig_i     3309 B   — ML-DSA-65 signature by is_id over transcript
 //!                          hash (ke_pk || ct_rs || ct_e || rs_id_pk || is_id_pk)
 //!   Total: 5261 B
 //!
 //! Final session keys derived via HKDF-style construction over SHA-256:
-//!     master = SHA-256("mt-noise-pq-v1-master" || ss_rs || ss_e || transcript)
-//!     SK_tx_i_to_r = SHA-256("mt-noise-pq-v1-i2r" || master)
-//!     SK_tx_r_to_i = SHA-256("mt-noise-pq-v1-r2i" || master)
+//!   master = SHA-256("mt-noise-pq-v1-master" || ss_rs || ss_e || transcript)
+//!   SK_tx_i_to_r = SHA-256("mt-noise-pq-v1-i2r" || master)
+//!   SK_tx_r_to_i = SHA-256("mt-noise-pq-v1-r2i" || master)
 //!
 //! Identity authentication is provided by the ML-DSA-65 signatures on
 //! transcripts that bind both ephemeral and static material; FIPS 203
@@ -39,9 +41,9 @@
 //! in `tests/handshake_kat.rs`.
 
 use mt_crypto::{
-    keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate, sign, verify,
-    MlkemCiphertext, MlkemPublicKey, MlkemSecretKey, PublicKey, SecretKey, Signature,
-    MLKEM_CIPHERTEXT_SIZE, MLKEM_PUBLIC_KEY_SIZE, PUBLIC_KEY_SIZE, SIGNATURE_SIZE,
+    keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate, sign, verify, MlkemCiphertext,
+    MlkemPublicKey, MlkemSecretKey, PublicKey, SecretKey, Signature, MLKEM_CIPHERTEXT_SIZE,
+    MLKEM_PUBLIC_KEY_SIZE, PUBLIC_KEY_SIZE, SIGNATURE_SIZE,
 };
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -132,8 +134,7 @@ pub fn initiator_send_msg1(
     // directly. getrandom fails only on platforms without an entropy
     // source available, which is not a supported Montana operator
     // environment.
-    getrandom::getrandom(&mut ephemeral_seed)
-        .map_err(|_| NoisePqError::EncapFailed)?;
+    getrandom::getrandom(&mut ephemeral_seed).map_err(|_| NoisePqError::EncapFailed)?;
     let (ke_pk, ke_sk) = keypair_from_seed_mlkem(&ephemeral_seed)?;
     ephemeral_seed.zeroize();
 
@@ -178,21 +179,23 @@ pub fn initiator_receive_msg2(
     let (rs_id_pk_slice, sig_r_slice) = rest.split_at(PUBLIC_KEY_SIZE);
 
     let ct_e = MlkemCiphertext::from_slice(ct_e_slice).ok_or(NoisePqError::InvalidCiphertext)?;
-    let rs_id_pk_arr: [u8; PUBLIC_KEY_SIZE] =
-        rs_id_pk_slice.try_into().map_err(|_| NoisePqError::InvalidPublicKey)?;
+    let rs_id_pk_arr: [u8; PUBLIC_KEY_SIZE] = rs_id_pk_slice
+        .try_into()
+        .map_err(|_| NoisePqError::InvalidPublicKey)?;
     let rs_id_pk = PublicKey::from_array(rs_id_pk_arr);
     let sig_r_arr: [u8; SIGNATURE_SIZE] =
-        sig_r_slice.try_into().map_err(|_| NoisePqError::BadMsgSize {
-            expected: SIGNATURE_SIZE,
-            actual: sig_r_slice.len(),
-        })?;
+        sig_r_slice
+            .try_into()
+            .map_err(|_| NoisePqError::BadMsgSize {
+                expected: SIGNATURE_SIZE,
+                actual: sig_r_slice.len(),
+            })?;
     let sig_r = Signature::from_array(sig_r_arr);
 
     let ss_e = mlkem_decapsulate(&state.ke_sk, &ct_e)?;
 
-    let mut transcript = Vec::with_capacity(
-        MLKEM_PUBLIC_KEY_SIZE + MLKEM_CIPHERTEXT_SIZE + MLKEM_CIPHERTEXT_SIZE,
-    );
+    let mut transcript =
+        Vec::with_capacity(MLKEM_PUBLIC_KEY_SIZE + MLKEM_CIPHERTEXT_SIZE + MLKEM_CIPHERTEXT_SIZE);
     transcript.extend_from_slice(&state.ke_pk_bytes);
     transcript.extend_from_slice(&state.ct_rs_bytes);
     transcript.extend_from_slice(ct_e_slice);
@@ -221,11 +224,11 @@ pub fn initiator_receive_msg2(
 
     let sk_i_to_r_h = Sha256::new()
         .chain_update(DOMAIN_I2R)
-        .chain_update(&master_bytes)
+        .chain_update(master_bytes)
         .finalize();
     let sk_r_to_i_h = Sha256::new()
         .chain_update(DOMAIN_R2I)
-        .chain_update(&master_bytes)
+        .chain_update(master_bytes)
         .finalize();
     let mut sk_i_to_r = [0u8; 32];
     sk_i_to_r.copy_from_slice(&sk_i_to_r_h);
@@ -367,11 +370,11 @@ pub fn responder_send_msg2(
 
     let sk_i_to_r_h = Sha256::new()
         .chain_update(DOMAIN_I2R)
-        .chain_update(&master_bytes)
+        .chain_update(master_bytes)
         .finalize();
     let sk_r_to_i_h = Sha256::new()
         .chain_update(DOMAIN_R2I)
-        .chain_update(&master_bytes)
+        .chain_update(master_bytes)
         .finalize();
     let mut sk_i_to_r = [0u8; 32];
     sk_i_to_r.copy_from_slice(&sk_i_to_r_h);
@@ -418,12 +421,13 @@ pub fn responder_receive_msg3(
         .try_into()
         .map_err(|_| NoisePqError::InvalidPublicKey)?;
     let is_id_pk = PublicKey::from_array(is_id_pk_arr);
-    let sig_i_arr: [u8; SIGNATURE_SIZE] = sig_i_slice
-        .try_into()
-        .map_err(|_| NoisePqError::BadMsgSize {
-            expected: SIGNATURE_SIZE,
-            actual: sig_i_slice.len(),
-        })?;
+    let sig_i_arr: [u8; SIGNATURE_SIZE] =
+        sig_i_slice
+            .try_into()
+            .map_err(|_| NoisePqError::BadMsgSize {
+                expected: SIGNATURE_SIZE,
+                actual: sig_i_slice.len(),
+            })?;
     let sig_i = Signature::from_array(sig_i_arr);
 
     let mut transcript = state.transcript_through_msg2;
@@ -464,15 +468,16 @@ mod tests {
         let (msg1, init_state) = initiator_send_msg1(&rs_kem_pk, is_id_sk, is_id_pk).unwrap();
         assert_eq!(msg1.len(), NOISE_PQ_MSG1_SIZE);
 
-        let resp_state =
-            responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
+        let resp_state = responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
         let (msg2, resp_after_msg2) = responder_send_msg2(resp_state).unwrap();
         assert_eq!(msg2.len(), NOISE_PQ_MSG2_SIZE);
 
         let init_after_msg2 = initiator_receive_msg2(&msg2, init_state).unwrap();
-        let init_session_keys =
-            (init_after_msg2.session.sk_i_to_r, init_after_msg2.session.sk_r_to_i,
-             init_after_msg2.session.transcript_hash);
+        let init_session_keys = (
+            init_after_msg2.session.sk_i_to_r,
+            init_after_msg2.session.sk_r_to_i,
+            init_after_msg2.session.transcript_hash,
+        );
         let (msg3, init_session) = initiator_send_msg3(init_after_msg2).unwrap();
         assert_eq!(msg3.len(), NOISE_PQ_MSG3_SIZE);
         let _ = init_session_keys;
@@ -491,8 +496,7 @@ mod tests {
         let (is_id_pk, is_id_sk) = make_id(0x22);
 
         let (msg1, init_state) = initiator_send_msg1(&rs_kem_pk, is_id_sk, is_id_pk).unwrap();
-        let resp_state =
-            responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
+        let resp_state = responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
         let (mut msg2, _resp_after) = responder_send_msg2(resp_state).unwrap();
         // Flip a byte inside the responder's signature region.
         let sig_offset = MLKEM_CIPHERTEXT_SIZE + PUBLIC_KEY_SIZE;
@@ -508,8 +512,7 @@ mod tests {
         let (is_id_pk, is_id_sk) = make_id(0x22);
 
         let (msg1, init_state) = initiator_send_msg1(&rs_kem_pk, is_id_sk, is_id_pk).unwrap();
-        let resp_state =
-            responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
+        let resp_state = responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
         let (msg2, resp_after_msg2) = responder_send_msg2(resp_state).unwrap();
         let init_after_msg2 = initiator_receive_msg2(&msg2, init_state).unwrap();
         let (mut msg3, _init_session) = initiator_send_msg3(init_after_msg2).unwrap();

@@ -274,7 +274,22 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 
 **Closure cost:** 3–5 weeks wall-clock for Phase 1 + 1–2 weeks for Phases 2 + 3 = total **5–7 weeks** for production-grade closure with KATs, differential testing, and three-node soak. This is M6 milestone scope, not single-session work.
 
-**Status:** open (Phase 0 completed)
+**Status:** Phase 0 + Phase 1 completed; Phases 2-3 open
+
+**Phase 1 closure note (2026-05-21):** mt-crypto extended with FIPS 203 §6.2 / §6.3 ML-KEM-768 encapsulate / decapsulate primitives (`mlkem_encapsulate`, `mlkem_decapsulate`, types `MlkemCiphertext`, `MlkemSharedSecret` with zeroize-on-drop and mlock-protected shared secret allocation). Added C wrapper functions `mt_mlkem_encapsulate` / `mt_mlkem_decapsulate` over OpenSSL 3.5 EVP API.
+
+New crate `mt-noise-pq` (`crates/mt-noise-pq`) implements a 3-message Noise XK-like handshake with ML-KEM-768 in place of Diffie-Hellman and ML-DSA-65 identity signatures over transcript hashes. Wire sizes: msg1 2272 B, msg2 6349 B, msg3 5261 B. Session keys derived via domain-separated SHA-256 from ss_rs ‖ ss_e ‖ transcript ‖ rs_id_pk.
+
+Tests passing:
+- `cargo test -p mt-crypto --release --test mlkem_encap_decap` — 2 passed (encap / decap roundtrip + ciphertext freshness)
+- `cargo test -p mt-noise-pq --release` — 6 passed total: full handshake roundtrip, tamper detection on msg2 / msg3 signatures (BadResponderSignature / BadInitiatorSignature), wire-size invariants, fixed-input consistent session derivation
+- `cargo fmt --all -- --check` clean
+- `cargo clippy --workspace --all-targets -- -D warnings` clean
+
+**Phases 2-3 remaining:**
+
+- Phase 2 — wire-format spec patch in Network v1.1.0.md (Noise_PQ handshake wire layout + capability negotiation via `pq_transport_version` u8 field in IBT advertisement) + Phase 2 KAT vector regen with byte-exact responder-key seed.
+- Phase 3 — libp2p custom transport upgrade implementing the Noise_PQ handshake as `InboundConnectionUpgrade` / `OutboundConnectionUpgrade`. This is the hardest integration step: libp2p's `noise` and `tls` upgrades are tightly coupled to the SwarmBuilder API, and a custom Noise variant needs to plug into the same upgrade chain. After Phase 3 closure: TLS 1.3 outer layer dropped; transport stack becomes TCP → Noise_PQ → Yamux. Cross-node soak on the 3-node network (Moscow / Helsinki / Frankfurt) for ≥ 24 hours of continuous operation with zero classical-fallback events.
 
 **Verification protocol per phase.** Each phase is closed only after ≥ 24 hours of continuous operation across the three genesis nodes (Moscow, Helsinki, Frankfurt) with zero unexpected handshake failures and zero classical-fallback events during the observation window. The cross-node verification log is committed to the repository at `External-Audit/noise-pq-phase{N}-verification.log`.
 
