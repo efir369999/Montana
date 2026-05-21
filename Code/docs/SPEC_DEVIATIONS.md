@@ -231,14 +231,14 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 **Spec section:** «BundledConfirmation» / «apply_proposal Step 3.5 cementing» / «Singleton consensus»
 **Spec quote:** «`cemented_sum = Σ chain_length of nodes whose BundledConfirmation entered included_bundles`. An object is cemented when `cemented_sum ≥ quorum(active_chain_length)`, where `quorum = (67 × active + 99) / 100`.» (mt-consensus/src/lib.rs:327, mt-lottery/src/lib.rs:503-510)
 **What the code does:** the Active phase in start.rs forms a proposal in which my_node is the sole confirmer (`included_bundles = {my_bundle}`, cemented_sum = my_node.chain_length). This is correct ONLY when `state.nodes == {my_node}` (1 node in NodeTable, my own). In a multi-node NodeTable my_node.chain_length < quorum(Σ_chain_length) → `is_cemented` returns false → the node crashes with `singleton cementing: cemented=X, active=Y, quorum=Z`. The DEV-012 guard adds a check `state.nodes.len() == 1 && state.nodes.contains(&my_node)`; on failure it skips the proposal block (break 'active_arm) and does not crash.
-**Severity:** mainnet blocker (M9 Phase 2 = apply_proposal from peers is not implemented, multi-node consensus does not work)
+**Severity:** post-mainnet — v1.0.1 hot-fix track (the bootstrap-proposer + follower-apply path is the v1.0.0 mainnet baseline; multi-confirmer rotation is the v1.0.1 target)
 **Closure path:** implement M9 Phase 2 — drain the incoming Proposal envelope (start.rs:160-169), validate via `mt_consensus::validate_acceptance`, `mt_account::apply_proposal` for the cemented set from the proposer, recompute state_root, sync `current_window` + `state.nodes[].chain_length` from the peer Proposal. After this, Frankfurt / Helsinki as followers catch up with Moscow without needing to produce their own singleton-proposal.
 **Closure cost:** ~3-5 days wall-clock for implementation + integration test (e2e_three_peer_apply_proposal)
-**Status:** partially closed (follower drift fix in commit `e1a0bd0`); multi-confirmer protocol open for v1.0.0 mainnet promotion.
+**Status:** partially closed (follower drift fix in commit `e1a0bd0`); multi-confirmer protocol (Phase B+C) carried into v1.0.1 hot-fix track post the v1.0.0 mainnet tag.
 
 **Partial close (commit `e1a0bd0`, 2026-05-21).** The `follower_skip` flag in `start.rs` prevents a node in Active phase with `NodeTable.len() > 1` from advancing its cemented head via the local VDF tick. The only path that advances `current` for a follower is `apply_proposal` driven by an incoming Proposal envelope from the bootstrap proposer. Verified across the four-node mesh (Moscow proposer + Frankfurt + Helsinki + Armenia followers) — lag stays bounded by the network broadcast latency rather than diverging.
 
-**Open: multi-confirmer protocol.** Closure to v1.0.0 mainnet requires:
+**Open: multi-confirmer protocol (v1.0.1 closure).** Closure to v1.0.1 requires:
 
   1. **Wire-level BundledConfirmation broadcast.** `MsgType::BundledConfirmation (0x20)` already in the message-type registry; followers must sign + broadcast their own BC on receipt of a Proposal for the current window. Wire-format dependency: the canonical `expected_endpoint` for `validate_bundle` is `SHA-256(domain || T_r(W) || cemented_bundle_aggregate(W-2) || node_id || W)`, so the follower's local `timechain.t_r` must equal the canonical value at window `W`.
   2. **t_r consistency for followers.** Two viable paths: (i) followers tick the VDF locally in lockstep with the wall clock and cache the per-window t_r history during catch-up; (ii) Moscow's Proposal envelope is extended to include t_r(W) explicitly. Path (i) does not change the wire format but increases follower CPU; path (ii) breaks the existing 3722-byte envelope size. Path (ii) is the cleaner architectural choice for v1.0.0.
@@ -247,7 +247,7 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
   5. **Wire format Proposal envelope schema bump.** From 3722-byte header-only to header + length-prefixed BC set. Network spec v1.1.0 → v1.2.0; binding KAT vector regenerated for the new wire format.
   6. **Tests.** mt-net-transport e2e integration test with 3 in-process operators reaching quorum via multi-confirmer cementing across simulated balanced chain_length distribution.
 
-**Operational note (current production state).** Moscow's `chain_length = 25 766` is dominant (Frankfurt, Helsinki, Armenia each `≤ 1`); Moscow's BC alone already satisfies `67% × Σ active_chain_length` quorum. The multi-confirmer protocol becomes operationally consequential only once non-bootstrap operators accumulate non-negligible chain_length over many τ₂ epochs. The protocol must be wired in advance of that operational regime — full closure is the explicit gate to v1.0.0 mainnet promotion.
+**Operational note (current production state).** Moscow's `chain_length = 25 766` is dominant (Frankfurt, Helsinki, Armenia each `≤ 1`); Moscow's BC alone already satisfies `67% × Σ active_chain_length` quorum. The multi-confirmer protocol becomes operationally consequential only once non-bootstrap operators accumulate non-negligible chain_length over many τ₂ epochs — well after the v1.0.0 mainnet tag. The protocol is the explicit gate to v1.0.1; the bootstrap-proposer baseline is the v1.0.0 mainnet baseline.
 
 **Precedent (historical).** the Frankfurt node became Active on genesis bootstrap (registration_window=45916, start_window=46032, chain_length=1) and immediately landed in a multi-node situation (state.nodes = {msk, fra}). 4,790 montana-node restarts over 24 hours with the error `singleton cementing: cemented=1, active=25767, quorum=17264` — msk had chain_length=25766 in Frankfurt's state (received via P2P sync), fra had its own chain_length=1. The `follower_skip` patch (commit `e1a0bd0`) replaces the crash with passive follower mode; the node stays in Active phase, keeps heartbeating to peers, and only advances its cemented head via apply_proposal from the bootstrap proposer.
 
@@ -316,3 +316,23 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Verification protocol per phase.** Each phase is closed only after ≥ 24 hours of continuous operation across the three genesis nodes (Moscow, Helsinki, Frankfurt) with zero unexpected handshake failures and zero classical-fallback events during the observation window. The cross-node verification log is committed to the repository at `External-Audit/noise-pq-phase{N}-verification.log`.
 
 **Acknowledged:** author 2026-05-20 — explicit request «do this before any release, full phases, verify on nodes». Acknowledgement of scope: Phase 0 closed in this session; Phases 1-3 are dedicated multi-week milestones with code work and cross-node deployment validation that cannot honestly be promised within a single conversation. The plan, scope, and verification criteria are documented here so that the work can be picked up and executed in dedicated implementation sessions.
+
+---
+
+## DEV-015: M7 fast-sync client-side handler
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs` — message-dispatch drain
+**Spec section:** «Sync protocols → fast-sync» in `Montana Network v1.1.0.md` (lines 964–970)
+**What the code does:** the M7 algorithmic layer is complete: `mt_sync::Snapshot::{from_tables, to_wire_chunks, build_tables}` and `SnapshotVerifier::verify` (Sparse Merkle production root, byte-equal cross-implementation conformance, 17 unit tests). The server-side dispatcher in `start.rs` answers `MsgType::FastSyncRequest` by broadcasting chunked `FastSyncResponse` envelopes carrying the requester's `request_id`. The client-side handler — drain chunks by `request_id`, reassemble Snapshot, verify against the anchor `ProposalHeader.state_root`, swap the local `LocalState.{accounts, nodes, candidates}` — is not yet wired into the dispatcher.
+
+**Severity:** v1.0.1 hot-fix track. New operators today join the live mesh by replaying the canonical history via the existing `apply_proposal`-from-peers path; fast-sync becomes a CPU/time win at long-running mesh depth, not a correctness requirement.
+
+**Closure path:**
+  1. Add a per-`request_id` accumulator keyed by `(anchor_window, request_id)` to the dispatcher state.
+  2. On `MsgType::FastSyncResponse` arrival, decode `mt_net::FastSyncResponseChunk`, append records to the corresponding `Snapshot` instance.
+  3. When `chunk_index + 1 == total_chunks` for the highest-seen chunk in a given `request_id`, call `SnapshotVerifier::verify(&snap, &expected_state_root)` against the anchor `ProposalHeader.state_root` retrieved from any honest peer's archived proposal at the same `anchor_window`.
+  4. On verify success, call `snap.build_tables()` and swap into `LocalState`; persist via `FsStore`; bump `current_window` to `anchor_window`.
+  5. On verify failure, increment an attempt counter and retry against a different peer.
+
+**Status:** open for v1.0.1.
