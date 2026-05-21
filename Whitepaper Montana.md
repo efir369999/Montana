@@ -33,19 +33,19 @@ Time as scarcity does not require a price feed, an exchange, or a pricing oracle
 
 ## 3. The TimeChain
 
-Let `T_r` denote the chain output at window `r`. The TimeChain advances by
+Let `T_W` denote the chain output at window `W`. The TimeChain advances by
 
 ```
-T_r = SHA-256^D (T_{r-1})
+T_W = SHA-256^D (T_{W-1})
 ```
 
 where `T_0` is the genesis seed and `D` is the per-window iteration count. `D` is initialized at 325 000 000 and recalibrated every 20 160 windows (approximately fourteen days) according to a formula tied to median observed wall-clock window times across honest operators. The recalibration is canonical: every honest operator computes the same new `D` from public inputs.
 
 This construction is a sequential delay function: the iteration must be performed in order, and verification requires re-running the same `D` iterations. Verification cost equals computation cost — there is no asymmetric verification shortcut as in verifiable delay functions of Boneh, Bonneau, Bünz, and Fisch [5], Pietrzak [6], or Wesolowski [7]. Those constructions operate over RSA groups or class groups of imaginary quadratic fields and achieve O(log T) or O(1) verification. Montana adopts the simpler primitive for two reasons: (i) the cryptographic surface is minimized, depending only on SHA-256 (FIPS 180-4 [4]) which is already required for hashing, addressing, and Merkle commitments; (ii) verification asymmetry is not strictly required when the verifier is itself an operator running the chain — operators verify by extending the chain, which is the same work they perform for the next window.
 
-A new operator joining the network is required to produce a candidate sequential hash chain of length at least 20 160 windows (approximately ten hours of wall-clock time on commodity hardware) before becoming eligible to participate in the lottery. This requirement is the protocol's Sybil entry barrier.
+A new operator joining the network is required to produce a candidate sequential hash chain of length at least 20 160 windows — the protocol parameter `vdf_entry_windows` equal to one τ₂ epoch, approximately fourteen days of wall-clock time on commodity hardware — before becoming eligible to participate in the lottery. This requirement is the protocol's Sybil entry barrier.
 
-The cost of producing N candidate identities scales linearly. Each candidate chain has the same per-chain wall-clock cost T (approximately 10 hours). An attacker with N machines can compute all N chains in parallel at wall-clock T, paying N × T machine-hours of computation. With one machine, the attacker pays N × T wall-clock hours. There is no quadratic multiplier and no time-non-parallelizability across distinct identities. Sybil cost is therefore linear in hardware and linear in energy expenditure, not super-linear in either.
+The cost of producing N candidate identities scales linearly. Each candidate chain has the same per-chain wall-clock cost T (approximately fourteen days, i.e. one τ₂ epoch). An attacker with N machines can compute all N chains in parallel at wall-clock T, paying N × T machine-time of computation. With one machine, the attacker pays N × T wall-clock time. There is no quadratic multiplier and no time-non-parallelizability across distinct identities. Sybil cost is therefore linear in hardware and linear in energy expenditure, not super-linear in either.
 
 Sybil resistance within Montana derives from the composition of this entry cost with the in-protocol per-identity rate limits (Section 10) and the seniority gating of the lottery (Section 7). The combined effect is that attacker influence over consensus grows linearly with hardware budget and not at all with token holdings.
 
@@ -108,21 +108,27 @@ Conservation invariants hold per operation: the sum of balance deltas across all
 
 ## 7. Lottery
 
-The operator who completes the chain for window `r` is selected by a deterministic lottery from the set of registered operators. Each operator submits a `VdfReveal` with the window's chain output and a signature; the lottery winner is
+The operator who completes the chain for window `W` is selected by a deterministic lottery from the set of registered operators. Each operator submits a `VdfReveal` with the window's chain output and a signature; the lottery winner is
 
 ```
-winner = argmin_{operator}  ticket(operator, r)
+winner = argmin_{operator}  ticket(operator, W)
 ```
 
 where
 
 ```
-ticket(operator, r) = SHA-256(operator.node_id || cemented_bundle_aggregate(r-2) || r)
+ticket(operator, W) = SHA-256(
+    "mt-lottery"                      // domain separator (registry entry mt-lottery)
+    || T_W                            // TimeChain canonical value at window W
+    || cemented_bundle_aggregate(W-2) // network-bound unpredictability source
+    || operator.node_id
+    || W                              // u64-LE window index
+)
 ```
 
-The `cemented_bundle_aggregate(r-2)` term is the lottery's network-bound unpredictability source. It incorporates signatures from honest operators in window `r-2` — values that an attacker cannot precompute without the private keys of honest participants. This closes the class of grinding attacks where an adversary with hardware advantage precomputes future chain outputs and grinds attacker-chosen fields against them.
+The `cemented_bundle_aggregate(W-2)` term is the lottery's network-bound unpredictability source. It incorporates signatures from honest operators in window `W-2` — values that an attacker cannot precompute without the private keys of honest participants. This closes the class of grinding attacks where an adversary with hardware advantage precomputes future chain outputs and grinds attacker-chosen fields against them. The full normative formulation, including the integer-form derivation of the lottery ranking that selects the argmin ticket among cemented `VdfReveal`s weighted by operator chain-length, is in the protocol specification («Lottery» section, domain `mt-lottery` in the Domain separators registry).
 
-The grinding attack proceeds as follows. An adversary with k times the SHA-256 throughput of a commodity operator can precompute k hours of chain output in one hour of wall-clock. If the lottery seed were `H(node_id || T_r || r)` with `T_r` predictable offline, the adversary could generate many candidate keypairs, compute their tickets against precomputed `T_r`, and select the keypair giving the lowest ticket for each future window. This grants disproportionate consensus share for fixed hardware. The `cemented_bundle_aggregate(r-2)` component blocks this attack: the adversary cannot precompute the aggregate without forging honest signatures, which the lattice-based ML-DSA-65 scheme prevents at NIST security level 3 (192-bit quantum-equivalent strength). The grinding horizon collapses to already-cemented windows, where attacker-chosen fields are frozen by the registered `node_id` committed at registration. This is the protocol's invariant [I-8], network-bound unpredictability of consensus seeds.
+The grinding attack proceeds as follows. An adversary with k times the SHA-256 throughput of a commodity operator can precompute k hours of chain output in one hour of wall-clock. If the lottery seed were `H(node_id || T_W || W)` with `T_W` predictable offline, the adversary could generate many candidate keypairs, compute their tickets against precomputed `T_W`, and select the keypair giving the lowest ticket for each future window. This grants disproportionate consensus share for fixed hardware. The `cemented_bundle_aggregate(W-2)` component blocks this attack: the adversary cannot precompute the aggregate without forging honest signatures, which the lattice-based ML-DSA-65 scheme prevents at NIST security level 3 (192-bit quantum-equivalent strength). The grinding horizon collapses to already-cemented windows, where attacker-chosen fields are frozen by the registered `node_id` committed at registration. This is the protocol's invariant [I-8], network-bound unpredictability of consensus seeds.
 
 
 ## 8. Liveness
@@ -140,7 +146,7 @@ Full mechanism, including BundledConfirmation construction, signature aggregatio
 
 ## 9. Incentive and Bootstrap
 
-The lottery winner of window `r` receives 13 base units of Ɉ (`13 × 10^9 nɈ`), credited to the operator account at the following window's settlement. There are no transaction fees. There is no second-tier inflation. There is no premine, no presale, no founder allocation. The total emission at window `r` is exactly `13 × r` base units, a closed-form function of window count.
+The lottery winner of window `W` receives 13 base units of Ɉ (`13 × 10^9 nɈ`), credited to the operator account at the following window's settlement. There are no transaction fees. There is no second-tier inflation. There is no premine, no presale, no founder allocation. The total emission after window `W` is exactly `13 × (W + 1)` base units (windows are 0-indexed; the canonical formula `supply_moneta(W) = EMISSION_moneta × (W + 1)` is defined in the protocol specification), a closed-form function of window count.
 
 Storage of accumulated value is not separately incentivized. The protocol does not pay for holding tokens. The single reward path is operating the chain for a window and winning that window's lottery.
 
