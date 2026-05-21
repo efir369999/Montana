@@ -198,23 +198,19 @@ fn handle_event(
                 request, channel, ..
             },
             ..
-        })) => {
-            if request.msg_type == MsgType::Ping {
-                let pong = ProtocolMessage::new(MsgType::Pong, request.request_id, Vec::new());
-                swarm
-                    .behaviour_mut()
-                    .request_response
-                    .send_response(channel, pong)
-                    .expect("send pong");
-            }
+        })) if request.msg_type == MsgType::Ping => {
+            let pong = ProtocolMessage::new(MsgType::Pong, request.request_id, Vec::new());
+            swarm
+                .behaviour_mut()
+                .request_response
+                .send_response(channel, pong)
+                .expect("send pong");
         },
         SwarmEvent::Behaviour(MontanaBehaviourEvent::RequestResponse(RrEvent::Message {
             message: RrMessage::Response { response, .. },
             ..
-        })) => {
-            if response.msg_type == MsgType::Pong {
-                pong_received.insert(node_idx);
-            }
+        })) if response.msg_type == MsgType::Pong => {
+            pong_received.insert(node_idx);
         },
         _ => {},
     }
