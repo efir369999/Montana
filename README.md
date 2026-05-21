@@ -172,8 +172,6 @@ The full installer prints a 24-word recovery mnemonic for the node and a VLESS U
 | [`Code/montana-vpn/`](Code/montana-vpn/) | Reality-VPN endpoint (optional, alongside the node) |
 | [`Code/scripts/install-vps-full.sh`](Code/scripts/install-vps-full.sh) | Node + VPN one-command installer |
 | [`SECURITY.md`](SECURITY.md) | Security policy — how to report vulnerabilities |
-| [`Genesis.md`](Genesis.md) | Genesis statement, embedded in the protocol's Genesis Decree |
-| [`Archive/`](Archive/) | Historical specification versions |
 
 ---
 
