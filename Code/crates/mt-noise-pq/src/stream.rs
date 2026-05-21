@@ -1,0 +1,238 @@
+//! AEAD-wrapped post-handshake stream for the Noise_PQ transport.
+//!
+//! Wire framing (per direction): each application message is encrypted with
+//! ChaCha20-Poly1305 using the derived session key (`sk_i_to_r` for initiator
+//! → responder, `sk_r_to_i` for responder → initiator) and a monotonic
+//! 64-bit nonce counter scoped to the direction (big-endian, 12-byte
+//! ChaCha20-Poly1305 nonce = 4 zero bytes ‖ u64_be(counter)). Each frame is
+//! prefixed by its 16-bit big-endian length (covering ciphertext + 16-byte
+//! Poly1305 tag).
+//!
+//! Maximum plaintext frame size is 65 519 bytes (65 535 wire bytes minus the
+//! 16-byte tag); larger application messages are fragmented by the caller.
+
+use chacha20poly1305::aead::{AeadInPlace, KeyInit};
+use chacha20poly1305::ChaCha20Poly1305;
+use futures::io::{AsyncRead, AsyncWrite};
+use pin_project_lite::pin_project;
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use zeroize::Zeroize;
+
+/// Maximum plaintext bytes per frame (16-bit length cap minus AEAD tag).
+pub const NOISE_PQ_MAX_FRAME_PLAINTEXT: usize = u16::MAX as usize - 16;
+const TAG_LEN: usize = 16;
+
+pin_project! {
+    pub struct NoisePqStream<S> {
+        #[pin]
+        inner: S,
+        tx_key: ChaCha20Poly1305,
+        rx_key: ChaCha20Poly1305,
+        tx_nonce: u64,
+        rx_nonce: u64,
+        tx_buf: Vec<u8>,
+        tx_buf_pos: usize,
+        rx_len_buf: [u8; 2],
+        rx_len_pos: usize,
+        rx_cipher_buf: Vec<u8>,
+        rx_cipher_expected: usize,
+        rx_cipher_pos: usize,
+        rx_plain: Vec<u8>,
+        rx_plain_pos: usize,
+    }
+}
+
+impl<S> NoisePqStream<S> {
+    /// Construct a new AEAD-wrapped stream. `tx_key` is the local-send /
+    /// peer-receive key; `rx_key` is the local-receive / peer-send key.
+    pub fn new(inner: S, tx_key: [u8; 32], rx_key: [u8; 32]) -> Self {
+        let tx_aead = ChaCha20Poly1305::new(&tx_key.into());
+        let rx_aead = ChaCha20Poly1305::new(&rx_key.into());
+        let mut tk = tx_key;
+        let mut rk = rx_key;
+        tk.zeroize();
+        rk.zeroize();
+        NoisePqStream {
+            inner,
+            tx_key: tx_aead,
+            rx_key: rx_aead,
+            tx_nonce: 0,
+            rx_nonce: 0,
+            tx_buf: Vec::new(),
+            tx_buf_pos: 0,
+            rx_len_buf: [0u8; 2],
+            rx_len_pos: 0,
+            rx_cipher_buf: Vec::new(),
+            rx_cipher_expected: 0,
+            rx_cipher_pos: 0,
+            rx_plain: Vec::new(),
+            rx_plain_pos: 0,
+        }
+    }
+}
+
+fn nonce_from_counter(counter: u64) -> [u8; 12] {
+    let mut out = [0u8; 12];
+    out[4..].copy_from_slice(&counter.to_be_bytes());
+    out
+}
+
+fn encrypt_frame(
+    key: &ChaCha20Poly1305,
+    counter: u64,
+    plaintext: &[u8],
+) -> io::Result<Vec<u8>> {
+    if plaintext.len() > NOISE_PQ_MAX_FRAME_PLAINTEXT {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "frame too large"));
+    }
+    let nonce = nonce_from_counter(counter);
+    let mut buf = plaintext.to_vec();
+    key.encrypt_in_place((&nonce).into(), &[], &mut buf)
+        .map_err(|_| io::Error::other("aead encrypt failed"))?;
+    let mut out = Vec::with_capacity(2 + buf.len());
+    let total = buf.len() as u16;
+    out.extend_from_slice(&total.to_be_bytes());
+    out.extend_from_slice(&buf);
+    Ok(out)
+}
+
+fn decrypt_frame(
+    key: &ChaCha20Poly1305,
+    counter: u64,
+    ciphertext_with_tag: &[u8],
+) -> io::Result<Vec<u8>> {
+    if ciphertext_with_tag.len() < TAG_LEN {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "frame too short"));
+    }
+    let nonce = nonce_from_counter(counter);
+    let mut buf = ciphertext_with_tag.to_vec();
+    key.decrypt_in_place((&nonce).into(), &[], &mut buf)
+        .map_err(|_| io::Error::other("aead decrypt failed"))?;
+    Ok(buf)
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for NoisePqStream<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        plaintext: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        if plaintext.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
+        // Drain any pending tx_buf first.
+        while self.tx_buf_pos < self.tx_buf.len() {
+            let this = self.as_mut().project();
+            let n = futures::ready!(this.inner.poll_write(cx, &this.tx_buf[*this.tx_buf_pos..]))?;
+            if n == 0 {
+                return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
+            }
+            *this.tx_buf_pos += n;
+        }
+        // Encrypt one new frame.
+        let take = plaintext.len().min(NOISE_PQ_MAX_FRAME_PLAINTEXT);
+        let counter = self.tx_nonce;
+        let frame = encrypt_frame(&self.tx_key, counter, &plaintext[..take])?;
+        self.tx_nonce = self.tx_nonce.checked_add(1).ok_or_else(|| {
+            io::Error::other("tx nonce overflow")
+        })?;
+        let mut me = self.as_mut().project();
+        *me.tx_buf = frame;
+        *me.tx_buf_pos = 0;
+        // Try a non-blocking flush so the caller knows we consumed bytes.
+        while *me.tx_buf_pos < me.tx_buf.len() {
+            let n = futures::ready!(me.inner.as_mut().poll_write(cx, &me.tx_buf[*me.tx_buf_pos..]))?;
+            if n == 0 {
+                return Poll::Ready(Err(io::ErrorKind::WriteZero.into()));
+            }
+            *me.tx_buf_pos += n;
+        }
+        Poll::Ready(Ok(take))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.inner.poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let this = self.project();
+        this.inner.poll_close(cx)
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for NoisePqStream<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        loop {
+            // Serve any decrypted plaintext sitting in rx_plain first.
+            if self.rx_plain_pos < self.rx_plain.len() {
+                let me = self.as_mut().project();
+                let available = &me.rx_plain[*me.rx_plain_pos..];
+                let n = available.len().min(buf.len());
+                buf[..n].copy_from_slice(&available[..n]);
+                *me.rx_plain_pos += n;
+                if *me.rx_plain_pos == me.rx_plain.len() {
+                    me.rx_plain.clear();
+                    *me.rx_plain_pos = 0;
+                }
+                return Poll::Ready(Ok(n));
+            }
+            // Need to read & decrypt next frame. Step 1: read 2-byte length.
+            if self.rx_len_pos < 2 {
+                let me = self.as_mut().project();
+                let n = futures::ready!(me.inner.poll_read(cx, &mut me.rx_len_buf[*me.rx_len_pos..]))?;
+                if n == 0 {
+                    return Poll::Ready(Ok(0));
+                }
+                *me.rx_len_pos += n;
+                continue;
+            }
+            // Step 2: parse length, ensure capacity.
+            if self.rx_cipher_expected == 0 {
+                let len = u16::from_be_bytes(self.rx_len_buf) as usize;
+                if len == 0 || len < TAG_LEN {
+                    return Poll::Ready(Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "noise_pq frame length invalid",
+                    )));
+                }
+                let me = self.as_mut().project();
+                *me.rx_cipher_expected = len;
+                *me.rx_cipher_pos = 0;
+                me.rx_cipher_buf.resize(len, 0);
+            }
+            // Step 3: read ciphertext bytes.
+            if self.rx_cipher_pos < self.rx_cipher_expected {
+                let me = self.as_mut().project();
+                let start = *me.rx_cipher_pos;
+                let n = futures::ready!(me.inner.poll_read(cx, &mut me.rx_cipher_buf[start..*me.rx_cipher_expected]))?;
+                if n == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+                *me.rx_cipher_pos += n;
+                continue;
+            }
+            // Step 4: decrypt full frame.
+            let counter = self.rx_nonce;
+            let next_nonce = self.rx_nonce.checked_add(1).ok_or_else(|| {
+                io::Error::other("rx nonce overflow")
+            })?;
+            let me = self.as_mut().project();
+            let pt = decrypt_frame(me.rx_key, counter, &me.rx_cipher_buf[..*me.rx_cipher_expected])?;
+            *me.rx_nonce = next_nonce;
+            *me.rx_plain = pt;
+            *me.rx_plain_pos = 0;
+            *me.rx_len_pos = 0;
+            *me.rx_cipher_expected = 0;
+            *me.rx_cipher_pos = 0;
+            // Continue loop to drain rx_plain on next iteration.
+        }
+    }
+}
+
