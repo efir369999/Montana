@@ -108,7 +108,7 @@ Last 3 records (one line per poll):
 
 ```
 0,"closed_5m":0
-0},{"label":"armenia","host":"<exit-am>","active":"active","window":75845,"phase":"CandidateVdf","D":325000000,"hb_5m":2204,"err_5m":0
+0},{"label":"armenia","host":"yerevan","active":"active","window":75845,"phase":"CandidateVdf","D":325000000,"hb_5m":2204,"err_5m":0
 0,"closed_5m":4}]}
 ```
 

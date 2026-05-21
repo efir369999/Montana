@@ -15,7 +15,7 @@ This is the first mainnet release. It promotes `v1.0.0-rc.3` with the M7 fast-sy
 
 - **Noise_PQ XX transport.** TCP → Noise_PQ XX → Yamux is the production handshake stack. ML-KEM-768 ephemeral key encapsulation on both sides, ML-DSA-65 identity signatures over the transcript, ChaCha20-Poly1305 AEAD on the established session. Wire format byte-exact to Network specification v1.1.0 (msg1 1184 B / msg2 7533 B / msg3 6349 B). PeerId derived as SHA-256 multihash (libp2p sha2-256 code 0x12) of each peer's ML-DSA-65 identity public key.
 - **Genesis cohort live.** Moscow, Frankfurt, Helsinki — full 6/6 pairwise mesh negotiating `/montana/noise-pq-xx/1.0.0` and exchanging Ping/Pong heartbeats every 5 s.
-- **External operator path verified.** A clean Linux VPS clones `github.com/efir369999/Montana`, runs `Code/scripts/install-vps.sh`, and within ~16 minutes the new node is visible in all three Genesis peers' journals and exchanging heartbeats. End-to-end verified on the Yerevan VPS `<exit-am>` on 2026-05-21.
+- **External operator path verified.** A clean Linux VPS clones `github.com/efir369999/Montana`, runs `Code/scripts/install-vps.sh`, and within ~16 minutes the new node is visible in all three Genesis peers' journals and exchanging heartbeats. End-to-end verified on a Yerevan VPS on 2026-05-21.
 - **M7 fast-sync snapshot mechanism.** `mt-sync` crate ships:
   - `Snapshot::from_tables(anchor_window, &AccountTable, &NodeTable, &CandidatePool)` — re-encodes typed records into canonical wire form.
   - `Snapshot::to_wire_chunks(records_per_chunk)` — flat-indexed chunked delivery across Account / Node / Candidate tables.

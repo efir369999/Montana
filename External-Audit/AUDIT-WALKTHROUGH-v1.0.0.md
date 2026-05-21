@@ -80,24 +80,26 @@ If any step fails, that is a regression against the v1.0.0 tag and a blocking fi
 
 ## Step 4 — probe the live mesh from outside
 
-All four nodes listen on `tcp/8444` per the pinned `Code/scripts/genesis-manifest.json` + the explorer-discovered Yerevan operator. From any host with `nc`, `python3`, or `curl`:
+The three Genesis nodes — Moscow, Frankfurt, Helsinki — list their multiaddrs in `Code/scripts/genesis-manifest.json`. The bundle is what every operator dials on first start. From any host with `nc`, `python3`, or `curl`:
 
 ```
-for ip in <front> <exit-de> <exit-removed> <exit-am>; do
-    nc -z -w 5 $ip 8444 && echo "$ip 8444 open"
+python3 -c "
+import json
+m = json.load(open('Code/scripts/genesis-manifest.json'))
+for p in m['peers']:
+    ip = p['multiaddr'].split('/ip4/')[1].split('/')[0]
+    port = p['multiaddr'].split('/tcp/')[1]
+    print(p['label'], ip, port)
+" | while read label ip port; do
+    nc -z -w 5 "$ip" "$port" && echo "$label tcp/$port open"
 done
 ```
 
-**Expected:** all four print `open`. As of audit-tag time, all four are reachable from the public internet.
+**Expected:** three `open` lines — one per Genesis peer. The TCP socket on the libp2p port (`8444` per the bundled manifest) is what handles the Noise_PQ XX handshake.
 
-| Label    | IP                | Multiaddr                     | Source of record                             |
-|----------|-------------------|-------------------------------|----------------------------------------------|
-| Moscow   | `<front>`  | `/ip4/<front>/tcp/8444`| `Code/scripts/genesis-manifest.json` peer 0 |
-| Frankfurt| `<exit-de>`   | `/ip4/<exit-de>/tcp/8444` | `Code/scripts/genesis-manifest.json` peer 1 |
-| Helsinki | `<exit-removed>`   | `/ip4/<exit-removed>/tcp/8444` | `Code/scripts/genesis-manifest.json` peer 2 |
-| Yerevan  | `<exit-am>` | `/ip4/<exit-am>/tcp/8444`| `discovered_peers[]` at `efir.org/explorer/data.json` |
+External operators discovered by the live mesh appear at `efir.org/explorer/data.json` under `discovered_peers[]` with a public-safe label (city or `external`) — the raw IP is intentionally masked in the explorer JSON per the public-artifact rule. The auditor's own node, after Step 6, appears there.
 
-**Establishes:** the four nodes the explorer reports as live are TCP-reachable on the libp2p port that handles the Noise_PQ XX handshake. A failure to reach a node means either the node is down or a network path between the auditor and the node is broken; both are recorded in subsequent `data.json` snapshots, the auditor can corroborate.
+**Establishes:** the three Genesis nodes whose multiaddrs are pinned in the manifest are TCP-reachable on the libp2p port that handles the Noise_PQ XX handshake. A failure to reach a Genesis node means either the node is down or a network path between the auditor and the node is broken; both are recorded in subsequent `data.json` snapshots, the auditor can corroborate.
 
 ---
 
@@ -107,7 +109,7 @@ done
 curl -sS https://efir.org/explorer/data.json | python3 -m json.tool | head -80
 ```
 
-The `updated` field must be within ~60 seconds of `date -u`. The `nodes` array must contain Moscow, Frankfurt, Helsinki entries with `status: active` and a `current_window` value advancing at roughly one window per minute. The `discovered_peers` array must contain the Yerevan operator with `remote_ip: <exit-am>` and `last_heartbeat_seconds_ago` ≤ 60.
+The `updated` field must be within ~60 seconds of `date -u`. The `nodes` array must contain Moscow, Frankfurt, Helsinki entries with `status: active` and a `current_window` value advancing at roughly one window per minute. The `discovered_peers` array must contain the Yerevan operator (peer_id `Qma3XZ8mJZDD4MbtJVNxCyS2sYYn9BQRzxYvfiXiMbNCp9`, `remote_ip: yerevan`) with `last_heartbeat_seconds_ago` ≤ 60.
 
 **Establishes:** the explorer is a live read of the journal output of the Moscow orchestrator node, refreshed every 60 seconds. The auditor sees the same state any operator on the network sees.
 
@@ -135,9 +137,9 @@ Within roughly 16 minutes of starting `install-vps.sh`, the auditor's node shoul
 The auditor's own journal — `journalctl -u montana-node -f` — must show:
 
 ```
-[network] CONNECTION ESTABLISHED peer=Q… label=moscow remote=<front>:8444
-[network] CONNECTION ESTABLISHED peer=Q… label=frankfurt remote=<exit-de>:8444
-[network] CONNECTION ESTABLISHED peer=Q… label=helsinki remote=<exit-removed>:8444
+[network] CONNECTION ESTABLISHED peer=Q… label=moscow    remote=<moscow_multiaddr>
+[network] CONNECTION ESTABLISHED peer=Q… label=frankfurt remote=<frankfurt_multiaddr>
+[network] CONNECTION ESTABLISHED peer=Q… label=helsinki  remote=<helsinki_multiaddr>
 [network] heartbeat OK peer=Q… request_id=…
 ```
 
