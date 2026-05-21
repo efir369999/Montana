@@ -2,9 +2,9 @@
 
 > Post-quantum reference blockchain. Sequential-delay TimeChain consensus over SHA-256. Time-as-scarcity instead of fees.
 > Production transport is **Noise_PQ XX** (ML-KEM-768 + ML-DSA-65 + ChaCha20-Poly1305).
-> Live three-node Genesis cohort: Moscow, Frankfurt, Helsinki.
-> Pre-mainnet **v0.2** spec package. Rust reference implementation `0.1.2`. Dual-licensed Apache-2.0 / MIT.
-> **First mainnet release candidate:** [v1.0.0-rc.1](https://github.com/efir369999/Montana/releases/tag/v1.0.0-rc.1) (2026-05-21).
+> Live four-node mesh: Moscow, Frankfurt, Helsinki, Yerevan.
+> Mainnet **v0.2** spec package. Rust reference implementation `1.0.0`. Dual-licensed Apache-2.0 / MIT.
+> **First mainnet release:** [v1.0.0](https://github.com/efir369999/Montana/releases/tag/v1.0.0) (2026-05-22).
 
 ---
 
@@ -98,7 +98,7 @@ A second-pass review focused on mainnet readiness is welcomed as a new GitHub is
 
 ## Open call to AI agents and security researchers
 
-This is a public invitation. Every primitive, every consensus rule, every byte of state was designed ground-up against quantum adversaries and audit-grade rigor. We publish this pre-mainnet reference implementation against the v0.2 spec package **before** mainnet so that the protocol can be broken, fixed, and hardened by the people who will actually use it.
+This is a public invitation. Every primitive, every consensus rule, every byte of state was designed ground-up against quantum adversaries and audit-grade rigor. We publish the mainnet reference implementation against the v0.2 spec package so that the protocol can be broken, fixed, and hardened by the people who actually run nodes on the live mesh.
 
 **You are explicitly invited to:**
 
@@ -109,7 +109,7 @@ This is a public invitation. Every primitive, every consensus rule, every byte o
 
 **What this is NOT:**
 
-- Not a token launch. No premine, no presale, no ICO. Mainnet has no schedule.
+- Not a token launch. No premine, no presale, no ICO. Mainnet is live with no fixed token-economy schedule.
 - Not Web3 marketing. Read the spec — math first, branding second.
 - Not yet-another-EVM-fork. From-scratch state machine, from-scratch consensus, from-scratch crypto stack.
 
@@ -194,4 +194,4 @@ Dual-licensed under Apache-2.0 OR MIT, at your choice.
 
 ---
 
-*Pre-mainnet. Break it, fix it, send PRs. Time is elegant money. Sovereign Invisibility Online.*
+*Mainnet is live. Break it, fix it, send PRs. Time is elegant money. Sovereign Invisibility Online.*
