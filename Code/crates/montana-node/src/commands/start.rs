@@ -163,73 +163,123 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         // Followers: current_window растёт в lockstep с Moscow.
         if let Some(ref mut handle) = network_handle {
             let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
-            while let Ok(msg) = handle.incoming_rx.try_recv() {
-                if msg.msg_type != MsgType::Proposal {
-                    continue;
-                }
-                if msg.payload.len() != 3722 {
-                    eprintln!(
-                        "[consensus] Proposal envelope wrong size {} (expected 3722) — skip",
-                        msg.payload.len()
-                    );
-                    continue;
-                }
-                let window_index = u64::from_le_bytes([
-                    msg.payload[32],
-                    msg.payload[33],
-                    msg.payload[34],
-                    msg.payload[35],
-                    msg.payload[36],
-                    msg.payload[37],
-                    msg.payload[38],
-                    msg.payload[39],
-                ]);
-                let mut winner_id = [0u8; 32];
-                winner_id.copy_from_slice(&msg.payload[332..364]);
-                let mut proposer_node_id = [0u8; 32];
-                proposer_node_id.copy_from_slice(&msg.payload[364..396]);
-
-                if proposer_node_id != bootstrap_node_id {
-                    eprintln!("[consensus] Proposal от не-bootstrap proposer, skip");
-                    continue;
-                }
-                if window_index <= current {
-                    continue;
-                }
-                let mut applied_count = 0u64;
-                while current < window_index {
-                    let next_w = current + 1;
-                    let settle = ProposalSettle {
-                        window_w: next_w,
-                        winner_id,
-                        cemented_confirmers: vec![proposer_node_id],
-                    };
-                    let _post_state_root = apply_proposal(
-                        &mut state.accounts,
-                        &mut state.nodes,
-                        &state.candidates,
-                        &settle,
-                        params,
-                    );
-                    current = next_w;
-                    applied_count += 1;
-                }
-                save_current_window(&data_dir, current)?;
-                eprintln!(
-                    "[consensus] applied {applied_count} window(s) from peer Proposal → current_window={current}"
-                );
-            }
-            // DEV-012 Phase A scaffold: drain incoming MsgType::BundledConfirmation envelopes
-            // from peers. The full multi-confirmer protocol (validate_bundle against canonical
-            // T_r(W), accumulator-quorum, cemented-Proposal-with-bundles broadcast) is the
-            // explicit v1.0.0 mainnet gate per Network spec "Multi-confirmer cementing
-            // protocol" section. For now the receive side counts incoming BC envelopes to
-            // enable per-window observability; validation happens once the proposer extends
-            // the cemented Proposal envelope with T_r(W) per the spec's path (ii).
             let mut bc_count = 0usize;
             while let Ok(msg) = handle.incoming_rx.try_recv() {
-                if msg.msg_type == MsgType::BundledConfirmation {
-                    bc_count += 1;
+                match msg.msg_type {
+                    MsgType::Proposal => {
+                        // M9 Phase 2: bootstrap Proposal envelope (3722 B header layout).
+                        // Decode window_index + winner + proposer без полного deserialize
+                        // (signature валидация в M10), apply_proposal with reconstructed
+                        // singleton ProposalSettle. Followers stay in lockstep with Moscow.
+                        if msg.payload.len() != 3722 {
+                            eprintln!(
+                                "[consensus] Proposal envelope wrong size {} (expected 3722) — skip",
+                                msg.payload.len()
+                            );
+                            continue;
+                        }
+                        let window_index = u64::from_le_bytes([
+                            msg.payload[32], msg.payload[33], msg.payload[34], msg.payload[35],
+                            msg.payload[36], msg.payload[37], msg.payload[38], msg.payload[39],
+                        ]);
+                        let mut winner_id = [0u8; 32];
+                        winner_id.copy_from_slice(&msg.payload[332..364]);
+                        let mut proposer_node_id = [0u8; 32];
+                        proposer_node_id.copy_from_slice(&msg.payload[364..396]);
+
+                        if proposer_node_id != bootstrap_node_id {
+                            eprintln!("[consensus] Proposal от не-bootstrap proposer, skip");
+                            continue;
+                        }
+                        if window_index <= current {
+                            continue;
+                        }
+                        let mut applied_count = 0u64;
+                        while current < window_index {
+                            let next_w = current + 1;
+                            let settle = ProposalSettle {
+                                window_w: next_w,
+                                winner_id,
+                                cemented_confirmers: vec![proposer_node_id],
+                            };
+                            let _post_state_root = apply_proposal(
+                                &mut state.accounts,
+                                &mut state.nodes,
+                                &state.candidates,
+                                &settle,
+                                params,
+                            );
+                            current = next_w;
+                            applied_count += 1;
+                        }
+                        save_current_window(&data_dir, current)?;
+                        eprintln!(
+                            "[consensus] applied {applied_count} window(s) from peer Proposal → current_window={current}"
+                        );
+                    }
+                    MsgType::FastSyncRequest => {
+                        // M7 server-side: peer requested a snapshot anchored at a window.
+                        // Build a Snapshot from the live state, chunk into wire format,
+                        // and broadcast the chunks. Requester filters by request_id;
+                        // unrelated peers see the broadcast and drop it via msg_type +
+                        // request_id mismatch.
+                        match mt_net::FastSyncRequest::decode(&msg.payload) {
+                            Ok(req) => {
+                                let snap = mt_sync::Snapshot::from_tables(
+                                    current,
+                                    &state.accounts,
+                                    &state.nodes,
+                                    &state.candidates,
+                                );
+                                let chunks = snap.to_wire_chunks(32);
+                                let total = chunks.len();
+                                for chunk in chunks {
+                                    let table_id_byte = match chunk.table_id {
+                                        mt_sync::FastSyncTableId::Account => mt_net::TableId::Account,
+                                        mt_sync::FastSyncTableId::Node => mt_net::TableId::Node,
+                                        mt_sync::FastSyncTableId::Candidate => mt_net::TableId::Candidate,
+                                        mt_sync::FastSyncTableId::Proposals => mt_net::TableId::Proposals,
+                                    };
+                                    let mut flat: Vec<u8> = Vec::new();
+                                    for r in &chunk.records {
+                                        flat.extend_from_slice(r);
+                                    }
+                                    let wire_chunk = mt_net::FastSyncResponseChunk {
+                                        chunk_index: chunk.chunk_index,
+                                        total_chunks: chunk.total_chunks,
+                                        table_id: table_id_byte,
+                                        record_count: chunk.records.len() as u32,
+                                        records: flat,
+                                    };
+                                    let mut payload = Vec::new();
+                                    wire_chunk.encode(&mut payload);
+                                    let envelope = ProtocolMessage::new(
+                                        MsgType::FastSyncResponse,
+                                        msg.request_id,
+                                        payload,
+                                    );
+                                    if let Err(e) = handle.broadcast_tx.send(envelope) {
+                                        eprintln!("[m7] fastsync response broadcast failed: {e}");
+                                        break;
+                                    }
+                                }
+                                eprintln!(
+                                    "[m7] served FastSync snapshot: anchor_window={current} req={} chunks={total}",
+                                    req.anchor_window
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("[m7] FastSyncRequest decode failed: {e:?}");
+                            }
+                        }
+                    }
+                    MsgType::BundledConfirmation => {
+                        // DEV-012 Phase A scaffold: count incoming BC envelopes. Full
+                        // multi-confirmer validate + accumulator-quorum + cemented-Proposal
+                        // broadcast is DEV-012 Phase B+C (v1.0.0 mainnet gate).
+                        bc_count += 1;
+                    }
+                    _ => {}
                 }
             }
             if bc_count > 0 {
