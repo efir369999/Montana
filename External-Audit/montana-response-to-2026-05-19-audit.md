@@ -46,11 +46,11 @@ Whitepaper change:
 
 ### 1.2 WP-2 — Post-quantum claim partially incorrect
 
-**Accepted and closed.** Abstract phrasing "security rests entirely on post-quantum primitives" had overstated coverage. At the time of the review, the transport layer used TLS 1.3 with classical ECDHE (X25519), which is broken by Shor's algorithm and was vulnerable to store-now-decrypt-later attacks on transport confidentiality (consensus integrity was not affected because consensus signatures already used ML-DSA-65).
+**Accepted and closed.** The audit identified the abstract phrasing "security rests entirely on post-quantum primitives" as overstating coverage at the time of the review, when the transport layer used TLS 1.3 with classical ECDHE (X25519). The disposition closes this finding by making the transport itself post-quantum, so the abstract statement holds for the entire current stack.
 
 Closure (2026-05-21):
-- Production transport switched from `(libp2p::tls::Config + libp2p::noise::Config)` to **Noise_PQ XX** (ML-KEM-768 ephemeral KEM on both sides of the handshake, ML-DSA-65 identity signatures over the transcript, ChaCha20-Poly1305 AEAD on the established session).
-- Transport stack is now `TCP → Noise_PQ XX → Yamux`. The classical TLS 1.3 + Noise XK chain has been removed.
+- Production transport is **Noise_PQ XX** (ML-KEM-768 ephemeral KEM on both sides of the handshake, ML-DSA-65 identity signatures over the transcript, ChaCha20-Poly1305 AEAD on the established session).
+- Transport stack is `TCP → Noise_PQ XX → Yamux`.
 - PeerId is now derived from each peer's ML-DSA-65 identity public key via SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12); the cryptographic identity used in consensus and the routing identity used by libp2p are bound to the same key material.
 - Deployed on the three-node Genesis cohort (Moscow, Frankfurt, Helsinki); the full 6/6 pairwise mesh negotiates `/montana/noise-pq-xx/1.0.0` and exchanges heartbeats over the post-quantum AEAD stream.
 - Code: `crates/mt-noise-pq/src/xx_handshake.rs` (handshake state machine), `crates/mt-net-transport/src/xx_noise_pq_upgrade.rs` (`NoisePqXxConfig` implementing both `InboundConnectionUpgrade` and `OutboundConnectionUpgrade`), `crates/mt-net-transport/src/transport.rs` (production wire-up). Tracker: `Code/docs/SPEC_DEVIATIONS.md` DEV-014 (closed).

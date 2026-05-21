@@ -47,7 +47,7 @@
 - VectorPow (F1/F2 target derivation)
 - Public API: `all_envelope_vectors()`, `all_pow_vectors()`, `ibt_b1_online_proof()`
 
-**Capability checklist [C-5] for libp2p 0.56.0:** 8/8 PASS (TCP + Yamux + Swarm primitives + request_response; async tokio; classical TLS 1.3 + Noise XK removed in favor of Noise_PQ XX (`mt-noise-pq`); rustls / snow no longer in the auth chain; Linux+macOS+Windows; IPFS+Filecoin+Polkadot 5+ years production; MIT/Apache 2.0; ~120 transitive deps acceptable given isolation via own crate).
+**Capability checklist [C-5] for libp2p 0.56.0:** 8/8 PASS. Components in the production auth and multiplex chain: TCP, `mt-noise-pq` Noise_PQ XX (`/montana/noise-pq-xx/1.0.0`), Yamux, Swarm primitives, `request_response`. Async runtime: tokio. Platform support: Linux, macOS, Windows. Adoption baseline: IPFS, Filecoin, Polkadot deployments at multi-year scale. License: MIT / Apache 2.0. Transitive dependency surface ≈120 crates, acceptable given isolation through the project's own `mt-net-transport` crate.
 
 ---
 
