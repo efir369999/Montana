@@ -7,11 +7,10 @@
 
 use mt_crypto_native::{
     mt_keypair_from_seed_mldsa, mt_keypair_from_seed_mlkem, mt_mlkem_decapsulate,
-    mt_mlkem_encapsulate, mt_sign_mldsa, mt_verify_mldsa,
-    MT_ERR_INVALID_INPUT, MT_ERR_INVALID_PUBLIC_KEY, MT_ERR_INVALID_SECRET_KEY,
-    MT_ERR_KEYGEN_FAILED, MT_ERR_OPENSSL_INIT, MT_ERR_PARAM_FETCH_FAILED,
-    MT_ERR_PARAM_QUERY_FAILED, MT_ERR_PARAM_SIZE_MISMATCH, MT_ERR_SIGN_FAILED,
-    MT_ERR_SIGN_LENGTH_MISMATCH, MT_OK,
+    mt_mlkem_encapsulate, mt_sign_mldsa, mt_verify_mldsa, MT_ERR_INVALID_INPUT,
+    MT_ERR_INVALID_PUBLIC_KEY, MT_ERR_INVALID_SECRET_KEY, MT_ERR_KEYGEN_FAILED,
+    MT_ERR_OPENSSL_INIT, MT_ERR_PARAM_FETCH_FAILED, MT_ERR_PARAM_QUERY_FAILED,
+    MT_ERR_PARAM_SIZE_MISMATCH, MT_ERR_SIGN_FAILED, MT_ERR_SIGN_LENGTH_MISMATCH, MT_OK,
 };
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
