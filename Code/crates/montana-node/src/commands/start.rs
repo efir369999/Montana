@@ -219,6 +219,22 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     "[consensus] applied {applied_count} window(s) from peer Proposal → current_window={current}"
                 );
             }
+            // DEV-012 Phase A scaffold: drain incoming MsgType::BundledConfirmation envelopes
+            // from peers. The full multi-confirmer protocol (validate_bundle against canonical
+            // T_r(W), accumulator-quorum, cemented-Proposal-with-bundles broadcast) is the
+            // explicit v1.0.0 mainnet gate per Network spec "Multi-confirmer cementing
+            // protocol" section. For now the receive side counts incoming BC envelopes to
+            // enable per-window observability; validation happens once the proposer extends
+            // the cemented Proposal envelope with T_r(W) per the spec's path (ii).
+            let mut bc_count = 0usize;
+            while let Ok(msg) = handle.incoming_rx.try_recv() {
+                if msg.msg_type == MsgType::BundledConfirmation {
+                    bc_count += 1;
+                }
+            }
+            if bc_count > 0 {
+                eprintln!("[consensus] drained {bc_count} BundledConfirmation envelope(s) — DEV-012 Phase A scaffold (no validation yet)");
+            }
         }
 
         if STOP.load(Ordering::SeqCst) {
