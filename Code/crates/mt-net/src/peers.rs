@@ -172,7 +172,10 @@ impl PeerTable {
                 break;
             }
             let pfx = r.ipv4_prefix16();
-            let cohort = r.start_window.checked_div(start_window_cohort_size).unwrap_or(r.start_window);
+            let cohort = r
+                .start_window
+                .checked_div(start_window_cohort_size)
+                .unwrap_or(r.start_window);
             if used_prefix16.contains(&pfx) {
                 continue;
             }

@@ -47,7 +47,9 @@ impl DandelionState {
             self.stem_successor = None;
             return;
         }
-        let new_epoch = current_window.checked_div(tau1_windows).unwrap_or(current_window);
+        let new_epoch = current_window
+            .checked_div(tau1_windows)
+            .unwrap_or(current_window);
         if new_epoch != self.epoch_window || self.stem_successor.is_none() {
             let idx = (rng_byte as usize) % outbound_peers.len();
             self.stem_successor = Some(outbound_peers[idx]);
