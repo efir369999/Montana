@@ -1,0 +1,29 @@
+{
+  "network_name": "montana",
+  "peers": [
+    {
+      "label": "moscow",
+      "multiaddr": "/ip4/<front>/tcp/8444",
+      "peer_id": "QmSDUqLkLcenkkNw6PUKYXjesEmaDksnrEaCzbs3a5nVzj",
+      "account_id_hex": "4c290c3d5d63e84b99c30c83fb4d172e04102af4492b4d56d0642711b09e2072",
+      "node_id_hex": "75bfaf9026405c12ef36437f08cc63c040cfe1924773dedcba0abadf8c6928a1",
+      "bootstrap": true
+    },
+    {
+      "label": "frankfurt",
+      "multiaddr": "/ip4/<exit-de>/tcp/8444",
+      "peer_id": "QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP",
+      "account_id_hex": "53560626aff44b5f0a88d7b235ef2028a3cf0517fd6fd2aa20b5566345a91e29",
+      "node_id_hex": "5509211b179d69698913e47605d2b0ed24a91702fb6e9d0fbcd3c3c626270aab",
+      "bootstrap": false
+    },
+    {
+      "label": "helsinki",
+      "multiaddr": "/ip4/<exit-removed>/tcp/8444",
+      "peer_id": "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL",
+      "account_id_hex": "19edd79c0c13b7164ed5fb00d571ba1fa26726adf1e6ef61a3f21b20fa1b42c4",
+      "node_id_hex": "d63cc60c8367ba6be903e50bc0190d7e2e60f89f30f24d3a10dceb92613a5901",
+      "bootstrap": false
+    }
+  ]
+}
