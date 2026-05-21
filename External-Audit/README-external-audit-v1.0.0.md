@@ -7,6 +7,8 @@
 
 This bundle is the curated entry point for an external cryptographer or systems reviewer landing on the repository after the mainnet announcement. The order below is the order I recommend reading; each item names what is in scope and what is out of scope.
 
+> **If you want to verify the v1.0.0 tag end-to-end from a fresh shell — open [`AUDIT-WALKTHROUGH-v1.0.0.md`](AUDIT-WALKTHROUGH-v1.0.0.md) first.** It is the runnable ten-step checklist with hash anchors, public probes, install path, and finding-submission flow. Everything below is the reading material the walkthrough cites.
+
 ---
 
 ## 1. The whitepaper
