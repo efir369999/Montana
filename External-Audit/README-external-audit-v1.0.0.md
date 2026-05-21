@@ -5,7 +5,7 @@
 **Live mesh:** https://efir.org/explorer/ — Moscow / Frankfurt / Helsinki / Yerevan
 **Spec target:** Protocol v35.25.1 + Network v1.1.0 + App v3.12.0
 
-This bundle is the curated entry point for an external cryptographer or systems reviewer landing on the repository after the mainnet announcement. The order below is the order I recommend reading; each item names what is in scope and what is out of scope.
+This bundle is the curated entry point for an external cryptographer or systems reviewer landing on the repository after the mainnet announcement. The order below is the recommended reading order; each item names what is in scope and what is out of scope.
 
 > **If you want to verify the v1.0.0 tag end-to-end from a fresh shell — open [`AUDIT-WALKTHROUGH-v1.0.0.md`](AUDIT-WALKTHROUGH-v1.0.0.md) first.** It is the runnable ten-step checklist with hash anchors, public probes, install path, and finding-submission flow. Everything below is the reading material the walkthrough cites.
 
@@ -57,7 +57,7 @@ What to look for: the transcript-binding ordering between ML-KEM-768 decapsulati
 The complete, on-record list of every spec-vs-code deviation, each with severity, closure path, and current status. Current open entries:
 
 - **DEV-012 Phase B+C** — multi-confirmer cementing carried into v1.0.1. The v1.0.0 mainnet baseline is bootstrap-proposer + follower-apply; the multi-confirmer protocol becomes operationally consequential only after non-bootstrap operators accumulate chain_length over many τ₂ epochs.
-- **DEV-015** — M7 client-side handler (drain + verify + LocalState swap) carried into v1.0.1. New operators today join the live mesh by replaying the canonical history via the existing `apply_proposal`-from-peers path.
+- **DEV-015** — M7 client-side handler (drain + verify + LocalState swap) carried into v1.0.1. New operators join the live mesh by replaying the canonical history via the existing `apply_proposal`-from-peers path.
 
 All other DEV-NNN trackers are closed with citation.
 
@@ -77,20 +77,6 @@ Disposition matrix for the CISO-as-a-Service Team consolidated review of 2026-05
 **File:** [`montana-deep-retrospective-2026-05-21.md`](montana-deep-retrospective-2026-05-21.md)
 
 Empirical record of the four-node mesh: where Frankfurt drifted, why, what the fix was, how convergence was re-established after the `follower_skip` patch. Useful for understanding what the live network actually looks like under operational load before the v1.0.0 tag.
-
----
-
-## 7. The Metzdowd announcement
-
-**File:** [`metzdowd-announcement-v1.0.0.md`](metzdowd-announcement-v1.0.0.md)
-
-The draft sent to `cryptography@metzdowd.com` framing the three concrete review threads:
-
-1. Noise_PQ XX transcript binding and the ML-DSA-65 sign-after-decapsulation ordering.
-2. The SHA-256 sequential delay function reduction and the implications of the absence of a Pietrzak / Wesolowski proof of correct evaluation for the lookback leadership rule.
-3. Independent constant-time review of `mt-crypto-native` for ML-DSA-65 and ML-KEM-768 (the spec-stated row-level requirement).
-
-Findings go to https://github.com/efir369999/Montana/issues with the `mainnet-v1.0.0` label or as plaintext replies to the list.
 
 ---
 

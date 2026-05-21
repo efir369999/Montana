@@ -50,7 +50,7 @@ These items are the explicit external-audit asks accompanying the mainnet announ
 - Are the secret-material allocations protected by `mlock`? Are the `Drop` impls zeroing the memory before returning to the allocator?
 
 **Existing evidence.**
-- [`Code/docs/security-cards.md`](../Code/docs/security-cards.md) — Security Cards per primitive with secret-site enumeration (file currently in mixed-language form — see audit deviation F-006 below).
+- [`Code/docs/security-cards.md`](../Code/docs/security-cards.md) — Security Cards per primitive with secret-site enumeration (file is in mixed-language form — see audit deviation F-006 below).
 - [`Code/crates/mt-crypto/tests/security_invariants.rs`](../Code/crates/mt-crypto/tests/security_invariants.rs) — 13 automated security invariants.
 
 ---
@@ -73,7 +73,7 @@ These are spec-vs-code conformance asks, not crypto-primitive asks. Lower priori
 
 **File.** [`Code/docs/SPEC_DEVIATIONS.md`](../Code/docs/SPEC_DEVIATIONS.md) — every spec-vs-code deviation with closure status.
 
-**Currently open entries (carried into v1.0.1 hot-fix track).**
+**Open entries carried into v1.0.1 hot-fix track.**
 - **DEV-012 Phase B + C** — multi-confirmer cementing in the Active phase. The v1.0.0 mainnet baseline uses bootstrap-proposer + follower-apply; the multi-confirmer rotation is needed once non-bootstrap operators accumulate `chain_length`.
 - **DEV-015** — M7 client-side handler (drain chunks + verify + LocalState swap). New operators on v1.0.0 join the live mesh by replaying the canonical history via the existing `apply_proposal`-from-peers path.
 

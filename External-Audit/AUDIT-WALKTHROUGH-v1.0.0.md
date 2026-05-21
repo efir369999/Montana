@@ -207,7 +207,7 @@ Security cards: [`Code/docs/security-cards.md`](../Code/docs/security-cards.md) 
 ## Step 10 — file findings, expect acknowledgment within seven days
 
 - Findings → GitHub issues at https://github.com/efir369999/Montana/issues with label `mainnet-v1.0.0`.
-- Alternative channel → plaintext replies to the Metzdowd Cryptography List (`cryptography@metzdowd.com`) tagged `[ANN] Montana v1.0.0` (see [`metzdowd-announcement-v1.0.0.md`](metzdowd-announcement-v1.0.0.md)).
+- Alternative channel → plaintext mail to the Metzdowd Cryptography List (`cryptography@metzdowd.com`) referencing the v1.0.0 tag SHA in the body.
 - Acknowledgment SLA → seven days. Written disposition SLA → thirty days.
 - Confidentiality → none. Public on-record review only.
 - Bug bounty → none. The repository is dual-licensed Apache-2.0 / MIT; the protocol is non-token.
@@ -219,9 +219,8 @@ Security cards: [`Code/docs/security-cards.md`](../Code/docs/security-cards.md) 
 | Document | Purpose |
 |----------|---------|
 | [`AUDIT-SCOPE-v1.0.0.md`](AUDIT-SCOPE-v1.0.0.md) | Scope boundaries — priority-1 asks, priority-2 asks, out-of-scope, known maintainer-side deviations |
-| [`README-external-audit-v1.0.0.md`](README-external-audit-v1.0.0.md) | Recommended reading order — seven documents from whitepaper through Metzdowd announcement |
+| [`README-external-audit-v1.0.0.md`](README-external-audit-v1.0.0.md) | Recommended reading order across the audit-bundle documents |
 | [`critic-audit-v1.0.0-mainnet.md`](critic-audit-v1.0.0-mainnet.md) | Eight findings from the maintainer-side critic audit pass (two closed, six escalated to author) |
-| [`metzdowd-announcement-v1.0.0.md`](metzdowd-announcement-v1.0.0.md) | Draft sent to the Metzdowd Cryptography List — three concrete review threads |
 | [`montana-response-to-2026-05-19-audit.md`](montana-response-to-2026-05-19-audit.md) | Disposition matrix for the sixteen-finding CISO-as-a-Service Team consolidated review |
 | [`montana-deep-retrospective-2026-05-21.md`](montana-deep-retrospective-2026-05-21.md) | Empirical record of the four-node mesh under operational load before v1.0.0 |
 | [`Code/docs/SPEC_DEVIATIONS.md`](../Code/docs/SPEC_DEVIATIONS.md) | Complete spec-vs-code deviation log with closure status per entry |

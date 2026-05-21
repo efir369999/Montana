@@ -124,7 +124,6 @@
 - `README.md` — Cyrillic count `0`, version pins inside body all reference filenames (`Montana Protocol v35.25.1.md`) which are authoritative locations per [I-10].
 - `Code/RELEASE-v1.0.0.md` — Cyrillic count `0`, version pins inside body all describe the present-tag mainnet baseline (tag = v1.0.0, spec target = Protocol v35.25.1 + Network v1.1.0 + App v3.12.0) — authoritative-location matches.
 - `External-Audit/README-external-audit-v1.0.0.md` — Cyrillic count `0`, English-only.
-- `External-Audit/metzdowd-announcement-v1.0.0.md` — Cyrillic count `0`, English-only.
 - `Whitepaper Montana.md` — Cyrillic count `0`, version-pin count `0`.
 - `Code/VERSION.md` — version-pin count 82, all in the History table which is the authoritative location for prior-version records per [I-10] §«Версия спеки».
 
