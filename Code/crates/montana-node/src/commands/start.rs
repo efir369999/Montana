@@ -179,8 +179,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             continue;
                         }
                         let window_index = u64::from_le_bytes([
-                            msg.payload[32], msg.payload[33], msg.payload[34], msg.payload[35],
-                            msg.payload[36], msg.payload[37], msg.payload[38], msg.payload[39],
+                            msg.payload[32],
+                            msg.payload[33],
+                            msg.payload[34],
+                            msg.payload[35],
+                            msg.payload[36],
+                            msg.payload[37],
+                            msg.payload[38],
+                            msg.payload[39],
                         ]);
                         let mut winner_id = [0u8; 32];
                         winner_id.copy_from_slice(&msg.payload[332..364]);
@@ -216,7 +222,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         eprintln!(
                             "[consensus] applied {applied_count} window(s) from peer Proposal → current_window={current}"
                         );
-                    }
+                    },
                     MsgType::FastSyncRequest => {
                         // M7 server-side: peer requested a snapshot anchored at a window.
                         // Build a Snapshot from the live state, chunk into wire format,
@@ -235,10 +241,16 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                 let total = chunks.len();
                                 for chunk in chunks {
                                     let table_id_byte = match chunk.table_id {
-                                        mt_sync::FastSyncTableId::Account => mt_net::TableId::Account,
+                                        mt_sync::FastSyncTableId::Account => {
+                                            mt_net::TableId::Account
+                                        },
                                         mt_sync::FastSyncTableId::Node => mt_net::TableId::Node,
-                                        mt_sync::FastSyncTableId::Candidate => mt_net::TableId::Candidate,
-                                        mt_sync::FastSyncTableId::Proposals => mt_net::TableId::Proposals,
+                                        mt_sync::FastSyncTableId::Candidate => {
+                                            mt_net::TableId::Candidate
+                                        },
+                                        mt_sync::FastSyncTableId::Proposals => {
+                                            mt_net::TableId::Proposals
+                                        },
                                     };
                                     let mut flat: Vec<u8> = Vec::new();
                                     for r in &chunk.records {
@@ -267,19 +279,19 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                     "[m7] served FastSync snapshot: anchor_window={current} req={} chunks={total}",
                                     req.anchor_window
                                 );
-                            }
+                            },
                             Err(e) => {
                                 eprintln!("[m7] FastSyncRequest decode failed: {e:?}");
-                            }
+                            },
                         }
-                    }
+                    },
                     MsgType::BundledConfirmation => {
                         // DEV-012 Phase A scaffold: count incoming BC envelopes. Full
                         // multi-confirmer validate + accumulator-quorum + cemented-Proposal
                         // broadcast is DEV-012 Phase B+C (v1.0.0 mainnet gate).
                         bc_count += 1;
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
             if bc_count > 0 {

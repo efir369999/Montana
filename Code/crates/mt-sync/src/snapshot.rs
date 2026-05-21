@@ -235,9 +235,12 @@ mod tests {
     #[test]
     fn add_record_accepts_correct_size() {
         let mut s = Snapshot::new(75850);
-        s.add_record(FastSyncTableId::Account, sample_account_bytes(0xAB)).unwrap();
-        s.add_record(FastSyncTableId::Node, sample_node_bytes(0xCD)).unwrap();
-        s.add_record(FastSyncTableId::Candidate, sample_candidate_bytes(0xEF)).unwrap();
+        s.add_record(FastSyncTableId::Account, sample_account_bytes(0xAB))
+            .unwrap();
+        s.add_record(FastSyncTableId::Node, sample_node_bytes(0xCD))
+            .unwrap();
+        s.add_record(FastSyncTableId::Candidate, sample_candidate_bytes(0xEF))
+            .unwrap();
         assert_eq!(s.record_count(), 3);
         assert_eq!(s.anchor_window, 75850);
     }
@@ -245,10 +248,14 @@ mod tests {
     #[test]
     fn build_tables_typed_insertion_succeeds() {
         let mut s = Snapshot::new(0);
-        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x11)).unwrap();
-        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x22)).unwrap();
-        s.add_record(FastSyncTableId::Node, sample_node_bytes(0x33)).unwrap();
-        s.add_record(FastSyncTableId::Candidate, sample_candidate_bytes(0x44)).unwrap();
+        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x11))
+            .unwrap();
+        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x22))
+            .unwrap();
+        s.add_record(FastSyncTableId::Node, sample_node_bytes(0x33))
+            .unwrap();
+        s.add_record(FastSyncTableId::Candidate, sample_candidate_bytes(0x44))
+            .unwrap();
         let tables = s.build_tables().expect("build_tables");
         assert_eq!(tables.accounts.len(), 2);
         assert_eq!(tables.nodes.len(), 1);
@@ -274,10 +281,14 @@ mod tests {
     #[test]
     fn verifier_rejects_mismatched_root() {
         let mut s = Snapshot::new(0);
-        s.add_record(FastSyncTableId::Account, sample_account_bytes(0xAB)).unwrap();
+        s.add_record(FastSyncTableId::Account, sample_account_bytes(0xAB))
+            .unwrap();
         let bogus_root = [0xFFu8; 32];
         let result = SnapshotVerifier::verify(&s, &bogus_root);
-        assert!(matches!(result, Err(SnapshotError::StateRootMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(SnapshotError::StateRootMismatch { .. })
+        ));
     }
 
     #[test]
@@ -286,10 +297,14 @@ mod tests {
         // expected state_root via the very same SMT path the verifier uses
         // (mt_state::*Table::root()). The two must byte-equal.
         let mut s = Snapshot::new(75900);
-        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x11)).unwrap();
-        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x22)).unwrap();
-        s.add_record(FastSyncTableId::Node, sample_node_bytes(0x33)).unwrap();
-        s.add_record(FastSyncTableId::Candidate, sample_candidate_bytes(0x44)).unwrap();
+        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x11))
+            .unwrap();
+        s.add_record(FastSyncTableId::Account, sample_account_bytes(0x22))
+            .unwrap();
+        s.add_record(FastSyncTableId::Node, sample_node_bytes(0x33))
+            .unwrap();
+        s.add_record(FastSyncTableId::Candidate, sample_candidate_bytes(0x44))
+            .unwrap();
 
         let tables = s.build_tables().expect("build_tables");
         let expected = compute_state_root(
@@ -307,24 +322,27 @@ mod tests {
         // MUST verify against the same expected state_root — the Sparse Merkle
         // root is order-independent by mt_state contract.
         let mut s1 = Snapshot::new(0);
-        s1.add_record(FastSyncTableId::Account, sample_account_bytes(0x01)).unwrap();
-        s1.add_record(FastSyncTableId::Account, sample_account_bytes(0x02)).unwrap();
-        s1.add_record(FastSyncTableId::Account, sample_account_bytes(0x03)).unwrap();
+        s1.add_record(FastSyncTableId::Account, sample_account_bytes(0x01))
+            .unwrap();
+        s1.add_record(FastSyncTableId::Account, sample_account_bytes(0x02))
+            .unwrap();
+        s1.add_record(FastSyncTableId::Account, sample_account_bytes(0x03))
+            .unwrap();
 
         let mut s2 = Snapshot::new(0);
-        s2.add_record(FastSyncTableId::Account, sample_account_bytes(0x03)).unwrap();
-        s2.add_record(FastSyncTableId::Account, sample_account_bytes(0x01)).unwrap();
-        s2.add_record(FastSyncTableId::Account, sample_account_bytes(0x02)).unwrap();
+        s2.add_record(FastSyncTableId::Account, sample_account_bytes(0x03))
+            .unwrap();
+        s2.add_record(FastSyncTableId::Account, sample_account_bytes(0x01))
+            .unwrap();
+        s2.add_record(FastSyncTableId::Account, sample_account_bytes(0x02))
+            .unwrap();
 
         let t1 = s1.build_tables().unwrap();
         let t2 = s2.build_tables().unwrap();
         assert_eq!(t1.accounts.root(), t2.accounts.root());
 
-        let expected = compute_state_root(
-            &t1.nodes.root(),
-            &t1.candidates.root(),
-            &t1.accounts.root(),
-        );
+        let expected =
+            compute_state_root(&t1.nodes.root(), &t1.candidates.root(), &t1.accounts.root());
         SnapshotVerifier::verify(&s1, &expected).expect("verify s1");
         SnapshotVerifier::verify(&s2, &expected).expect("verify s2");
     }
@@ -376,9 +394,24 @@ impl Snapshot {
     pub fn to_wire_chunks(&self, records_per_chunk: usize) -> Vec<WireChunk> {
         assert!(records_per_chunk > 0, "records_per_chunk must be > 0");
         let mut out: Vec<WireChunk> = Vec::new();
-        push_table_chunks(&mut out, FastSyncTableId::Account, &self.accounts, records_per_chunk);
-        push_table_chunks(&mut out, FastSyncTableId::Node, &self.nodes, records_per_chunk);
-        push_table_chunks(&mut out, FastSyncTableId::Candidate, &self.candidates, records_per_chunk);
+        push_table_chunks(
+            &mut out,
+            FastSyncTableId::Account,
+            &self.accounts,
+            records_per_chunk,
+        );
+        push_table_chunks(
+            &mut out,
+            FastSyncTableId::Node,
+            &self.nodes,
+            records_per_chunk,
+        );
+        push_table_chunks(
+            &mut out,
+            FastSyncTableId::Candidate,
+            &self.candidates,
+            records_per_chunk,
+        );
         let total = out.len() as u32;
         for (i, c) in out.iter_mut().enumerate() {
             c.chunk_index = i as u32;
@@ -422,8 +455,8 @@ fn push_table_chunks(
 #[cfg(test)]
 mod wire_tests {
     use super::*;
-    use mt_state::{AccountRecord, NodeRecord, CandidateRecord};
     use mt_crypto::PUBLIC_KEY_SIZE;
+    use mt_state::{AccountRecord, CandidateRecord, NodeRecord};
 
     fn make_account(seed: u8) -> AccountRecord {
         AccountRecord {
@@ -487,11 +520,17 @@ mod wire_tests {
     #[test]
     fn from_tables_roundtrips_state_root() {
         let mut accounts = AccountTable::new();
-        for i in 0..10u8 { accounts.insert(make_account(i + 1)); }
+        for i in 0..10u8 {
+            accounts.insert(make_account(i + 1));
+        }
         let mut nodes = NodeTable::new();
-        for i in 0..3u8 { nodes.insert(make_node(i + 0x10)); }
+        for i in 0..3u8 {
+            nodes.insert(make_node(i + 0x10));
+        }
         let mut candidates = CandidatePool::new();
-        for i in 0..2u8 { candidates.insert(make_candidate(i + 0x80)); }
+        for i in 0..2u8 {
+            candidates.insert(make_candidate(i + 0x80));
+        }
 
         let expected = compute_state_root(&nodes.root(), &candidates.root(), &accounts.root());
 
@@ -502,7 +541,9 @@ mod wire_tests {
     #[test]
     fn to_wire_chunks_indexes_and_totals() {
         let mut accounts = AccountTable::new();
-        for i in 0..70u8 { accounts.insert(make_account(i + 1)); }
+        for i in 0..70u8 {
+            accounts.insert(make_account(i + 1));
+        }
         let nodes = NodeTable::new();
         let candidates = CandidatePool::new();
         let snap = Snapshot::from_tables(0, &accounts, &nodes, &candidates);

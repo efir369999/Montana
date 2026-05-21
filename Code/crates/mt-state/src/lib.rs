@@ -54,7 +54,6 @@ impl CanonicalEncode for AccountRecord {
     }
 }
 
-
 /// Errors returned by AccountRecord / NodeRecord / CandidateRecord decode functions.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum RecordDecodeError {
@@ -159,7 +158,6 @@ impl CanonicalEncode for NodeRecord {
     }
 }
 
-
 impl NodeRecord {
     /// Decode a canonical-encoded NodeRecord from a fixed 2098-byte slice.
     pub fn decode(input: &[u8]) -> Result<NodeRecord, RecordDecodeError> {
@@ -236,7 +234,6 @@ impl CanonicalEncode for CandidateRecord {
         write_u64(buf, self.expires);
     }
 }
-
 
 impl CandidateRecord {
     /// Decode a canonical-encoded CandidateRecord from a fixed 2082-byte slice.
@@ -875,7 +872,10 @@ mod tests {
         original.encode(&mut buf);
         let decoded = NodeRecord::decode(&buf).expect("decode");
         assert_eq!(decoded, original);
-        assert_eq!(decoded.chain_length_checkpoints, original.chain_length_checkpoints);
+        assert_eq!(
+            decoded.chain_length_checkpoints,
+            original.chain_length_checkpoints
+        );
     }
 
     #[test]
