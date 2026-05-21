@@ -43,7 +43,7 @@ Montana is a personal network. Each node is the participant's personal server. T
 
 #### Encryption
 
-All P2P connections are encapsulated in TLS 1.3 on port 443. The Noise framework (built into libp2p) authenticates by the node's public key inside TLS. The content of the traffic is not accessible to an observer.
+All P2P connections are encrypted by Noise_PQ XX (ML-KEM-768 ephemeral KEM on both sides + ML-DSA-65 identity + ChaCha20-Poly1305 AEAD), the production transport handshake. Inbound listeners default to TCP port 8444. The content of the traffic is not accessible to an observer.
 
 #### Identity-Bound Tunnel (IBT)
 
@@ -168,7 +168,7 @@ Transport obfuscation is orthogonal to consensus. The TimeChain and state machin
 
 #### Post-quantum transport migration (M6 milestone)
 
-**Current state (pre-M6).** The transport layer uses TLS 1.3 with classical X25519 ECDHE for the outer tunnel and Noise XK (Diffie-Hellman over X25519) for the inner peer authentication. Both classical handshakes are vulnerable to store-now-decrypt-later attacks by a future quantum adversary: an adversary recording today's traffic can later derive the session key once a sufficiently large quantum computer becomes available. The recorded traffic is then decryptable; identity authentication via ML-DSA-65 signatures is not affected, but transport confidentiality is. Consensus integrity is **not** affected — all consensus signatures are post-quantum (ML-DSA-65) and verified independently of transport.
+**Historical state (pre-M6 closure).** The transport layer used TLS 1.3 with classical X25519 ECDHE for the outer tunnel and Noise XK (Diffie-Hellman over X25519) for the inner peer authentication. Both classical handshakes were vulnerable to store-now-decrypt-later attacks by a future quantum adversary. This exposure has been closed by switching the production transport to Noise_PQ XX (see the next paragraph and the wire format section).
 
 **M6 status — closed.** Production transport is now a single post-quantum handshake: Noise_PQ XX with ML-KEM-768 ephemeral keypairs on both sides of the handshake, ML-DSA-65 identity signatures over the transcript, and ChaCha20-Poly1305 AEAD framing on the established session. The classical TLS 1.3 + Noise XK chain has been removed from the libp2p stack (it provided no security property beyond the IBT-authenticated inner layer; the DPI obfuscation role is preserved by uniform framing on top of Noise_PQ XX). Transport confidentiality is post-quantum end-to-end. PeerId is derived from each peer's ML-DSA-65 identity public key as the SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12), so cryptographic and routing identities are bound to the same key material.
 
@@ -393,7 +393,7 @@ Fluff:
 |--------|-------|---------|
 | UserObject (Transfer Mode A/B, Anchor, ChangeKey, CloseAccount) | Stem → fluff | Hide sender IP |
 | ControlObject (NodeRegistration) | Stem → fluff | Hide the registering candidate's IP |
-| VDF Reveal | Direct gossip (no stem) | node_id is public in the reveal, anonymity is impossible; IP is hidden by Transport Obfuscation (TLS 1.3 on port 443) |
+| VDF Reveal | Direct gossip (no stem) | node_id is public in the reveal, anonymity is impossible; IP is hidden by Transport Obfuscation (Noise_PQ XX over TCP/8444 with uniform framing) |
 | Confirmation | Stem → fluff | Hide which node confirmed first |
 
 **Properties:**
@@ -401,7 +401,7 @@ Fluff:
 | Threat | Defence |
 |--------|--------|
 | Peer sees sender IP | Stem: the peer sees only the previous hop |
-| Global observer (ISP) | TLS 1.3 + uniform framing (Transport Obfuscation) |
+| Global observer (ISP) | Noise_PQ XX + uniform framing (Transport Obfuscation) |
 | Gossip-graph analysis | The operation enters gossip from a random point |
 | Control of k nodes | Deanonymization requires control of O(√n) nodes |
 
@@ -536,7 +536,7 @@ Internet transport uniform framing ([подраздел «Uniform Framing»](#un
 Internet (существующий):
   frame_size            = 1024 bytes
   baseline_rate         = 1 frame/сек
-  контекст              = TLS 1.3 over IP
+  контекст              = Noise_PQ XX AEAD stream over TCP/8444
 
 Mesh (v1):
   frame_size            = 256 bytes (fit в BLE MTU типично
@@ -759,7 +759,7 @@ on_timer_expired(entry):
 Privacy в Montana работает на трёх отдельных уровнях, каждый со своими гарантиями:
 
 1. **Wire-level (transport layer):** что видит провайдер / DPI / наблюдатель отдельного линка.
-   - Защита: TLS 1.3 + Noise + IBT (ML-DSA-65 PQ peer auth) + Uniform Framing + Transport Randomness + Dandelion++ + Label Rotation per τ₁ + Censorship-resistant discovery
+   - Защита: Noise_PQ XX (ML-KEM-768 KEM + ML-DSA-65 identity + ChaCha20-Poly1305 AEAD) + IBT + Uniform Framing + Transport Randomness + Dandelion++ + Label Rotation per τ₁ + Censorship-resistant discovery
    - Закрывает: local DPI, ISP, regulator с перехватом одного линка, small-medium Sybil eclipse, long-term recipient linkability через провайдеров приложений
    - **НЕ закрывает:** global passive adversary с GPS-precision timing-correlation на ВСЕХ backbone links одновременно (open research problem всей anon-net области)
 
@@ -961,7 +961,7 @@ Response состоит из N chunks (с одним request_id). Получат
 
 ```
 1. TCP SYN / SYN-ACK / ACK                (standard)
-2. TLS 1.3 handshake                       (server certificate optional)
+2. Noise_PQ XX handshake                   (3 messages: msg1=1184 B, msg2=7533 B, msg3=6349 B)
 3. Noise key agreement внутри TLS          (mutual pubkey authentication)
 4. IBT proof exchange                       (клиент отправляет ML-DSA-65 signature)
 5. Access level determination               (node / candidate / account, см. Transport Obfuscation)
@@ -3026,9 +3026,9 @@ Cell содержит механизм защиты + status. Status: **C** = cl
 
 |                          | Passive observer | Active MITM | Eclipse | Sybil | DoS | Censor | Sabotage |
 |--------------------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Confidentiality (data)** | TLS 1.3 + Noise + IBT (C) | TLS 1.3 server cert pinning через node_id binding (C) | TLS+IBT survives eclipse (С) | TLS+IBT survives Sybil (C) | n/a | TLS прячет content (P — censor видит cipher metadata) | n/a |
-| **Confidentiality (metadata)** | Uniform Framing 1024B + ≥20% padding ratio (P — observer видит volume aggregate, не indiv messages) | n/a | n/a | n/a | n/a | DPI видит TLS handshake; SNI hidden через TLS 1.3 ECH когда поддерживается (P) | n/a |
-| **Integrity (data)** | n/a | TLS 1.3 AEAD + IBT signature (C) | TLS+IBT (C) | TLS+IBT (C) | malformed payload reject early через Gate 13a invariants (C) | n/a | malformed input bounded по Storage Cards (C) |
+| **Confidentiality (data)** | Noise_PQ XX + IBT (C) | Noise_PQ XX identity pinning через node_id binding (C) | Noise_PQ XX + IBT survives eclipse (C) | Noise_PQ XX + IBT survives Sybil (C) | n/a | Noise_PQ AEAD прячет content (P — censor видит handshake metadata) | n/a |
+| **Confidentiality (metadata)** | Uniform Framing 1024B + ≥20% padding ratio (P — observer видит volume aggregate, не indiv messages) | n/a | n/a | n/a | n/a | DPI видит Noise_PQ XX handshake byte counts; no SNI (Noise_PQ uses libp2p multistream-select) (P) | n/a |
+| **Integrity (data)** | n/a | Noise_PQ XX AEAD + IBT signature (C) | Noise_PQ XX + IBT (C) | Noise_PQ XX + IBT (C) | malformed payload reject early через Gate 13a invariants (C) | n/a | malformed input bounded по Storage Cards (C) |
 | **Integrity (consensus)** | n/a | подписанные объекты (Transfer/Anchor/Proposal) verifiable по ML-DSA-65 (C) | n/a | n/a | n/a | n/a | n/a |
 | **Availability (узла)** | n/a | UPnP/PCP + AutoNAT + circuit relay alternatives (C) | 4-уровневая diversity делает eclipse expensive (C) | VDF entry barrier τ₂ окон + diversity (C) | rate-limits per peer + per type + total quotas + bootstrap PoW (P — DDoS scale ≥10 Gbps требует sysadmin response помимо protocol) | mesh transport BLE/Wi-Fi Aware survives complete internet block (C — но ограничен range) | per-sender quotas + Storage Cards hard caps + LRU eviction (C) |
 | **Availability (consensus)** | n/a | n/a | как «узла» + cementing через ¾ honest weight (C) | как «узла» (C) | как «узла» + consensus path не блокируется network DoS (consensus orthogonal к transport — VDF продолжается локально) (C) | mesh propagation cementing eventually (P — задержка часы / дни) | consensus path fails-safe — invalid input не commit-ится (C) |
@@ -3048,7 +3048,7 @@ Cell содержит механизм защиты + status. Status: **C** = cl
 
 3. **Side-channel attacks на crypto primitives** — timing / power / EM на ML-DSA-65 / SHA-256 implementations. Mitigation: использовать constant-time implementations (rustls / aws-lc-rs / ring); это [C-6] requirement, не network-protocol concern.
 
-4. **Quantum-capable adversary** — статус: **mainnet blocker, plan to closure через Noise_PQ migration**. Текущее состояние: PQ primitives (ML-DSA-65, ML-KEM-768) защищают application auth и encryption (✅), но TLS 1.3 handshake использует classical X25519 ECDHE — vulnerable к store-now-decrypt-later квантовым атакам. **План closure**: replace TLS 1.3 + Noise XK на единый Noise_PQ handshake с ML-KEM-768 как KEM replacement для DH; это удаляет TLS layer целиком (он не даёт ничего сверх IBT-аутентифицированной Noise) и достигает pure-PQ handshake без classical primitives в protocol layer. **Per [I-1]** в protocol layer classical crypto **запрещена** (только в client layer допустима — например browser в Junona к обычному web). Defer to upstream rustls — отвергнут как «acknowledged residual» больше не приемлем; closure через Noise_PQ — обязательный mainnet milestone.
+4. **Quantum-capable adversary** — статус: **закрыто**. PQ primitives (ML-DSA-65, ML-KEM-768) защищают application auth и encryption (✅). Production transport — Noise_PQ XX (ML-KEM-768 ephemeral KEM обе стороны + ML-DSA-65 identity sig + ChaCha20-Poly1305 AEAD); classical TLS 1.3 + Noise XK chain удалён из libp2p stack. Per [I-1] в protocol layer classical crypto запрещена; этот invariant теперь honored end-to-end.
 
 5. **Supply chain attacks на dependencies** — compromised library обновление (libp2p, rustls). Mitigation: Cargo.lock pinning + reproducible builds + dependency audit ([C-6] req #3-4-5-6); это build-time concern.
 
@@ -3060,7 +3060,7 @@ Cell содержит механизм защиты + status. Status: **C** = cl
 
 | # | Cell | Residual | Severity | Mitigation roadmap |
 |---|------|----------|----------|--------------------|
-| 1 | Censor → Confidentiality (data) | DPI видит TLS metadata (handshake, certificate, SNI без ECH) | Medium | TLS 1.3 ECH когда rustls поддержит; deferred from M6 baseline |
+| 1 | Censor → Confidentiality (data) | DPI видит Noise_PQ XX handshake byte counts (msg1=1184B / msg2=7533B / msg3=6349B distinct sizes) | Medium | Optional handshake padding to a uniform target; deferred to post-mainnet hardening |
 | 2 | Passive observer → Confidentiality (metadata) | Uniform Framing скрывает per-message volume, но aggregate KB/sec viewable | Low | Defense-in-depth достаточен; full traffic shaping out of scope |
 | 3 | DoS → Availability (узла) | DDoS ≥10 Gbps требует sysadmin response | Medium | Standard practice (Cloudflare-like upstream filtering); not protocol concern |
 | 4 | Censor → Availability (узла) | Mesh range ≤200m недостаточен для intercity связи без internet | Medium | Defer multi-hop mesh routing к M14 mobile work |
@@ -3072,7 +3072,7 @@ Cell содержит механизм защиты + status. Status: **C** = cl
 
 - **[I-1] PQ-secure** — Threat model признаёт residual (Q4 outscope) пока TLS не PQ; closed для auth (IBT через ML-DSA-65) и для confidentiality в SF (ML-KEM-768 E2E). На момент M6 acceptable как PQ-protected identity layer над classical TLS transport.
 - **[I-3] Determinism** — Threat model orthogonal: defines what is defended, не какие state changes возникают.
-- **[I-7] Minimal crypto surface** — Threat model не вводит новых crypto primitives; переиспользует ML-DSA-65 / SHA-256 / ML-KEM-768 / TLS 1.3.
+- **[I-7] Minimal crypto surface** — Threat model не вводит новых crypto primitives; переиспользует ML-DSA-65 / SHA-256 / ML-KEM-768 / ChaCha20-Poly1305.
 
 #### Audit guidance
 
@@ -3501,7 +3501,7 @@ verify: каждое упоминание в карточке references existin
 - [I-6] Regulatory compat: yes для всех; explicit acknowledgment в
   Dandelion++ что не privacy mixer
 - [I-7] Minimal crypto surface: yes — переиспользует ML-DSA-65 / SHA-256 /
-  ML-KEM-768 / TLS 1.3
+  ML-KEM-768 / ChaCha20-Poly1305
 - [I-8] Network-bound unpredictability: n/a для всех (transport-orthogonal,
   не consensus seed)
 - [I-9] Bit-exact deterministic: yes для wire format (binding KAT vectors

@@ -46,11 +46,18 @@ Whitepaper change:
 
 ### 1.2 WP-2 — Post-quantum claim partially incorrect
 
-**Accepted.** Abstract phrasing "security rests entirely on post-quantum primitives" overstates coverage. Consensus signatures (ML-DSA-65) and application-layer KEM (ML-KEM-768) are post-quantum. Transport layer currently uses TLS 1.3 with classical ECDHE (X25519), which is broken by Shor's algorithm and is therefore vulnerable to store-now-decrypt-later attacks on transport confidentiality. Consensus integrity is not affected.
+**Accepted and closed.** Abstract phrasing "security rests entirely on post-quantum primitives" had overstated coverage. At the time of the review, the transport layer used TLS 1.3 with classical ECDHE (X25519), which is broken by Shor's algorithm and was vulnerable to store-now-decrypt-later attacks on transport confidentiality (consensus integrity was not affected because consensus signatures already used ML-DSA-65).
+
+Closure (2026-05-21):
+- Production transport switched from `(libp2p::tls::Config + libp2p::noise::Config)` to **Noise_PQ XX** (ML-KEM-768 ephemeral KEM on both sides of the handshake, ML-DSA-65 identity signatures over the transcript, ChaCha20-Poly1305 AEAD on the established session).
+- Transport stack is now `TCP → Noise_PQ XX → Yamux`. The classical TLS 1.3 + Noise XK chain has been removed.
+- PeerId is now derived from each peer's ML-DSA-65 identity public key via SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12); the cryptographic identity used in consensus and the routing identity used by libp2p are bound to the same key material.
+- Deployed on the three-node Genesis cohort (Moscow, Frankfurt, Helsinki); the full 6/6 pairwise mesh negotiates `/montana/noise-pq-xx/1.0.0` and exchanges heartbeats over the post-quantum AEAD stream.
+- Code: `crates/mt-noise-pq/src/xx_handshake.rs` (handshake state machine), `crates/mt-net-transport/src/xx_noise_pq_upgrade.rs` (`NoisePqXxConfig` implementing both `InboundConnectionUpgrade` and `OutboundConnectionUpgrade`), `crates/mt-net-transport/src/transport.rs` (production wire-up). Tracker: `Code/docs/SPEC_DEVIATIONS.md` DEV-014 (closed).
 
 Whitepaper change:
-- Abstract revised to differentiate consensus PQ coverage from transport PQ coverage explicitly.
-- Transport upgrade to hybrid PQ KEM (Noise_PQ) is documented as scheduled work for milestone M6.
+- Abstract rewritten to state Noise_PQ XX as the production transport.
+- Section 13 (Network and Transport Security) rewritten in factual present tense; classical TLS 1.3 + Noise XK described as historical only.
 
 ### 1.3 WP-3 — Sybil analysis math
 
@@ -68,7 +75,7 @@ Content:
 - Honest-majority assumption: > 67% of total active_chain_length controlled by honest operators (quorum-weighted, not headcount).
 - Hardware-bounded influence: attacker advantage scales linearly with hardware budget, not with token holdings.
 - Failure conditions: when adversary controls > 50% persistent VDF compute and ChainLength-weighted operator share simultaneously.
-- Out of scope: transport-layer confidentiality in Tier 1 deployments without Noise_PQ; application-layer metadata anonymity beyond Anchor encryption.
+- Out of scope: application-layer metadata anonymity beyond Anchor encryption (the network observes operation timing and counts even when content is encrypted). Transport-layer confidentiality against quantum adversaries is in scope and is closed by Noise_PQ XX as the production handshake.
 
 ---
 
@@ -219,6 +226,6 @@ The Montana project thanks the CISO-as-a-Service Team for the thorough review. T
 
 The two false claims (MONT-003 race condition, WP-8 sub-claim "does not explain") are noted as procedural reminders that audit reviewers should verify negative claims through reading the relevant specification sections, not through keyword grep. The project's own internal architect role (`Montana-Protocol/CLAUDE.md` (Russian) Gate −1, step 5) formalizes this discipline; the same discipline applies to external review verification.
 
-Path A whitepaper revision is committed alongside this response. Spec patches MONT-001 (constant-time) and MONT-002 (online IBT nonce tracking) are committed separately. The project is ready for Metzdowd Cryptography List submission upon the author's go-ahead.
+Path A whitepaper revision is committed alongside this response. Spec patches MONT-001 (constant-time) and MONT-002 (online IBT nonce tracking) are committed separately. DEV-014 (post-quantum transport migration) was closed on 2026-05-21 by switching the production transport stack to Noise_PQ XX; see the WP-2 disposition above for details and code locations. The project is ready for Metzdowd Cryptography List submission and welcomes a follow-up review focused on mainnet readiness.
 
 Alejandro Montana
