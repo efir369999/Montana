@@ -329,3 +329,217 @@ mod tests {
         SnapshotVerifier::verify(&s2, &expected).expect("verify s2");
     }
 }
+
+// ── Construction from live state + wire-chunk encoding ────────────────────────
+
+impl Snapshot {
+    /// Construct a Snapshot from the live `AccountTable` / `NodeTable` /
+    /// `CandidatePool` by re-encoding each record into its canonical byte
+    /// form (the same form delivered on the wire). Used by the M7
+    /// server-side to serialize its current state at the requested
+    /// `anchor_window`.
+    pub fn from_tables(
+        anchor_window: u64,
+        accounts: &AccountTable,
+        nodes: &NodeTable,
+        candidates: &CandidatePool,
+    ) -> Snapshot {
+        use mt_codec::CanonicalEncode;
+        let mut snap = Snapshot::new(anchor_window);
+        for rec in accounts.iter() {
+            let mut buf = Vec::with_capacity(ACCOUNT_RECORD_SIZE);
+            rec.encode(&mut buf);
+            snap.accounts.push(buf);
+        }
+        for rec in nodes.iter() {
+            let mut buf = Vec::with_capacity(NODE_RECORD_SIZE);
+            rec.encode(&mut buf);
+            snap.nodes.push(buf);
+        }
+        for rec in candidates.iter() {
+            let mut buf = Vec::with_capacity(CANDIDATE_RECORD_SIZE);
+            rec.encode(&mut buf);
+            snap.candidates.push(buf);
+        }
+        snap
+    }
+
+    /// Encode this Snapshot into a flat sequence of wire chunks suitable for
+    /// FastSyncResponseChunk delivery. `records_per_chunk` bounds the per-
+    /// chunk payload to avoid breaching the network envelope size limit;
+    /// 32 records × 2059 B ≈ 64 KiB per chunk fits well inside Yamux frames.
+    ///
+    /// Chunks are flat-indexed across all three tables: e.g. if accounts
+    /// produce 3 chunks and nodes produce 2 chunks and candidates produce
+    /// 1 chunk, the wire envelope shows chunk_index 0..6 with
+    /// total_chunks == 6.
+    pub fn to_wire_chunks(&self, records_per_chunk: usize) -> Vec<WireChunk> {
+        assert!(records_per_chunk > 0, "records_per_chunk must be > 0");
+        let mut out: Vec<WireChunk> = Vec::new();
+        push_table_chunks(&mut out, FastSyncTableId::Account, &self.accounts, records_per_chunk);
+        push_table_chunks(&mut out, FastSyncTableId::Node, &self.nodes, records_per_chunk);
+        push_table_chunks(&mut out, FastSyncTableId::Candidate, &self.candidates, records_per_chunk);
+        let total = out.len() as u32;
+        for (i, c) in out.iter_mut().enumerate() {
+            c.chunk_index = i as u32;
+            c.total_chunks = total;
+        }
+        out
+    }
+}
+
+/// Wire-format chunk identical in structure to `mt_net::FastSyncResponseChunk`
+/// but defined in mt-sync so the snapshot layer stays independent of the
+/// network crate's NetError type. The follower-side network adapter maps
+/// these into `FastSyncResponseChunk` envelopes (1:1, no field rename).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WireChunk {
+    pub chunk_index: u32,
+    pub total_chunks: u32,
+    pub table_id: FastSyncTableId,
+    pub records: Vec<Vec<u8>>,
+}
+
+fn push_table_chunks(
+    out: &mut Vec<WireChunk>,
+    table: FastSyncTableId,
+    records: &[Vec<u8>],
+    per_chunk: usize,
+) {
+    if records.is_empty() {
+        return;
+    }
+    for batch in records.chunks(per_chunk) {
+        out.push(WireChunk {
+            chunk_index: 0,
+            total_chunks: 0,
+            table_id: table,
+            records: batch.to_vec(),
+        });
+    }
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+    use mt_state::{AccountRecord, NodeRecord, CandidateRecord};
+    use mt_crypto::PUBLIC_KEY_SIZE;
+
+    fn make_account(seed: u8) -> AccountRecord {
+        AccountRecord {
+            account_id: [seed; 32],
+            balance: 100,
+            suite_id: 1,
+            is_node_operator: false,
+            frontier_hash: [seed; 32],
+            op_height: 0,
+            account_chain_length: 0,
+            account_chain_length_snapshot: 0,
+            current_pubkey: [seed; PUBLIC_KEY_SIZE],
+            creation_window: 0,
+            last_op_window: 0,
+            last_activation_window: 0,
+        }
+    }
+    fn make_node(seed: u8) -> NodeRecord {
+        NodeRecord {
+            node_id: [seed; 32],
+            node_pubkey: [seed; PUBLIC_KEY_SIZE],
+            suite_id: 1,
+            operator_account_id: [seed; 32],
+            start_window: 0,
+            chain_length: seed as u64,
+            chain_length_snapshot: seed as u64,
+            chain_length_checkpoints: [0; 6],
+            last_confirmation_window: 0,
+        }
+    }
+    fn make_candidate(seed: u8) -> CandidateRecord {
+        CandidateRecord {
+            node_id: [seed; 32],
+            node_pubkey: [seed; PUBLIC_KEY_SIZE],
+            suite_id: 1,
+            operator_account_id: [seed; 32],
+            proof_endpoint: [seed; 32],
+            w_start: 0,
+            vdf_chain_length: 20_160,
+            registration_window: seed as u64,
+            expires: 90_480,
+        }
+    }
+
+    #[test]
+    fn from_tables_recovers_record_counts() {
+        let mut accounts = AccountTable::new();
+        accounts.insert(make_account(0x01));
+        accounts.insert(make_account(0x02));
+        let mut nodes = NodeTable::new();
+        nodes.insert(make_node(0x10));
+        let candidates = CandidatePool::new();
+
+        let snap = Snapshot::from_tables(100, &accounts, &nodes, &candidates);
+        assert_eq!(snap.anchor_window, 100);
+        assert_eq!(snap.accounts.len(), 2);
+        assert_eq!(snap.nodes.len(), 1);
+        assert_eq!(snap.candidates.len(), 0);
+    }
+
+    #[test]
+    fn from_tables_roundtrips_state_root() {
+        let mut accounts = AccountTable::new();
+        for i in 0..10u8 { accounts.insert(make_account(i + 1)); }
+        let mut nodes = NodeTable::new();
+        for i in 0..3u8 { nodes.insert(make_node(i + 0x10)); }
+        let mut candidates = CandidatePool::new();
+        for i in 0..2u8 { candidates.insert(make_candidate(i + 0x80)); }
+
+        let expected = compute_state_root(&nodes.root(), &candidates.root(), &accounts.root());
+
+        let snap = Snapshot::from_tables(75900, &accounts, &nodes, &candidates);
+        SnapshotVerifier::verify(&snap, &expected).expect("verify roundtrips state_root");
+    }
+
+    #[test]
+    fn to_wire_chunks_indexes_and_totals() {
+        let mut accounts = AccountTable::new();
+        for i in 0..70u8 { accounts.insert(make_account(i + 1)); }
+        let nodes = NodeTable::new();
+        let candidates = CandidatePool::new();
+        let snap = Snapshot::from_tables(0, &accounts, &nodes, &candidates);
+
+        let chunks = snap.to_wire_chunks(32);
+        // 70 accounts / 32 per_chunk = 3 chunks (32 + 32 + 6)
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].chunk_index, 0);
+        assert_eq!(chunks[0].total_chunks, 3);
+        assert_eq!(chunks[2].chunk_index, 2);
+        assert_eq!(chunks[2].total_chunks, 3);
+        assert_eq!(chunks[0].records.len(), 32);
+        assert_eq!(chunks[1].records.len(), 32);
+        assert_eq!(chunks[2].records.len(), 6);
+        for c in &chunks {
+            assert_eq!(c.table_id, FastSyncTableId::Account);
+        }
+    }
+
+    #[test]
+    fn to_wire_chunks_spans_three_tables() {
+        let mut accounts = AccountTable::new();
+        accounts.insert(make_account(1));
+        let mut nodes = NodeTable::new();
+        nodes.insert(make_node(2));
+        let mut candidates = CandidatePool::new();
+        candidates.insert(make_candidate(3));
+        let snap = Snapshot::from_tables(0, &accounts, &nodes, &candidates);
+
+        let chunks = snap.to_wire_chunks(16);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].table_id, FastSyncTableId::Account);
+        assert_eq!(chunks[1].table_id, FastSyncTableId::Node);
+        assert_eq!(chunks[2].table_id, FastSyncTableId::Candidate);
+        for (i, c) in chunks.iter().enumerate() {
+            assert_eq!(c.chunk_index, i as u32);
+            assert_eq!(c.total_chunks, 3);
+        }
+    }
+}
