@@ -637,8 +637,8 @@ fn install_shutdown_handlers() {
         // единственный side-effect handler-а, signal-safe (POSIX async-signal-safe).
         // SIGINT — Ctrl-C из терминала. SIGTERM — launchctl unload / systemd stop /
         // kill PID. Оба роутятся на тот же handler для единообразного graceful shutdown.
-        libc::signal(libc::SIGINT, shutdown_handler as usize);
-        libc::signal(libc::SIGTERM, shutdown_handler as usize);
+        libc::signal(libc::SIGINT, shutdown_handler as *const () as usize);
+        libc::signal(libc::SIGTERM, shutdown_handler as *const () as usize);
     }
 }
 
