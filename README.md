@@ -3,7 +3,8 @@
 > Post-quantum reference blockchain. Sequential-delay TimeChain consensus over SHA-256. Time-as-scarcity instead of fees.
 > Production transport is **Noise_PQ XX** (ML-KEM-768 + ML-DSA-65 + ChaCha20-Poly1305).
 > Live three-node Genesis cohort: Moscow, Frankfurt, Helsinki.
-> Pre-mainnet **v0.2** spec package. Rust reference implementation `0.1.1`. Dual-licensed Apache-2.0 / MIT.
+> Pre-mainnet **v0.2** spec package. Rust reference implementation `0.1.2`. Dual-licensed Apache-2.0 / MIT.
+> **First mainnet release candidate:** [v1.0.0-rc.1](https://github.com/efir369999/Montana/releases/tag/v1.0.0-rc.1) (2026-05-21).
 
 ---
 
