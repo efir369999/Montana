@@ -28,3 +28,30 @@ secrets.toml
 # Rust temp
 *.swp
 *~
+
+# Internal-only artifacts (not for public Metzdowd-audience repo)
+.DS_Store
+**/.DS_Store
+
+# Russian / Chinese / multilingual whitepaper variants — kept locally only
+Whitepaper Montana RU.md
+Whitepaper Montana RU.pdf
+Whitepaper Montana ZH.md
+Whitepaper Montana Mesh*.md
+
+# Internal architect / critic role files
+/CLAUDE.md
+/CRITIC.md
+Code/CLAUDE.md
+Code/CRITIC.md
+
+# Russian operational notes
+УСТАНОВКА.md
+Генезис.md
+Spec-Patch-*.md
+
+# Bulky non-essential directories
+PDF/
+Apps/
+Archive/
+
