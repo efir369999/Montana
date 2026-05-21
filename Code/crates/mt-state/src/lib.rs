@@ -54,6 +54,76 @@ impl CanonicalEncode for AccountRecord {
     }
 }
 
+
+/// Errors returned by AccountRecord / NodeRecord / CandidateRecord decode functions.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum RecordDecodeError {
+    /// The input slice was not exactly the canonical fixed record size.
+    WrongSize { expected: usize, actual: usize },
+    /// A boolean field carried a non-0/1 byte.
+    BadBoolByte(u8),
+}
+
+impl AccountRecord {
+    /// Decode a canonical-encoded AccountRecord from a fixed 2059-byte slice.
+    /// The layout mirrors `<AccountRecord as CanonicalEncode>::encode`.
+    pub fn decode(input: &[u8]) -> Result<AccountRecord, RecordDecodeError> {
+        if input.len() != ACCOUNT_RECORD_SIZE {
+            return Err(RecordDecodeError::WrongSize {
+                expected: ACCOUNT_RECORD_SIZE,
+                actual: input.len(),
+            });
+        }
+        let mut o = 0usize;
+        let mut account_id = [0u8; 32];
+        account_id.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let balance = u128::from_le_bytes(input[o..o + 16].try_into().unwrap());
+        o += 16;
+        let suite_id = u16::from_le_bytes(input[o..o + 2].try_into().unwrap());
+        o += 2;
+        let is_node_operator = match input[o] {
+            0 => false,
+            1 => true,
+            other => return Err(RecordDecodeError::BadBoolByte(other)),
+        };
+        o += 1;
+        let mut frontier_hash = [0u8; 32];
+        frontier_hash.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let op_height = u32::from_le_bytes(input[o..o + 4].try_into().unwrap());
+        o += 4;
+        let account_chain_length = u32::from_le_bytes(input[o..o + 4].try_into().unwrap());
+        o += 4;
+        let account_chain_length_snapshot = u32::from_le_bytes(input[o..o + 4].try_into().unwrap());
+        o += 4;
+        let mut current_pubkey = [0u8; PUBLIC_KEY_SIZE];
+        current_pubkey.copy_from_slice(&input[o..o + PUBLIC_KEY_SIZE]);
+        o += PUBLIC_KEY_SIZE;
+        let creation_window = u32::from_le_bytes(input[o..o + 4].try_into().unwrap());
+        o += 4;
+        let last_op_window = u32::from_le_bytes(input[o..o + 4].try_into().unwrap());
+        o += 4;
+        let last_activation_window = u32::from_le_bytes(input[o..o + 4].try_into().unwrap());
+        o += 4;
+        debug_assert_eq!(o, ACCOUNT_RECORD_SIZE);
+        Ok(AccountRecord {
+            account_id,
+            balance,
+            suite_id,
+            is_node_operator,
+            frontier_hash,
+            op_height,
+            account_chain_length,
+            account_chain_length_snapshot,
+            current_pubkey,
+            creation_window,
+            last_op_window,
+            last_activation_window,
+        })
+    }
+}
+
 // spec: Node Table (запись на узел) — 2098 bytes fixed (см. NODE_RECORD_SIZE)
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NodeRecord {
@@ -89,6 +159,56 @@ impl CanonicalEncode for NodeRecord {
     }
 }
 
+
+impl NodeRecord {
+    /// Decode a canonical-encoded NodeRecord from a fixed 2098-byte slice.
+    pub fn decode(input: &[u8]) -> Result<NodeRecord, RecordDecodeError> {
+        if input.len() != NODE_RECORD_SIZE {
+            return Err(RecordDecodeError::WrongSize {
+                expected: NODE_RECORD_SIZE,
+                actual: input.len(),
+            });
+        }
+        let mut o = 0usize;
+        let mut node_id = [0u8; 32];
+        node_id.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let mut node_pubkey = [0u8; PUBLIC_KEY_SIZE];
+        node_pubkey.copy_from_slice(&input[o..o + PUBLIC_KEY_SIZE]);
+        o += PUBLIC_KEY_SIZE;
+        let suite_id = u16::from_le_bytes(input[o..o + 2].try_into().unwrap());
+        o += 2;
+        let mut operator_account_id = [0u8; 32];
+        operator_account_id.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let start_window = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        let chain_length = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        let chain_length_snapshot = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        let mut chain_length_checkpoints = [0u64; 6];
+        for cp in &mut chain_length_checkpoints {
+            *cp = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+            o += 8;
+        }
+        let last_confirmation_window = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        debug_assert_eq!(o, NODE_RECORD_SIZE);
+        Ok(NodeRecord {
+            node_id,
+            node_pubkey,
+            suite_id,
+            operator_account_id,
+            start_window,
+            chain_length,
+            chain_length_snapshot,
+            chain_length_checkpoints,
+            last_confirmation_window,
+        })
+    }
+}
+
 // spec: Candidate Pool (запись на кандидата) — 2082 bytes fixed (см. CANDIDATE_RECORD_SIZE)
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CandidateRecord {
@@ -114,6 +234,54 @@ impl CanonicalEncode for CandidateRecord {
         write_u64(buf, self.vdf_chain_length);
         write_u64(buf, self.registration_window);
         write_u64(buf, self.expires);
+    }
+}
+
+
+impl CandidateRecord {
+    /// Decode a canonical-encoded CandidateRecord from a fixed 2082-byte slice.
+    pub fn decode(input: &[u8]) -> Result<CandidateRecord, RecordDecodeError> {
+        if input.len() != CANDIDATE_RECORD_SIZE {
+            return Err(RecordDecodeError::WrongSize {
+                expected: CANDIDATE_RECORD_SIZE,
+                actual: input.len(),
+            });
+        }
+        let mut o = 0usize;
+        let mut node_id = [0u8; 32];
+        node_id.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let mut node_pubkey = [0u8; PUBLIC_KEY_SIZE];
+        node_pubkey.copy_from_slice(&input[o..o + PUBLIC_KEY_SIZE]);
+        o += PUBLIC_KEY_SIZE;
+        let suite_id = u16::from_le_bytes(input[o..o + 2].try_into().unwrap());
+        o += 2;
+        let mut operator_account_id = [0u8; 32];
+        operator_account_id.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let mut proof_endpoint = [0u8; 32];
+        proof_endpoint.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let w_start = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        let vdf_chain_length = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        let registration_window = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        let expires = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        o += 8;
+        debug_assert_eq!(o, CANDIDATE_RECORD_SIZE);
+        Ok(CandidateRecord {
+            node_id,
+            node_pubkey,
+            suite_id,
+            operator_account_id,
+            proof_endpoint,
+            w_start,
+            vdf_chain_length,
+            registration_window,
+            expires,
+        })
     }
 }
 
@@ -643,5 +811,103 @@ mod tests {
         // Связка: наши record types используют PUBLIC_KEY_SIZE из mt-crypto
         // ML-DSA-65 pubkey = 1952 B (FIPS 204 level 3)
         assert_eq!(PUBLIC_KEY_SIZE, 1952);
+    }
+
+    // ── Decode roundtrip tests (M7 typed insertion path) ──────────────────────
+
+    #[test]
+    fn account_record_decode_roundtrip() {
+        let original = sample_account();
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+        let decoded = AccountRecord::decode(&buf).expect("decode");
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn account_record_decode_roundtrip_operator_true() {
+        let mut original = sample_account();
+        original.is_node_operator = true;
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+        let decoded = AccountRecord::decode(&buf).expect("decode");
+        assert!(decoded.is_node_operator);
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn account_record_decode_rejects_wrong_size() {
+        let too_short = vec![0u8; ACCOUNT_RECORD_SIZE - 1];
+        assert_eq!(
+            AccountRecord::decode(&too_short),
+            Err(RecordDecodeError::WrongSize {
+                expected: ACCOUNT_RECORD_SIZE,
+                actual: ACCOUNT_RECORD_SIZE - 1
+            })
+        );
+        let too_long = vec![0u8; ACCOUNT_RECORD_SIZE + 1];
+        assert_eq!(
+            AccountRecord::decode(&too_long),
+            Err(RecordDecodeError::WrongSize {
+                expected: ACCOUNT_RECORD_SIZE,
+                actual: ACCOUNT_RECORD_SIZE + 1
+            })
+        );
+    }
+
+    #[test]
+    fn account_record_decode_rejects_bad_bool_byte() {
+        let original = sample_account();
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+        // Corrupt is_node_operator byte (offset 50) with non-0/1 value.
+        buf[50] = 2;
+        assert_eq!(
+            AccountRecord::decode(&buf),
+            Err(RecordDecodeError::BadBoolByte(2))
+        );
+    }
+
+    #[test]
+    fn node_record_decode_roundtrip() {
+        let original = sample_node();
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+        let decoded = NodeRecord::decode(&buf).expect("decode");
+        assert_eq!(decoded, original);
+        assert_eq!(decoded.chain_length_checkpoints, original.chain_length_checkpoints);
+    }
+
+    #[test]
+    fn node_record_decode_rejects_wrong_size() {
+        let too_short = vec![0u8; NODE_RECORD_SIZE - 1];
+        assert_eq!(
+            NodeRecord::decode(&too_short),
+            Err(RecordDecodeError::WrongSize {
+                expected: NODE_RECORD_SIZE,
+                actual: NODE_RECORD_SIZE - 1
+            })
+        );
+    }
+
+    #[test]
+    fn candidate_record_decode_roundtrip() {
+        let original = sample_candidate();
+        let mut buf = Vec::new();
+        original.encode(&mut buf);
+        let decoded = CandidateRecord::decode(&buf).expect("decode");
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn candidate_record_decode_rejects_wrong_size() {
+        let too_short = vec![0u8; CANDIDATE_RECORD_SIZE - 1];
+        assert_eq!(
+            CandidateRecord::decode(&too_short),
+            Err(RecordDecodeError::WrongSize {
+                expected: CANDIDATE_RECORD_SIZE,
+                actual: CANDIDATE_RECORD_SIZE - 1
+            })
+        );
     }
 }
