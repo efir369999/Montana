@@ -157,12 +157,10 @@ pub async fn run_network_loop(
                             message: RrMessage::Response { request_id, response },
                             ..
                         },
-                    )) => {
-                        if response.msg_type == MsgType::Pong {
-                            eprintln!(
-                                "[network] heartbeat OK peer={peer} request_id={request_id}"
-                            );
-                        }
+                    )) if response.msg_type == MsgType::Pong => {
+                        eprintln!(
+                            "[network] heartbeat OK peer={peer} request_id={request_id}"
+                        );
                     }
                     _ => {}
                 }
