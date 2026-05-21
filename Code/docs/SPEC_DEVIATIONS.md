@@ -274,7 +274,7 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 
 **Closure cost:** 3–5 weeks wall-clock for Phase 1 + 1–2 weeks for Phases 2 + 3 = total **5–7 weeks** for production-grade closure with KATs, differential testing, and three-node soak. This is M6 milestone scope, not single-session work.
 
-**Status:** Phase 0 + Phase 1 completed; Phases 2-3 open
+**Status:** Phase 0 + Phase 1 + Phase 2 (spec) + Phase 3 (wire-loopback integration test) completed; Phase 3 libp2p Swarm wiring + cross-machine soak open
 
 **Phase 1 closure note (2026-05-21):** mt-crypto extended with FIPS 203 §6.2 / §6.3 ML-KEM-768 encapsulate / decapsulate primitives (`mlkem_encapsulate`, `mlkem_decapsulate`, types `MlkemCiphertext`, `MlkemSharedSecret` with zeroize-on-drop and mlock-protected shared secret allocation). Added C wrapper functions `mt_mlkem_encapsulate` / `mt_mlkem_decapsulate` over OpenSSL 3.5 EVP API.
 
@@ -286,10 +286,12 @@ Tests passing:
 - `cargo fmt --all -- --check` clean
 - `cargo clippy --workspace --all-targets -- -D warnings` clean
 
-**Phases 2-3 remaining:**
+**Phase 3 remaining work (Swarm integration + multi-node soak):**
 
-- Phase 2 — wire-format spec patch in Network v1.1.0.md (Noise_PQ handshake wire layout + capability negotiation via `pq_transport_version` u8 field in IBT advertisement) + Phase 2 KAT vector regen with byte-exact responder-key seed.
-- Phase 3 — libp2p custom transport upgrade implementing the Noise_PQ handshake as `InboundConnectionUpgrade` / `OutboundConnectionUpgrade`. This is the hardest integration step: libp2p's `noise` and `tls` upgrades are tightly coupled to the SwarmBuilder API, and a custom Noise variant needs to plug into the same upgrade chain. After Phase 3 closure: TLS 1.3 outer layer dropped; transport stack becomes TCP → Noise_PQ → Yamux. Cross-node soak on the 3-node network (Moscow / Helsinki / Frankfurt) for ≥ 24 hours of continuous operation with zero classical-fallback events.
+- Phase 2 spec: completed — wire format and capability negotiation documented in Network v1.1.0.md (commit 2bcd86d and follow-up).
+- Phase 3 part 1: TCP loopback integration test in `crates/mt-noise-pq/tests/loopback.rs` completed — both sides run as tokio async tasks and successfully derive identical session keys over a real `TcpStream` pair.
+- Phase 3 part 2 (open): libp2p custom transport upgrade implementing the Noise_PQ handshake as `InboundConnectionUpgrade` / `OutboundConnectionUpgrade` so it can replace the existing `noise::Config::new` in `mt-net-transport::transport::build_swarm_with_keypair`. libp2p's `noise` and `tls` upgrades are tightly coupled to the SwarmBuilder API, and a custom Noise variant needs to plug into the same upgrade chain. Estimated 1–2 weeks for production-grade integration with the existing `mt-net-transport` Swarm.
+- Phase 3 part 3 (open): cross-machine soak on the 3-node network (Moscow / Helsinki / Frankfurt) for ≥ 24 hours of continuous operation with zero classical-fallback events; requires deployed binaries on real nodes and operator-side observation. After Phase 3 part 3: TLS 1.3 outer layer dropped; transport stack becomes TCP → Noise_PQ → Yamux.
 
 **Verification protocol per phase.** Each phase is closed only after ≥ 24 hours of continuous operation across the three genesis nodes (Moscow, Helsinki, Frankfurt) with zero unexpected handshake failures and zero classical-fallback events during the observation window. The cross-node verification log is committed to the repository at `External-Audit/noise-pq-phase{N}-verification.log`.
 
