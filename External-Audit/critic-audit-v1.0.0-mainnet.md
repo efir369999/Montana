@@ -78,9 +78,48 @@
 
 **Author decision required:** if approved, applied in the same pass as F-003. Otherwise filed under «whitepaper-style language acceptable, not normative».
 
+
 ---
 
-## Negative findings (none)
+### F-005 (open). Cyrillic content in `Code/docs/audit-checklist.md` (151 hits)
+
+**Location.** `Code/docs/audit-checklist.md` — pre-audit self-attestation checklist published on the GitHub mirror.
+**Claim by role.** Same as F-003 — CRITIC.md role v3.14.0 enumerates `Code/docs/audit-checklist.md` explicitly as a GitHub-published artifact requiring English-only authorship.
+**Severity.** Medium. The file is a structured checklist; most Cyrillic surface is in the prose annotations and «обоснование» fields beside each `[x]` entry. Cross-implementation conformance is not affected (the checklist references KAT files, vectors, and crate paths — those identifiers are English).
+**Closure path.** Re-author the annotations in English; the structural `[x] / [ ]` skeleton survives unchanged.
+**Author decision required:** approve / defer / modify.
+
+---
+
+### F-006 (open). Cyrillic content in `Code/docs/security-cards.md` (194 hits)
+
+**Location.** `Code/docs/security-cards.md` — per-primitive security cards published on the GitHub mirror.
+**Claim by role.** Same as F-003.
+**Severity.** Medium. The file is structurally English (card layout, field names, code-path pointers) but the «Notes» and «Reasoning» fields per card are Russian.
+**Closure path.** Re-author the «Notes» / «Reasoning» fields in English; card layouts and code-path pointers survive unchanged.
+**Author decision required:** approve / defer / modify.
+
+---
+
+### F-007 (open). Cyrillic content in `Code/docs/build-from-source.md` (29 hits)
+
+**Location.** `Code/docs/build-from-source.md` — build instructions published on the GitHub mirror.
+**Severity.** Low. Smallest Cyrillic surface among the open findings; mostly inline Russian commentary in shell-block annotations.
+**Closure path.** Re-author the inline annotations in English; shell-block commands survive unchanged.
+**Author decision required:** approve / defer / modify.
+
+---
+
+### F-008 (open). Cyrillic content in `Code/VERSION.md` (68 hits)
+
+**Location.** `Code/VERSION.md` — workspace version log + spec target + History table.
+**Severity.** Low. Cyrillic hits cluster inside the History table «Notes» column, describing past release content in Russian. The authoritative version fields (`Implementation`, `Spec target`, `Release tag`, `Spec paths`) are English.
+**Closure path.** Re-author the History table «Notes» column in English row-by-row; the table headers and version identifiers survive unchanged.
+**Author decision required:** approve / defer / modify.
+
+---
+
+## Negative findings (none, except the carve-out below)
 
 - `README.md` — Cyrillic count `0`, version pins inside body all reference filenames (`Montana Protocol v35.25.1.md`) which are authoritative locations per [I-10].
 - `Code/RELEASE-v1.0.0.md` — Cyrillic count `0`, version pins inside body all describe the present-tag mainnet baseline (tag = v1.0.0, spec target = Protocol v35.25.1 + Network v1.1.0 + App v3.12.0) — authoritative-location matches.
@@ -97,9 +136,13 @@
 |---------|----------|--------|
 | F-001 README mainnet language | low | closed in this pass |
 | F-002 Network spec multi-confirmer gate framing | medium | closed in this pass |
-| F-003 Cyrillic in `Montana Network v1.1.0.md` | high | open — author decision required |
+| F-003 Cyrillic in `Montana Network v1.1.0.md` (1796 hits) | high | open — author decision required |
 | F-004 Whitepaper §Nash temporal marker | low | open — author decision optional |
+| F-005 Cyrillic in `Code/docs/audit-checklist.md` (151 hits) | medium | open — author decision required |
+| F-006 Cyrillic in `Code/docs/security-cards.md` (194 hits) | medium | open — author decision required |
+| F-007 Cyrillic in `Code/docs/build-from-source.md` (29 hits) | low | open — author decision required |
+| F-008 Cyrillic in `Code/VERSION.md` History column (68 hits) | low | open — author decision required |
 
-Two stale-fact findings closed mechanically without changing any normative claim. Two open findings escalated to the author with explicit closure paths; F-003 is the highest-impact unresolved item for the Metzdowd audience.
+Two stale-fact findings closed mechanically without changing any normative claim. Six open findings escalated to the author with explicit closure paths; total Cyrillic surface across the published English artifacts is 2238 hits (F-003 + F-005 + F-006 + F-007 + F-008 + 0 hits in already-clean files). F-003 (Network spec) is the highest-impact unresolved item for the Metzdowd audience.
 
 — Critic, CRITIC.md role v3.14.0, 2026-05-22.
