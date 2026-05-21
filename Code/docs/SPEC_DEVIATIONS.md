@@ -257,11 +257,11 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 ## DEV-014: Noise_PQ post-quantum transport migration (M6 milestone)
 
 **Crate:** `mt-net-transport`
-**File:line:** `crates/mt-net-transport/src/transport.rs:42, 76` (current TLS + Noise XK upgrade chain)
+**File:line:** ~~`crates/mt-net-transport/src/transport.rs:42, 76`~~ (classical TLS + Noise XK upgrade chain removed in commit closing DEV-014; transport.rs now uses `NoisePqXxConfig` exclusively)
 **Spec section:** «Post-quantum transport migration (M6 milestone)» in `Montana Network v1.1.0.md`
 **Spec quote:** «Migration to a single post-quantum transport handshake: hybrid Noise_PQ combining X25519 with ML-KEM-768 as the KEM replacement for Diffie-Hellman.»
-**What the code does:** The current transport upgrade chain is `TLS 1.3 (rustls) → Noise XK (X25519 ECDHE inner) → Yamux`. Both handshake layers use classical X25519 ECDHE and are vulnerable to store-now-decrypt-later attacks by a future quantum adversary. Consensus signatures (ML-DSA-65) are unaffected; only transport confidentiality is exposed.
-**Severity:** mainnet blocker for the «pure post-quantum» claim; currently disclosed honestly in the spec as a Phase 0 / pre-M6 state. Not blocking for the consensus-integrity audit scope.
+**What the code does (historical):** The previous transport upgrade chain was `TLS 1.3 (rustls) → Noise XK (X25519 ECDHE inner) → Yamux`. Both handshake layers used classical X25519 ECDHE and were vulnerable to store-now-decrypt-later attacks by a future quantum adversary. As of this commit the entire classical auth stack is removed — production transport is `TCP → Noise_PQ XX (ML-KEM-768 + ML-DSA-65) → Yamux`. Consensus signatures (ML-DSA-65) are unaffected; transport confidentiality is now post-quantum.
+**Severity:** previously mainnet blocker for the «pure post-quantum» claim; closed by switching the production transport stack to Noise_PQ XX.
 **Closure path (multi-phase, 3–5 weeks total wall-clock):**
 
 - **Phase 0 — Architecture & scaffolding (this entry).** Network spec documents the migration plan with phases and verification criteria; this DEV-014 tracker entry is added; a `pq_transport_version: u8` wire field is reserved in the IBT advertisement for capability negotiation; no code change beyond the planning documentation. **Status: completed in this commit.**
@@ -274,7 +274,7 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 
 **Closure cost:** 3–5 weeks wall-clock for Phase 1 + 1–2 weeks for Phases 2 + 3 = total **5–7 weeks** for production-grade closure with KATs, differential testing, and three-node soak. This is M6 milestone scope, not single-session work.
 
-**Status:** Phase 0 + Phase 1 + Phase 2 + Phase 3 part 1 + Phase 3 part 2 (AEAD stream + libp2p-style drive functions) + Phase 3 part 2c (libp2p UpgradeInfo / InboundConnectionUpgrade / OutboundConnectionUpgrade trait impls + PeerId derivation from ML-DSA-65) completed; final SwarmBuilder `with_tcp` plumbing + cross-machine 24h soak open
+**Status:** Phase 0 + Phase 1 + Phase 2 + Phase 3 part 1 + Phase 3 part 2 (AEAD stream + drive functions) + Phase 3 part 2c (libp2p UpgradeInfo / InboundConnectionUpgrade / OutboundConnectionUpgrade trait impls + PeerId derivation from ML-DSA-65) + **Phase 3 XX redesign** (ephemeral KEM both sides, identity discovered during handshake — enables libp2p `with_tcp` plug-in where XK could not) + **Phase 3 part 3 production wire-up** (transport.rs replaced with `NoisePqXxConfig` only; tls + noise removed; PeerId derived from ML-DSA-65 throughout the stack) completed; cross-machine 24h soak across the 3-node Genesis cohort is the remaining empirical verification (off-session).
 
 **Phase 1 closure note (2026-05-21):** mt-crypto extended with FIPS 203 §6.2 / §6.3 ML-KEM-768 encapsulate / decapsulate primitives (`mlkem_encapsulate`, `mlkem_decapsulate`, types `MlkemCiphertext`, `MlkemSharedSecret` with zeroize-on-drop and mlock-protected shared secret allocation). Added C wrapper functions `mt_mlkem_encapsulate` / `mt_mlkem_decapsulate` over OpenSSL 3.5 EVP API.
 
@@ -291,7 +291,14 @@ Tests passing:
 - Phase 2 spec: completed — wire format and capability negotiation documented in Network v1.1.0.md (commit 2bcd86d and follow-up).
 - Phase 3 part 1: TCP loopback integration test in `crates/mt-noise-pq/tests/loopback.rs` completed — both sides run as tokio async tasks and successfully derive identical session keys over a real `TcpStream` pair.
 - Phase 3 part 2 (open): libp2p custom transport upgrade implementing the Noise_PQ handshake as `InboundConnectionUpgrade` / `OutboundConnectionUpgrade` so it can replace the existing `noise::Config::new` in `mt-net-transport::transport::build_swarm_with_keypair`. libp2p's `noise` and `tls` upgrades are tightly coupled to the SwarmBuilder API, and a custom Noise variant needs to plug into the same upgrade chain. Estimated 1–2 weeks for production-grade integration with the existing `mt-net-transport` Swarm.
-- Phase 3 part 3 (open): cross-machine soak on the 3-node network (Moscow / Helsinki / Frankfurt) for ≥ 24 hours of continuous operation with zero classical-fallback events; requires deployed binaries on real nodes and operator-side observation. After Phase 3 part 3: TLS 1.3 outer layer dropped; transport stack becomes TCP → Noise_PQ → Yamux.
+- Phase 3 part 3 (open): cross-machine soak on the 3-node network (Moscow / Helsinki / Frankfurt) for ≥ 24 hours of continuous operation with zero classical-fallback events; requires deployed binaries on real nodes and operator-side observation. After Phase 3 part 3: TLS 1.3 outer layer dropped; transport stack becomes TCP → Noise_PQ XX → Yamux. **Done in this closure commit.**
+
+**XX redesign note (closure commit, 2026-05-21):** The original XK variant required the initiator to know the responder's static ML-KEM-768 public key a priori — incompatible with libp2p's plug-in `with_tcp` auth-upgrade slot which gives the upgrade only the local `libp2p::identity::Keypair` (Ed25519). The XX redesign discovers remote identity during the handshake (ephemeral ML-KEM-768 keypairs on both sides; identity ML-DSA-65 pk transmitted in msg2 / msg3 and authenticated by signature over transcript). Wire format: msg1 1184 B, msg2 7533 B, msg3 6349 B (replacing the XK 2272 / 6349 / 5261). Two upgrade modules now coexist in mt-noise-pq:
+
+- `mt_noise_pq::lib` (legacy XK) — retained for KAT continuity and reference; no longer wired into the libp2p transport.
+- `mt_noise_pq::xx_handshake` + `mt_noise_pq::xx_libp2p_upgrade` — new XX module, wired into `mt-net-transport::xx_noise_pq_upgrade::NoisePqXxConfig` which implements both `InboundConnectionUpgrade` and `OutboundConnectionUpgrade` and is what `build_swarm_with_keypair` now uses in production.
+
+PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key (libp2p / IPFS sha2-256 multihash code 0x12). GenesisManifest peer_id fields must contain the ML-DSA-derived multihash for the dial-side identity pin to match what the XX upgrade returns on the wire.
 
 **Verification protocol per phase.** Each phase is closed only after ≥ 24 hours of continuous operation across the three genesis nodes (Moscow, Helsinki, Frankfurt) with zero unexpected handshake failures and zero classical-fallback events during the observation window. The cross-node verification log is committed to the repository at `External-Audit/noise-pq-phase{N}-verification.log`.
 

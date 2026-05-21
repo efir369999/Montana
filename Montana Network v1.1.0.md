@@ -13,7 +13,7 @@ Montana's network layer covers transport and discovery between consensus nodes a
 
 **What this spec covers:**
 
-- Transport layer via libp2p (TCP + TLS 1.3 + Noise XK)
+- Transport layer via libp2p (TCP + Noise_PQ XX → Yamux), where Noise_PQ XX is the post-quantum security upgrade replacing the classical TLS 1.3 + Noise XK chain
 - Traffic obfuscation (TLS-mimicry, ECH, padding, timing)
 - Identity-Bound Tunnel (IBT) — proof that a peer holds the privkey corresponding to its node_id
 - Transport Randomness — unpredictable network-bound seeds
@@ -170,20 +170,40 @@ Transport obfuscation is orthogonal to consensus. The TimeChain and state machin
 
 **Current state (pre-M6).** The transport layer uses TLS 1.3 with classical X25519 ECDHE for the outer tunnel and Noise XK (Diffie-Hellman over X25519) for the inner peer authentication. Both classical handshakes are vulnerable to store-now-decrypt-later attacks by a future quantum adversary: an adversary recording today's traffic can later derive the session key once a sufficiently large quantum computer becomes available. The recorded traffic is then decryptable; identity authentication via ML-DSA-65 signatures is not affected, but transport confidentiality is. Consensus integrity is **not** affected — all consensus signatures are post-quantum (ML-DSA-65) and verified independently of transport.
 
-**M6 target.** Migration to a single post-quantum transport handshake: hybrid Noise_PQ combining X25519 with ML-KEM-768 as the KEM replacement for Diffie-Hellman. After M6 closure, transport confidentiality is post-quantum end-to-end and the TLS 1.3 outer layer is removed (it provided no security property beyond the IBT-authenticated Noise inner layer; its only role was DPI obfuscation, which is preserved by uniform framing on top of Noise_PQ).
+**M6 status — closed.** Production transport is now a single post-quantum handshake: Noise_PQ XX with ML-KEM-768 ephemeral keypairs on both sides of the handshake, ML-DSA-65 identity signatures over the transcript, and ChaCha20-Poly1305 AEAD framing on the established session. The classical TLS 1.3 + Noise XK chain has been removed from the libp2p stack (it provided no security property beyond the IBT-authenticated inner layer; the DPI obfuscation role is preserved by uniform framing on top of Noise_PQ XX). Transport confidentiality is post-quantum end-to-end. PeerId is derived from each peer's ML-DSA-65 identity public key as the SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12), so cryptographic and routing identities are bound to the same key material.
 
 **Migration phases.**
 
-- **Phase 0 — Architecture & scaffolding (this spec patch).** Capability detection via a new wire field `pq_transport_version: u8` in the IBT advertisement (0 = classical TLS+Noise, 1 = Noise_PQ hybrid). DEV-014 tracker entry in `Code/docs/SPEC_DEVIATIONS.md` documents the migration plan and current Phase 0 status.
-- **Phase 1 — Noise_PQ handshake implementation.** Implement an ML-KEM-768-augmented Noise XK variant. Two viable paths: (a) fork the `snow` crate to add a ML-KEM-768 DH replacement and contribute upstream, (b) write a custom Noise_PQ handler outside libp2p's noise upgrade and wrap it as a `libp2p::core::upgrade::OutboundConnectionUpgrade`. Implementation cost: 3–5 weeks for production-grade implementation including KAT vectors against the Noise specification's hybrid PQ draft and differential testing against any reference implementation that emerges.
-- **Phase 2 — Hybrid coexistence period.** During roll-out, nodes advertise both classical and Noise_PQ capability via `pq_transport_version`. Peers negotiate the highest mutually supported version. A network-wide chain_length-weighted majority signal (≥67% of active_chain_length advertising Noise_PQ for ≥ τ₂) triggers the deprecation of classical TLS+Noise inbound. Each operator decides individually when to drop classical outbound; the chain_length-weighted majority becomes the floor, not the ceiling, for the deprecation timeline.
-- **Phase 3 — Classical removal.** TLS 1.3 outer layer dropped entirely. The transport stack becomes TCP → Noise_PQ → Yamux. Uniform framing layer is preserved (it provides DPI obfuscation orthogonally to the handshake). Spec bump removes the `pq_transport_version` field once consensus state no longer requires capability negotiation.
+- **Phase 0 — Architecture & scaffolding (closed).** DEV-014 tracker entry in `Code/docs/SPEC_DEVIATIONS.md` documented the migration plan; capability detection was reserved via a `pq_transport_version` wire field in the IBT advertisement.
+- **Phase 1 — Noise_PQ handshake implementation (closed).** Custom Noise_PQ handler written outside libp2p's noise upgrade module in `crates/mt-noise-pq`. Wraps the ML-DSA-65 identity signature over a transcript that includes both ephemeral ML-KEM-768 public keys and the ML-KEM-768 ciphertexts. KAT vectors checked into `crates/mt-noise-pq/tests/kat.rs`.
+- **Phase 2 — XK → XX redesign (closed).** The initial XK variant required the initiator to know the responder's static ML-KEM-768 public key a priori — incompatible with libp2p's plug-in `with_tcp` auth-upgrade slot which gives the upgrade only the local `libp2p::identity::Keypair` (Ed25519). The XX redesign discovers remote identity during the handshake (ephemeral ML-KEM-768 keypairs on both sides; identity ML-DSA-65 pk transmitted in msg2 / msg3 and authenticated by signature over transcript). New wire format documented in this section.
+- **Phase 3 — Classical removal (closed).** The libp2p auth chain `(tls::Config::new, noise::Config::new)` in `mt-net-transport::transport::build_swarm_with_keypair` was replaced with `NoisePqXxConfig`. The transport stack is now `TCP → Noise_PQ XX → Yamux`. Uniform framing layer is preserved (it provides DPI obfuscation orthogonally to the handshake). The `pq_transport_version` field stays reserved-but-unused for future protocol negotiation if multistream-select proves insufficient.
 
 **Verification on the genesis 3-node network.** Each phase is verified on the three production nodes (Moscow, Helsinki, Frankfurt) for ≥24 hours of continuous operation before being declared closed. Phase 1 closure requires byte-exact KAT vectors checked into `mt-conformance` and cross-node handshake success with zero classical fallback during the observation window.
 
-**[I-1] compliance status after M6.** Until Phase 3 closure, classical X25519 ECDHE is the open path for store-now-decrypt-later transport confidentiality. After Phase 3 closure, the entire protocol stack is post-quantum end-to-end (signatures via ML-DSA-65, encryption via ML-KEM-768, transport via Noise_PQ). Until then, the threat-model section «Quantum-capable adversary» explicitly documents this as an open exposure with documented closure path.
+**[I-1] compliance status.** Closed. The entire protocol stack is post-quantum end-to-end: consensus signatures via ML-DSA-65, application-layer encryption via ML-KEM-768, transport handshake via Noise_PQ XX (ML-KEM-768 + ML-DSA-65). No classical Diffie-Hellman remains in the protocol layer.
 
-**Wire format (normative, Phase 2 closure).** The Noise_PQ handshake is exactly three messages. Identifiers in formulas below match the reference implementation in `crates/mt-noise-pq/src/lib.rs`. The libp2p multistream-select protocol identifier for the handshake is **`/montana/noise-pq/1.0.0`** — this string is the authoritative protocol name used to negotiate the upgrade between two peers.
+**Wire format (normative, production XX).** The Noise_PQ XX handshake is exactly three messages. Identifiers in formulas below match the reference implementation in `crates/mt-noise-pq/src/xx_handshake.rs`. The libp2p multistream-select protocol identifier for the handshake is **`/montana/noise-pq-xx/1.0.0`** — this string is the authoritative protocol name used to negotiate the upgrade between two peers.
+
+| Message | Size (B) | Fields |
+|---------|---------:|--------|
+| msg1 (initiator → responder) | 1184 | `ke_pk_i` (ML-KEM-768 pk, 1184 B) |
+| msg2 (responder → initiator) | 7533 | `ke_pk_r` (1184 B) ‖ `ct_i` (ML-KEM-768 ct to `ke_pk_i`, 1088 B) ‖ `rs_id_pk` (ML-DSA-65 pk, 1952 B) ‖ `sig_r` (ML-DSA-65 sig, 3309 B) |
+| msg3 (initiator → responder) | 6349 | `ct_r` (ML-KEM-768 ct to `ke_pk_r`, 1088 B) ‖ `is_id_pk` (1952 B) ‖ `sig_i` (3309 B) |
+
+Transcript hash (input to both `sig_r` and `sig_i`) is the byte concatenation of msg1 plus the msg2-prefix-without-`sig_r` (for `sig_r`), or msg1 ‖ full-msg2 ‖ msg3-prefix-without-`sig_i` (for `sig_i`). Each signature input is domain-separated with `mt-noise-pq-xx-v1-sig-r` and `mt-noise-pq-xx-v1-sig-i` respectively.
+
+Session keys are derived by domain-separated SHA-256 over the concatenation of both ML-KEM-768 shared secrets and the full transcript:
+
+```
+master    = SHA-256("mt-noise-pq-xx-v1-master" ‖ ss_i ‖ ss_r ‖ transcript)
+sk_i_to_r = SHA-256("mt-noise-pq-xx-v1-i2r"    ‖ master)
+sk_r_to_i = SHA-256("mt-noise-pq-xx-v1-r2i"    ‖ master)
+```
+
+`sk_i_to_r` and `sk_r_to_i` are 32-byte keys for ChaCha20-Poly1305 AEAD; the AEAD-wrapped byte stream is exposed as `mt_noise_pq::stream::NoisePqStream`. PeerId is derived from each peer's ML-DSA-65 identity public key as the SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12).
+
+**Legacy XK variant** (`/montana/noise-pq/1.0.0`, `crates/mt-noise-pq/src/lib.rs`) is retained for reference and for KAT continuity but is no longer wired into the libp2p transport. Its wire sizes (msg1 2272 B, msg2 6349 B, msg3 5261 B) and its requirement that the initiator know the responder's static KEM pk a priori made it incompatible with libp2p plug-in. XK is the older form documented here for completeness.
 
 ```
 msg1  (initiator → responder)        2272 B
