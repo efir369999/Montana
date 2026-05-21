@@ -181,7 +181,7 @@ The full installer prints a 24-word recovery mnemonic for the node and a VLESS U
 
 Dual-licensed under Apache-2.0 OR MIT, at your choice.
 
-- [`LICENSE`](LICENSE) — Apache-2.0 (root, applies to spec + Agents/ + supporting files)
+- [`LICENSE`](LICENSE) — Apache-2.0 (root, applies to specs + supporting files)
 - [`Code/LICENSE-APACHE`](Code/LICENSE-APACHE) — Apache-2.0 (Rust workspace)
 - [`Code/LICENSE-MIT`](Code/LICENSE-MIT) — MIT (Rust workspace, choose either)
 

@@ -58,3 +58,8 @@ Archive/
 
 # Internal AI agent roles (Russian methodology, not for public Metzdowd repo)
 Agents/
+
+# Internal Russian audit session logs (kept locally only)
+External-Audit/claude-opus-*.md
+External-Audit/critic-analysis-*.md
+
