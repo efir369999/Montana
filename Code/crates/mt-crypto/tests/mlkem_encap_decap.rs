@@ -22,8 +22,16 @@ fn mlkem_encap_produces_distinct_ciphertexts() {
     let (pk, sk) = keypair_from_seed_mlkem(&seed).unwrap();
     let (ct1, _ss1) = mlkem_encapsulate(&pk).unwrap();
     let (ct2, _ss2) = mlkem_encapsulate(&pk).unwrap();
-    assert_ne!(ct1.as_bytes(), ct2.as_bytes(), "encap must use fresh OS randomness per FIPS 203");
+    assert_ne!(
+        ct1.as_bytes(),
+        ct2.as_bytes(),
+        "encap must use fresh OS randomness per FIPS 203"
+    );
     let ss1 = mlkem_decapsulate(&sk, &ct1).unwrap();
     let ss2 = mlkem_decapsulate(&sk, &ct2).unwrap();
-    assert_ne!(ss1.as_bytes(), ss2.as_bytes(), "distinct ciphertexts → distinct shared secrets");
+    assert_ne!(
+        ss1.as_bytes(),
+        ss2.as_bytes(),
+        "distinct ciphertexts → distinct shared secrets"
+    );
 }

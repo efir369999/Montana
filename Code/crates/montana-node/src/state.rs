@@ -31,10 +31,8 @@ impl LocalState {
 
         // Bootstrap account из Genesis Decree — присутствует во ВСЕХ узлах
         // (нужен для emission target в apply_proposal на receivers).
-        let bootstrap_account_id = mt_state::derive_account_id(
-            operator.suite_id as u16,
-            &params.bootstrap_account_pubkey,
-        );
+        let bootstrap_account_id =
+            mt_state::derive_account_id(operator.suite_id as u16, &params.bootstrap_account_pubkey);
         accounts.insert(AccountRecord {
             account_id: bootstrap_account_id,
             balance: 0,

@@ -40,8 +40,8 @@
 //! [`tests::tamper_detection_msg2`]; KAT byte-exact vectors are written
 //! in `tests/handshake_kat.rs`.
 
-pub mod stream;
 pub mod libp2p_upgrade;
+pub mod stream;
 
 use mt_crypto::{
     keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate, sign, verify, MlkemCiphertext,

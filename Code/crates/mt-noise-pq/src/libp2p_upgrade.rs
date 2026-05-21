@@ -17,14 +17,16 @@
 
 use crate::stream::NoisePqStream;
 use crate::{
-    initiator_receive_msg2, initiator_send_msg1, initiator_send_msg3,
-    responder_receive_msg1, responder_receive_msg3, responder_send_msg2,
-    NoisePqError, NOISE_PQ_MSG1_SIZE, NOISE_PQ_MSG2_SIZE, NOISE_PQ_MSG3_SIZE,
+    initiator_receive_msg2, initiator_send_msg1, initiator_send_msg3, responder_receive_msg1,
+    responder_receive_msg3, responder_send_msg2, NoisePqError, NOISE_PQ_MSG1_SIZE,
+    NOISE_PQ_MSG2_SIZE, NOISE_PQ_MSG3_SIZE,
 };
 use futures::io::{AsyncReadExt, AsyncWriteExt};
 use futures::AsyncRead;
 use futures::AsyncWrite;
-use mt_crypto::{MlkemPublicKey, MlkemSecretKey, PublicKey as MtPublicKey, SecretKey as MtSecretKey};
+use mt_crypto::{
+    MlkemPublicKey, MlkemSecretKey, PublicKey as MtPublicKey, SecretKey as MtSecretKey,
+};
 use std::future::Future;
 use std::pin::Pin;
 
@@ -57,7 +59,6 @@ pub struct NoisePqResponderConfig {
     pub local_id_pk: MtPublicKey,
     pub local_id_sk: MtSecretKey,
 }
-
 
 #[derive(Debug)]
 pub enum UpgradeError {
@@ -98,8 +99,11 @@ pub async fn initiator_drive<C>(
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {
-    let (msg1, init_state) =
-        initiator_send_msg1(&config.remote_static_kem_pk, config.local_id_sk, config.local_id_pk)?;
+    let (msg1, init_state) = initiator_send_msg1(
+        &config.remote_static_kem_pk,
+        config.local_id_sk,
+        config.local_id_pk,
+    )?;
     socket.write_all(&msg1).await?;
     socket.flush().await?;
 
@@ -115,7 +119,12 @@ where
     socket.flush().await?;
 
     let stream = NoisePqStream::new(socket, session.sk_i_to_r, session.sk_r_to_i);
-    Ok((NoisePqRemoteIdentity { mldsa65_pubkey: rs_id_pk }, stream))
+    Ok((
+        NoisePqRemoteIdentity {
+            mldsa65_pubkey: rs_id_pk,
+        },
+        stream,
+    ))
 }
 
 /// Drive the responder side of the Noise_PQ handshake over an arbitrary
@@ -148,7 +157,12 @@ where
 
     // Responder direction: tx = r_to_i, rx = i_to_r (mirror of initiator).
     let stream = NoisePqStream::new(socket, session.sk_r_to_i, session.sk_i_to_r);
-    Ok((NoisePqRemoteIdentity { mldsa65_pubkey: is_id_pk }, stream))
+    Ok((
+        NoisePqRemoteIdentity {
+            mldsa65_pubkey: is_id_pk,
+        },
+        stream,
+    ))
 }
 
 fn extract_responder_pk_from_msg2(msg2: &[u8]) -> Result<MtPublicKey, UpgradeError> {

@@ -175,8 +175,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     continue;
                 }
                 let window_index = u64::from_le_bytes([
-                    msg.payload[32], msg.payload[33], msg.payload[34], msg.payload[35],
-                    msg.payload[36], msg.payload[37], msg.payload[38], msg.payload[39],
+                    msg.payload[32],
+                    msg.payload[33],
+                    msg.payload[34],
+                    msg.payload[35],
+                    msg.payload[36],
+                    msg.payload[37],
+                    msg.payload[38],
+                    msg.payload[39],
                 ]);
                 let mut winner_id = [0u8; 32];
                 winner_id.copy_from_slice(&msg.payload[332..364]);
@@ -215,7 +221,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             }
         }
 
-                if STOP.load(Ordering::SeqCst) {
+        if STOP.load(Ordering::SeqCst) {
             println!();
             println!("[shutdown] получен SIGINT/SIGTERM, сохраняю состояние...");
             break;

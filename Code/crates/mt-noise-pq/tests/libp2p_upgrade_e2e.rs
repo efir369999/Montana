@@ -36,7 +36,10 @@ async fn libp2p_drive_pair_authenticates_and_communicates() {
 
         // Verify that the responder learned the initiator's authenticated
         // ML-DSA-65 identity from the handshake.
-        assert_eq!(remote_id.mldsa65_pubkey.as_bytes(), is_id_pk_for_assert.as_bytes());
+        assert_eq!(
+            remote_id.mldsa65_pubkey.as_bytes(),
+            is_id_pk_for_assert.as_bytes()
+        );
 
         let mut buf = [0u8; 64];
         let n = stream.read(&mut buf).await.unwrap();
@@ -58,7 +61,10 @@ async fn libp2p_drive_pair_authenticates_and_communicates() {
 
         // Verify that the initiator learned the responder's authenticated
         // ML-DSA-65 identity from the handshake.
-        assert_eq!(remote_id.mldsa65_pubkey.as_bytes(), rs_id_pk_for_assert.as_bytes());
+        assert_eq!(
+            remote_id.mldsa65_pubkey.as_bytes(),
+            rs_id_pk_for_assert.as_bytes()
+        );
 
         stream.write_all(b"hi from initiator").await.unwrap();
         stream.flush().await.unwrap();

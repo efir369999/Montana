@@ -33,7 +33,11 @@ async fn run_initiator(
     sock.write_all(&msg3).await.unwrap();
     sock.shutdown().await.ok();
 
-    (session.sk_i_to_r, session.sk_r_to_i, session.transcript_hash)
+    (
+        session.sk_i_to_r,
+        session.sk_r_to_i,
+        session.transcript_hash,
+    )
 }
 
 async fn run_responder(
@@ -48,8 +52,7 @@ async fn run_responder(
     let mut msg1 = vec![0u8; NOISE_PQ_MSG1_SIZE];
     sock.read_exact(&mut msg1).await.unwrap();
 
-    let resp_state =
-        responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
+    let resp_state = responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
     let (msg2, resp_after_msg2) = responder_send_msg2(resp_state).unwrap();
     sock.write_all(&msg2).await.unwrap();
 
@@ -59,7 +62,11 @@ async fn run_responder(
     let session = responder_receive_msg3(&msg3, resp_after_msg2).unwrap();
     sock.shutdown().await.ok();
 
-    (session.sk_i_to_r, session.sk_r_to_i, session.transcript_hash)
+    (
+        session.sk_i_to_r,
+        session.sk_r_to_i,
+        session.transcript_hash,
+    )
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

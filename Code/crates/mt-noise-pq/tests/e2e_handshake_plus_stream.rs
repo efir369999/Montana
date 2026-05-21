@@ -55,8 +55,7 @@ async fn run_responder(
     // Read msg1.
     let mut msg1 = vec![0u8; NOISE_PQ_MSG1_SIZE];
     sock.read_exact(&mut msg1).await.unwrap();
-    let resp_state =
-        responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
+    let resp_state = responder_receive_msg1(&msg1, &rs_kem_sk, rs_id_sk, rs_id_pk).unwrap();
 
     // Send msg2.
     let (msg2, resp_after_msg2) = responder_send_msg2(resp_state).unwrap();
