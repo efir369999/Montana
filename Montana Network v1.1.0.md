@@ -217,7 +217,9 @@ sk_i_to_r = SHA-256("mt-noise-pq-xx-v1-i2r"    ‖ master)
 sk_r_to_i = SHA-256("mt-noise-pq-xx-v1-r2i"    ‖ master)
 ```
 
-`sk_i_to_r` and `sk_r_to_i` are 32-byte keys for ChaCha20-Poly1305 AEAD; the AEAD-wrapped byte stream is exposed as `mt_noise_pq::stream::NoisePqStream`. PeerId is derived from each peer's ML-DSA-65 identity public key as the SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12).
+`sk_i_to_r` and `sk_r_to_i` are 32-byte keys for ChaCha20-Poly1305 AEAD; the AEAD-wrapped byte stream is exposed as `mt_noise_pq::stream::NoisePqStream`.
+
+**PeerId derivation (non-libp2p-standard).** PeerId is derived as the SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12) over the raw byte representation of each peer's ML-DSA-65 identity public key. This is **not** the libp2p-standard PeerId derivation, which is a multihash of the protobuf-encoded `PublicKey` message with one of the libp2p built-in key types (`RSA`, `Ed25519`, `Secp256k1`, `ECDSA`). The non-standard derivation is intentional — Montana uses ML-DSA-65 as the cross-network identity per [I-1], which is not one of libp2p's built-in key types, and the protobuf wrapper would add about fifty bytes of overhead without carrying additional security. Two implications follow: (a) a vanilla libp2p node cannot recover the public key from a Montana PeerId, and (b) Montana nodes do not accept libp2p-standard PeerIds because they have no ML-DSA-65 key to verify them with.
 
 **Legacy XK variant** (`/montana/noise-pq/1.0.0`, `crates/mt-noise-pq/src/lib.rs`) is retained for reference and for KAT continuity but is no longer wired into the libp2p transport. Its wire sizes (msg1 2272 B, msg2 6349 B, msg3 5261 B) and its requirement that the initiator know the responder's static KEM pk a priori made it incompatible with libp2p plug-in. XK is the older form documented here for completeness.
 
