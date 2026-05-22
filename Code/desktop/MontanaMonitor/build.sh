@@ -30,7 +30,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleName</key>                 <string>Montana Monitor</string>
   <key>CFBundleShortVersionString</key>   <string>1.0.0</string>
   <key>CFBundleVersion</key>              <string>1.0.0</string>
-  <key>LSMinimumSystemVersion</key>       <string>13.0</string>
+  <key>LSMinimumSystemVersion</key>       <string>14.0</string>
   <key>LSUIElement</key>                  <true/>
   <key>NSHighResolutionCapable</key>      <true/>
 </dict>
@@ -41,6 +41,21 @@ DEST="$HOME/Applications/MontanaMonitor.app"
 rm -rf "$DEST"
 cp -R "$BUNDLE" "$DEST"
 echo "installed at $DEST"
+
+# Install + register LaunchAgent so the app auto-launches on login.
+PLIST_SRC="$HERE/quest.montana.monitor.plist"
+PLIST_DEST="$HOME/Library/LaunchAgents/quest.montana.monitor.plist"
+LOG_DIR="$HOME/Applications/Montana/data/logs"
+mkdir -p "$LOG_DIR"
+sed -e "s|__APP_PATH__|$DEST/Contents/MacOS/MontanaMonitor|" \
+    -e "s|__LOG_OUT__|$LOG_DIR/monitor.log|" \
+    -e "s|__LOG_ERR__|$LOG_DIR/monitor.err.log|" \
+    "$PLIST_SRC" > "$PLIST_DEST"
+
+# Reload the LaunchAgent so the new binary takes over.
+launchctl unload "$PLIST_DEST" 2>/dev/null || true
+launchctl load -w "$PLIST_DEST"
+echo "LaunchAgent registered at $PLIST_DEST"
 
 if [ "${1:-}" = "run" ]; then
     open "$DEST"

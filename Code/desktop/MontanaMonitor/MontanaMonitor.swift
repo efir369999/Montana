@@ -1,17 +1,17 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 
-// MontanaMonitor — macOS status-bar app that polls https://efir.org/explorer/data.json
-// every 15 seconds and renders the four-node Genesis mesh + discovered operators in a
-// popover. Designed for the local Mac operator who wants a glance-state view without
-// opening a browser. Network reads only — no privileged access required.
+// MontanaMonitor — macOS status-bar app that polls the live mesh
+// at https://efir.org/explorer/data.json every 15 seconds. Reads-only,
+// no privileged access. The popover surfaces the four Genesis-cohort
+// validator nodes, the discovered external operators (including the
+// local workstation, if onboarded), and a network-wide summary.
 
 @main
 struct MontanaMonitorApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    var body: some Scene {
-        Settings { EmptyView() }
-    }
+    var body: some Scene { Settings { EmptyView() } }
 }
 
 @MainActor
@@ -22,16 +22,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let btn = statusItem.button {
-            btn.title = "Montana"
-            btn.action = #selector(togglePopover(_:))
-            btn.target = self
-        }
+        refreshStatusButton(nodes: 0, total: 0)
+        statusItem.button?.action = #selector(togglePopover(_:))
+        statusItem.button?.target = self
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 480, height: 480)
+        popover.contentSize = NSSize(width: 520, height: 540)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(rootView: MeshView(model: model))
+        model.onUpdate = { [weak self] active, total in
+            self?.refreshStatusButton(nodes: active, total: total)
+        }
         model.startPolling()
+    }
+
+    private func refreshStatusButton(nodes: Int, total: Int) {
+        guard let btn = statusItem.button else { return }
+        let title = total == 0 ? "Mt …" : "Mt \(nodes)/\(total)"
+        let icon = NSImage(systemSymbolName: "circle.grid.3x3.fill",
+                           accessibilityDescription: "Montana mesh")
+        icon?.isTemplate = true
+        btn.image = icon
+        btn.title = title
+        btn.imagePosition = .imageLeading
     }
 
     @objc func togglePopover(_ sender: AnyObject?) {
@@ -78,7 +90,25 @@ struct NetworkSummary: Decodable {
     @Published var doc: ExplorerDoc?
     @Published var lastError: String?
     @Published var lastFetchAt: Date?
+    @Published var localPeerId: String? = nil
     private var timer: Timer?
+    var onUpdate: ((Int, Int) -> Void)?
+
+    init() {
+        // Best-effort: read the local node's peer_id from the launchd-managed log.
+        let logPath = NSHomeDirectory() + "/Applications/Montana/data/logs/montana.err.log"
+        if let data = try? String(contentsOfFile: logPath) {
+            let lines = data.split(separator: "\n")
+            for line in lines.reversed() {
+                if let r = line.range(of: "local_peer_id=") {
+                    let after = line[r.upperBound...]
+                    let pid = after.prefix { $0.isLetter || $0.isNumber }
+                    localPeerId = String(pid)
+                    break
+                }
+            }
+        }
+    }
 
     func startPolling() {
         fetch()
@@ -96,17 +126,14 @@ struct NetworkSummary: Decodable {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.lastFetchAt = Date()
-                if let error = error {
-                    self.lastError = error.localizedDescription
-                    return
-                }
+                if let error = error { self.lastError = error.localizedDescription; return }
                 guard let data = data else { self.lastError = "no data"; return }
                 do {
-                    self.doc = try JSONDecoder().decode(ExplorerDoc.self, from: data)
+                    let doc = try JSONDecoder().decode(ExplorerDoc.self, from: data)
+                    self.doc = doc
                     self.lastError = nil
-                } catch {
-                    self.lastError = "decode: \(error)"
-                }
+                    self.onUpdate?(doc.network_summary.active_nodes, doc.network_summary.total_nodes)
+                } catch { self.lastError = "decode: \(error)" }
             }
         }.resume()
     }
@@ -114,6 +141,7 @@ struct NetworkSummary: Decodable {
 
 struct MeshView: View {
     @ObservedObject var model: MeshModel
+    @State private var launchAtLogin = false
     private let fmt: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
@@ -121,58 +149,80 @@ struct MeshView: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Montana mesh").font(.headline)
-                Spacer()
-                if let at = model.lastFetchAt {
-                    Text("updated \(fmt.string(from: at))").font(.caption).foregroundColor(.secondary)
-                }
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            header
             Divider()
-            if let s = model.doc?.network_summary {
-                HStack(spacing: 16) {
-                    Stat(label: "active", value: "\(s.active_nodes)/\(s.total_nodes)")
-                    Stat(label: "window", value: "\(s.max_window)")
-                    Stat(label: "discovered", value: "\(s.discovered_peer_count)")
-                    Stat(label: "supply Ɉ", value: format_supply(s.total_supply_nj))
-                }
-            }
+            if let s = model.doc?.network_summary { summary(s) }
             Divider()
-            if let nodes = model.doc?.nodes {
-                ForEach(nodes) { n in NodeRow(node: n) }
-            }
+            Text("Genesis cohort").font(.subheadline.bold())
+            if let nodes = model.doc?.nodes { ForEach(nodes) { NodeRow(node: $0) } }
             if let peers = model.doc?.discovered_peers, !peers.isEmpty {
                 Divider()
-                Text("Discovered operators").font(.subheadline).bold()
-                ForEach(peers) { p in PeerRow(peer: p) }
+                Text("Discovered operators").font(.subheadline.bold())
+                ForEach(peers) { PeerRow(peer: $0, isLocal: $0.peer_id == model.localPeerId) }
             }
             if let err = model.lastError {
                 Divider()
                 Text("error: \(err)").font(.caption).foregroundColor(.red)
             }
             Spacer()
-            HStack {
-                Button("Open explorer") {
-                    NSWorkspace.shared.open(URL(string: "https://efir.org/explorer/")!)
-                }
-                Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-            }
+            footer
         }
         .padding(14)
-        .frame(width: 480)
+        .frame(width: 520)
+        .onAppear { launchAtLogin = SMAppService.mainApp.status == .enabled }
     }
+
+    private var header: some View {
+        HStack {
+            Text("Montana mesh").font(.title3.bold())
+            Spacer()
+            if let at = model.lastFetchAt {
+                Text("updated \(fmt.string(from: at))")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func summary(_ s: NetworkSummary) -> some View {
+        HStack(spacing: 20) {
+            Stat(label: "active", value: "\(s.active_nodes)/\(s.total_nodes)")
+            Stat(label: "discovered", value: "\(s.discovered_peer_count)")
+            Stat(label: "window", value: "\(s.max_window)")
+            Stat(label: "supply Ɉ", value: format_supply(s.total_supply_nj))
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            Toggle("Launch at login", isOn: $launchAtLogin).font(.caption)
+                .onChange(of: launchAtLogin) { _, new in setLaunchAtLogin(new) }
+            Spacer()
+            Button("Open explorer") { open_url("https://efir.org/explorer/") }
+            Button("Open repo") { open_url("https://github.com/efir369999/Montana") }
+            Button("Quit") { NSApp.terminate(nil) }
+        }
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+        } catch {
+            launchAtLogin = SMAppService.mainApp.status == .enabled
+        }
+    }
+
+    private func open_url(_ s: String) { if let u = URL(string: s) { NSWorkspace.shared.open(u) } }
 
     private func format_supply(_ nj: UInt64) -> String {
         let coin = Double(nj) / 1_000_000_000_000.0
-        return String(format: "%.3f M", coin / 1_000_000.0)
+        return String(format: "%.2f M", coin / 1_000_000.0)
     }
 }
 
 struct Stat: View {
-    let label: String
-    let value: String
+    let label: String; let value: String
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundColor(.secondary)
@@ -184,34 +234,48 @@ struct Stat: View {
 struct NodeRow: View {
     let node: GenesisNode
     var body: some View {
-        HStack {
+        HStack(spacing: 10) {
             Circle().frame(width: 8, height: 8)
                 .foregroundColor(node.status == "active" ? .green : .red)
-            Text(node.label).bold()
-            Text(node.host).font(.caption).foregroundColor(.secondary)
+            Text(node.label).bold().frame(width: 90, alignment: .leading)
+            Text(node.host).font(.caption).foregroundColor(.secondary).frame(width: 70, alignment: .leading)
             Spacer()
             if let w = node.current_window {
                 Text("W \(w)").font(.system(.body, design: .monospaced))
             }
-            if let p = node.phase { Text(p).font(.caption).foregroundColor(.secondary) }
+            if let p = node.phase {
+                Text(p).font(.caption).foregroundColor(.secondary).frame(width: 100, alignment: .trailing)
+            }
         }
     }
 }
 
 struct PeerRow: View {
     let peer: DiscoveredPeer
+    let isLocal: Bool
     var body: some View {
-        HStack {
+        HStack(spacing: 10) {
             Circle().frame(width: 8, height: 8)
                 .foregroundColor(peer.status == "active" ? .green : .gray)
-            Text(peer.label ?? "external").bold()
-            Text(String(peer.peer_id.prefix(14)) + "…").font(.caption.monospaced()).foregroundColor(.secondary)
+            Text(peer.label ?? "external").bold().frame(width: 90, alignment: .leading)
+            Text(String(peer.peer_id.prefix(14)) + "…")
+                .font(.caption.monospaced()).foregroundColor(.secondary)
+                .frame(width: 130, alignment: .leading)
+            if isLocal {
+                Text("you").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(Color.accentColor.opacity(0.25)).cornerRadius(3)
+            }
             Spacer()
-            if let hb = peer.last_heartbeat_seconds_ago { Text("hb \(hb)s").font(.caption) }
-            if let up = peer.uptime_seconds { Text("up \(format_uptime(up))").font(.caption).foregroundColor(.secondary) }
+            if let hb = peer.last_heartbeat_seconds_ago {
+                Text("hb \(hb)s").font(.caption.monospacedDigit())
+            }
+            if let up = peer.uptime_seconds {
+                Text("up \(format_uptime(up))").font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
+                    .frame(width: 60, alignment: .trailing)
+            }
         }
     }
-
     private func format_uptime(_ s: Int) -> String {
         if s < 60 { return "\(s)s" }
         if s < 3600 { return "\(s/60)m" }
