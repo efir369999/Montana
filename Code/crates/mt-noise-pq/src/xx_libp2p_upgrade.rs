@@ -14,6 +14,7 @@ use crate::NoisePqError;
 use futures::io::{AsyncReadExt, AsyncWriteExt};
 use futures::{AsyncRead, AsyncWrite};
 use mt_crypto::{PublicKey, SecretKey};
+use std::sync::Arc;
 
 pub const XX_PROTOCOL_NAME: &str = "/montana/noise-pq-xx/1.0.0";
 
@@ -51,7 +52,7 @@ impl From<NoisePqError> for XxUpgradeError {
 pub async fn xx_initiator_drive<C>(
     mut socket: C,
     id_pk: PublicKey,
-    id_sk: SecretKey,
+    id_sk: Arc<SecretKey>,
 ) -> Result<(XxSession, NoisePqStream<C>), XxUpgradeError>
 where
     C: AsyncRead + AsyncWrite + Unpin,
@@ -79,7 +80,7 @@ where
 pub async fn xx_responder_drive<C>(
     mut socket: C,
     id_pk: PublicKey,
-    id_sk: SecretKey,
+    id_sk: Arc<SecretKey>,
 ) -> Result<(XxSession, NoisePqStream<C>), XxUpgradeError>
 where
     C: AsyncRead + AsyncWrite + Unpin,

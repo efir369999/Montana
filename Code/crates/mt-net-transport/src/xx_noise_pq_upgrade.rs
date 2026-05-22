@@ -12,15 +12,17 @@ use futures::future::BoxFuture;
 use futures::{AsyncRead, AsyncWrite};
 use libp2p::core::upgrade::{InboundConnectionUpgrade, OutboundConnectionUpgrade, UpgradeInfo};
 use libp2p::identity::PeerId;
-use mt_crypto::{PublicKey as MtPublicKey, SecretKey as MtSecretKey, SECRET_KEY_SIZE};
+use mt_crypto::{PublicKey as MtPublicKey, SecretKey as MtSecretKey};
 use mt_noise_pq::stream::NoisePqStream;
 use mt_noise_pq::xx_libp2p_upgrade::{
     xx_initiator_drive, xx_responder_drive, XxUpgradeError, XX_PROTOCOL_NAME,
 };
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+use std::time::Duration;
 
 const MULTIHASH_CODE_SHA2_256: u64 = 0x12;
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Derive a libp2p PeerId from an ML-DSA-65 public key.
 pub fn derive_peer_id(ml_dsa_pk: &MtPublicKey) -> Result<PeerId, XxUpgradeError> {
@@ -38,11 +40,6 @@ pub fn derive_peer_id(ml_dsa_pk: &MtPublicKey) -> Result<PeerId, XxUpgradeError>
             "PeerId::from_multihash rejected",
         ))
     })
-}
-
-fn dup_sk(sk: &MtSecretKey) -> MtSecretKey {
-    let bytes: [u8; SECRET_KEY_SIZE] = *sk.as_bytes();
-    MtSecretKey::from_array(bytes)
 }
 
 /// Unified Noise_PQ XX upgrade config. Cloneable so libp2p can reuse it
@@ -80,9 +77,17 @@ where
 
     fn upgrade_inbound(self, socket: C, _: Self::Info) -> Self::Future {
         let id_pk = (*self.id_pk).clone();
-        let id_sk = dup_sk(&self.id_sk);
+        let id_sk = Arc::clone(&self.id_sk);
         Box::pin(async move {
-            let (session, stream) = xx_responder_drive(socket, id_pk, id_sk).await?;
+            let fut = xx_responder_drive(socket, id_pk, id_sk);
+            let (session, stream) = tokio::time::timeout(HANDSHAKE_TIMEOUT, fut)
+                .await
+                .map_err(|_| {
+                    XxUpgradeError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "Noise_PQ XX inbound handshake exceeded HANDSHAKE_TIMEOUT",
+                    ))
+                })??;
             let pid = derive_peer_id(&session.remote_id_pk)?;
             Ok((pid, stream))
         })
@@ -99,9 +104,17 @@ where
 
     fn upgrade_outbound(self, socket: C, _: Self::Info) -> Self::Future {
         let id_pk = (*self.id_pk).clone();
-        let id_sk = dup_sk(&self.id_sk);
+        let id_sk = Arc::clone(&self.id_sk);
         Box::pin(async move {
-            let (session, stream) = xx_initiator_drive(socket, id_pk, id_sk).await?;
+            let fut = xx_initiator_drive(socket, id_pk, id_sk);
+            let (session, stream) = tokio::time::timeout(HANDSHAKE_TIMEOUT, fut)
+                .await
+                .map_err(|_| {
+                    XxUpgradeError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "Noise_PQ XX outbound handshake exceeded HANDSHAKE_TIMEOUT",
+                    ))
+                })??;
             let pid = derive_peer_id(&session.remote_id_pk)?;
             Ok((pid, stream))
         })

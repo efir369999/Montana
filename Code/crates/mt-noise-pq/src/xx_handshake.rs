@@ -38,6 +38,7 @@ use mt_crypto::{
     MLKEM_PUBLIC_KEY_SIZE, MLKEM_SEED_SIZE, PUBLIC_KEY_SIZE, SIGNATURE_SIZE,
 };
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use zeroize::Zeroize;
 
 pub const XX_MSG1_SIZE: usize = MLKEM_PUBLIC_KEY_SIZE;
@@ -69,37 +70,67 @@ impl Drop for XxSession {
     }
 }
 
+// Holds the 32-byte ML-KEM-768 shared secret inside handshake state.
+// Wraps the raw bytes so that every Drop site of the containing struct or
+// stack-frame zeroises the secret. Closing the gap that left
+// InitiatorAfterMsg2.ss_i / ResponderAfterMsg2.ss_i as a plain [u8; 32].
+pub struct XxSharedSecret([u8; 32]);
+impl XxSharedSecret {
+    pub fn from_bytes(b: [u8; 32]) -> Self {
+        Self(b)
+    }
+    pub fn from_slice(s: &[u8]) -> Result<Self, NoisePqError> {
+        if s.len() != 32 {
+            return Err(NoisePqError::BadMsgSize {
+                expected: 32,
+                actual: s.len(),
+            });
+        }
+        let mut b = [0u8; 32];
+        b.copy_from_slice(s);
+        Ok(Self(b))
+    }
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+impl Drop for XxSharedSecret {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
 pub struct InitiatorAfterMsg1 {
     ke_sk_i: MlkemSecretKey,
     ke_pk_i_bytes: [u8; MLKEM_PUBLIC_KEY_SIZE],
-    is_id_sk: SecretKey,
+    is_id_sk: Arc<SecretKey>,
     is_id_pk: PublicKey,
 }
 
 pub struct InitiatorAfterMsg2 {
     transcript_through_msg2: Vec<u8>,
     ke_pk_r: MlkemPublicKey,
-    ss_i: [u8; 32],
+    ss_i: XxSharedSecret,
     rs_id_pk: PublicKey,
-    is_id_sk: SecretKey,
+    is_id_sk: Arc<SecretKey>,
     is_id_pk: PublicKey,
 }
 
 pub struct ResponderAfterMsg1 {
     ke_pk_i: MlkemPublicKey,
     ke_pk_i_bytes: [u8; MLKEM_PUBLIC_KEY_SIZE],
-    rs_id_sk: SecretKey,
+    rs_id_sk: Arc<SecretKey>,
     rs_id_pk: PublicKey,
 }
 
 pub struct ResponderAfterMsg2 {
     transcript_through_msg2: Vec<u8>,
     ke_sk_r: MlkemSecretKey,
-    ss_i: [u8; 32],
+    ss_i: XxSharedSecret,
 }
 
 pub fn initiator_send_msg1(
-    is_id_sk: SecretKey,
+    is_id_sk: Arc<SecretKey>,
     is_id_pk: PublicKey,
 ) -> Result<(Vec<u8>, InitiatorAfterMsg1), NoisePqError> {
     let mut seed = [0u8; MLKEM_SEED_SIZE];
@@ -123,7 +154,7 @@ pub fn initiator_send_msg1(
 
 pub fn responder_receive_msg1(
     msg1: &[u8],
-    rs_id_sk: SecretKey,
+    rs_id_sk: Arc<SecretKey>,
     rs_id_pk: PublicKey,
 ) -> Result<ResponderAfterMsg1, NoisePqError> {
     if msg1.len() != XX_MSG1_SIZE {
@@ -153,8 +184,7 @@ pub fn responder_send_msg2(
     seed.zeroize();
 
     let (ct_i, ss_i) = mlkem_encapsulate(&state.ke_pk_i)?;
-    let mut ss_i_bytes = [0u8; 32];
-    ss_i_bytes.copy_from_slice(ss_i.as_bytes());
+    let ss_i_wrapped = XxSharedSecret::from_slice(ss_i.as_bytes())?;
 
     let mut transcript = Vec::with_capacity(XX_MSG1_SIZE + XX_MSG2_SIZE - SIGNATURE_SIZE);
     transcript.extend_from_slice(&state.ke_pk_i_bytes);
@@ -182,7 +212,7 @@ pub fn responder_send_msg2(
         ResponderAfterMsg2 {
             transcript_through_msg2: transcript,
             ke_sk_r,
-            ss_i: ss_i_bytes,
+            ss_i: ss_i_wrapped,
         },
     ))
 }
@@ -220,8 +250,7 @@ pub fn initiator_receive_msg2(
     let sig_r = Signature::from_array(sig_r_arr);
 
     let ss_i = mlkem_decapsulate(&state.ke_sk_i, &ct_i)?;
-    let mut ss_i_bytes = [0u8; 32];
-    ss_i_bytes.copy_from_slice(ss_i.as_bytes());
+    let ss_i_wrapped = XxSharedSecret::from_slice(ss_i.as_bytes())?;
 
     let mut transcript = Vec::with_capacity(XX_MSG1_SIZE + XX_MSG2_SIZE - SIGNATURE_SIZE);
     transcript.extend_from_slice(&state.ke_pk_i_bytes);
@@ -243,7 +272,7 @@ pub fn initiator_receive_msg2(
     Ok(InitiatorAfterMsg2 {
         transcript_through_msg2: transcript,
         ke_pk_r,
-        ss_i: ss_i_bytes,
+        ss_i: ss_i_wrapped,
         rs_id_pk,
         is_id_sk: state.is_id_sk,
         is_id_pk: state.is_id_pk,
@@ -263,8 +292,7 @@ pub fn initiator_send_msg3(
     } = state;
 
     let (ct_r, ss_r) = mlkem_encapsulate(&ke_pk_r)?;
-    let mut ss_r_bytes = [0u8; 32];
-    ss_r_bytes.copy_from_slice(ss_r.as_bytes());
+    let ss_r_wrapped = XxSharedSecret::from_slice(ss_r.as_bytes())?;
 
     transcript_through_msg2.extend_from_slice(ct_r.as_bytes());
     transcript_through_msg2.extend_from_slice(is_id_pk.as_bytes());
@@ -283,8 +311,12 @@ pub fn initiator_send_msg3(
     wire.extend_from_slice(is_id_pk.as_bytes());
     wire.extend_from_slice(sig_i.as_bytes());
 
-    let session = derive_session(&ss_i, &ss_r_bytes, &transcript_through_msg2, rs_id_pk)?;
-    ss_r_bytes.zeroize();
+    let session = derive_session(
+        ss_i.as_bytes(),
+        ss_r_wrapped.as_bytes(),
+        &transcript_through_msg2,
+        rs_id_pk,
+    )?;
     Ok((wire, session))
 }
 
@@ -316,8 +348,7 @@ pub fn responder_receive_msg3(
     let sig_i = Signature::from_array(sig_i_arr);
 
     let ss_r = mlkem_decapsulate(&state.ke_sk_r, &ct_r)?;
-    let mut ss_r_bytes = [0u8; 32];
-    ss_r_bytes.copy_from_slice(ss_r.as_bytes());
+    let ss_r_wrapped = XxSharedSecret::from_slice(ss_r.as_bytes())?;
 
     let mut transcript = state.transcript_through_msg2;
     transcript.extend_from_slice(ct_r.as_bytes());
@@ -334,8 +365,12 @@ pub fn responder_receive_msg3(
 
     transcript.extend_from_slice(sig_i.as_bytes());
 
-    let session = derive_session(&state.ss_i, &ss_r_bytes, &transcript, is_id_pk)?;
-    ss_r_bytes.zeroize();
+    let session = derive_session(
+        state.ss_i.as_bytes(),
+        ss_r_wrapped.as_bytes(),
+        &transcript,
+        is_id_pk,
+    )?;
     Ok(session)
 }
 
