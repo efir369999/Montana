@@ -16,6 +16,15 @@ use crate::response::FastSyncTableId;
 
 pub type Hash32 = [u8; 32];
 
+/// Hard upper bound on the number of records a single Snapshot accumulator
+/// can hold across all three tables. Caps the receiver-side memory budget
+/// against a malicious server that streams unbounded chunks. The bound is
+/// picked at the order of magnitude of one Montana account table on the
+/// v1.0.x cohort (≈ 10^7 accounts × ≈ 2 KiB per record ≈ 20 GiB worst case);
+/// production-scale fast-sync streaming will replace `Vec<Vec<u8>>` with a
+/// disk-backed accumulator and lift this cap.
+pub const MAX_FAST_SYNC_RECORDS: usize = 10_000_000;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Snapshot {
     pub anchor_window: u64,
@@ -54,6 +63,11 @@ impl Snapshot {
                 actual: bytes.len(),
             });
         }
+        if self.record_count() >= MAX_FAST_SYNC_RECORDS {
+            return Err(SnapshotError::CapacityExceeded {
+                cap: MAX_FAST_SYNC_RECORDS,
+            });
+        }
         match table {
             FastSyncTableId::Account => self.accounts.push(bytes),
             FastSyncTableId::Node => self.nodes.push(bytes),
@@ -83,6 +97,15 @@ impl Snapshot {
                 table: FastSyncTableId::Account,
                 err: e,
             })?;
+            // Fail-stop on duplicate account_id: a stream that re-sends the
+            // same record under a tampered intermediate state must not be
+            // silently accepted (BTreeMap.insert otherwise overwrites without
+            // signal).
+            if accounts.contains(&rec.account_id) {
+                return Err(SnapshotError::DuplicateRecord {
+                    table: FastSyncTableId::Account,
+                });
+            }
             accounts.insert(rec);
         }
         let mut nodes = NodeTable::new();
@@ -91,6 +114,11 @@ impl Snapshot {
                 table: FastSyncTableId::Node,
                 err: e,
             })?;
+            if nodes.contains(&rec.node_id) {
+                return Err(SnapshotError::DuplicateRecord {
+                    table: FastSyncTableId::Node,
+                });
+            }
             nodes.insert(rec);
         }
         let mut candidates = CandidatePool::new();
@@ -99,6 +127,11 @@ impl Snapshot {
                 table: FastSyncTableId::Candidate,
                 err: e,
             })?;
+            if candidates.contains(&rec.node_id) {
+                return Err(SnapshotError::DuplicateRecord {
+                    table: FastSyncTableId::Candidate,
+                });
+            }
             candidates.insert(rec);
         }
         Ok(TypedTables {
@@ -120,6 +153,12 @@ pub struct TypedTables {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SnapshotError {
+    CapacityExceeded {
+        cap: usize,
+    },
+    DuplicateRecord {
+        table: FastSyncTableId,
+    },
     WrongRecordSize {
         table: FastSyncTableId,
         expected: usize,
