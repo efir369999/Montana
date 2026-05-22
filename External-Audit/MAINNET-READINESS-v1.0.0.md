@@ -23,7 +23,8 @@ This document is the single landing page for an external auditor, cryptographer,
 | Genesis manifest bundled in the install path | ✅ ready | [`Code/scripts/genesis-manifest.json`](../Code/scripts/genesis-manifest.json) (SHA-256: `f42a9e2d5d76c41285ee933e9172540981237b8e3935dc169886ae61df6c6f8e`) |
 | Public install script | ✅ ready | [`Code/scripts/install-vps.sh`](../Code/scripts/install-vps.sh) |
 | Live Genesis cohort | ✅ ready | Moscow + Frankfurt + Helsinki, all TCP-reachable on the libp2p port |
-| External operator onboarding verified | ✅ ready | Yerevan operator visible at https://efir.org/explorer/data.json under `discovered_peers[]` |
+| External operators on the live mesh | ✅ ready | Yerevan + New York + the maintainer's macOS workstation visible at https://efir.org/explorer/data.json under `discovered_peers[]`, each carrying a peer-id-keyed `label` field |
+| Desktop monitor app (macOS) | ✅ ready | [`Code/desktop/MontanaMonitor/`](../Code/desktop/MontanaMonitor/) — single-file SwiftUI status-bar app, builds via `bash build.sh`, reads the same `data.json` the explorer renders |
 | Production transport: Noise_PQ XX | ✅ ready | ML-KEM-768 + ML-DSA-65 + ChaCha20-Poly1305; classical handshakes removed |
 | M7 fast-sync algorithmic gate | ✅ ready | `mt-sync` crate, 17 unit tests, byte-equal cross-implementation conformance |
 | M7 server-side dispatcher | ✅ ready | `MsgType::FastSyncRequest` is answered by chunked `FastSyncResponse` in `montana-node` |

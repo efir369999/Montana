@@ -26,6 +26,7 @@ PEER_PUBLIC_LABEL = {
     "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL": "helsinki",
     "Qma3XZ8mJZDD4MbtJVNxCyS2sYYn9BQRzxYvfiXiMbNCp9": "yerevan",
     "QmYEFQZmBqWYV7SFreMK6h7N87fVasNv8ho5GU27La8Y9z": "macbook",
+    "QmShTQ7kkj2ewSwhQLfFy6ifA9krf442kb6CxYeeMKkBG4": "new-york",
 }
 
 def mask_ip(ip):
