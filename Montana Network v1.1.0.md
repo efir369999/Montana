@@ -3035,6 +3035,7 @@ boundary / edge" per critical type как в Gate 0.5 [I-9] требовании
 | **Integrity** | Сообщение не модифицировано в пути; modification обнаруживается |
 | **Availability** | Узел остаётся reachable для honest peers; consensus state продолжает прогрессировать |
 | **Unlinkability** | Внешний наблюдатель не может связать operation X с originating identity / IP узла отправителя |
+| **Identifier unlinkability (transport)** | Wire-format Noise_PQ XX соединения не содержит долгоживущего идентификатора в plaintext-части — passive observer не может коррелировать две TCP-сессии одного клиента ни через application restart, ни через смену IP / VPN / сети. Детальный разбор: [`External-Audit/transport-identifier-leakage.md`](External-Audit/transport-identifier-leakage.md). |
 
 #### Coverage matrix
 
@@ -3049,9 +3050,10 @@ Cell содержит механизм защиты + status. Status: **C** = cl
 | **Availability (узла)** | n/a | UPnP/PCP + AutoNAT + circuit relay alternatives (C) | 4-уровневая diversity делает eclipse expensive (C) | Sequential-chain entry barrier τ₂ окон + diversity (C) | rate-limits per peer + per type + total quotas + bootstrap PoW (P — DDoS scale ≥10 Gbps требует sysadmin response помимо protocol) | mesh transport BLE/Wi-Fi Aware survives complete internet block (C — но ограничен range) | per-sender quotas + Storage Cards hard caps + LRU eviction (C) |
 | **Availability (consensus)** | n/a | n/a | как «узла» + cementing через ¾ honest weight (C) | как «узла» (C) | как «узла» + consensus path не блокируется network DoS (consensus orthogonal к transport — sequential chain продолжается локально) (C) | mesh propagation cementing eventually (P — задержка часы / дни) | consensus path fails-safe — invalid input не commit-ится (C) |
 | **Unlinkability** | Dandelion++ скрывает первый hop отправителя (P — recipient + amount открыты per [I-2]) | Dandelion++ + Tor bridge (deferred M6.5/M14) (P) | n/a | n/a | n/a | Dandelion++ + censorship-resistant discovery + Tor (deferred) (P) | n/a |
+| **Identifier unlinkability (transport)** | ephemeral ML-KEM-768 на обеих сторонах + static identity отправляется post-decapsulation, encrypted; нет plaintext-эквивалента MTProto `auth_key_id` (C) | n/a (active MITM видит timing, не identity) | n/a | n/a | n/a | DPI видит протокольную метку `/montana/noise-pq-xx/1.0.0` в multistream-select (network-wide marker, не per-client) (P) | n/a |
 
-**Closed C:** 13 cells.
-**Partial P:** 7 cells (acknowledged residuals — см. явный список ниже).
+**Closed C:** 14 cells.
+**Partial P:** 8 cells (acknowledged residuals — см. явный список ниже).
 **Out of scope O:** 0 cells (все intersection adversary × property реальны).
 
 #### Out-of-scope (явный список)

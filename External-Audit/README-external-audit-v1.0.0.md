@@ -80,6 +80,14 @@ Empirical record of the four-node mesh: where Frankfurt drifted, why, what the f
 
 ---
 
+## 7. Transport-layer identifier leakage analysis
+
+**File:** [`transport-identifier-leakage.md`](transport-identifier-leakage.md)
+
+Byte-by-byte comparison of MTProto (Telegram) and Noise_PQ XX (Montana) under the passive-observer threat model. Establishes that the Montana production transport has no plaintext long-term identifier on the wire, so the retroactive-correlation class of attacks that succeeds against MTProto `auth_key_id` is structurally not reachable against Montana. Cross-referenced from `Montana Network v1.1.0.md` §«Network layer — Threat Model».
+
+---
+
 ## How to reach the maintainer
 
 GitHub issues. No email, no Discord, no Telegram — public on-record review only. The repository's CI on the v1.0.0 tag (`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`) is green; any failure is the maintainer's regression and a blocking issue.

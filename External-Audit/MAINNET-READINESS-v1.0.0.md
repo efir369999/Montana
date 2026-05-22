@@ -128,6 +128,7 @@ The auditor can corroborate every claim above against the running network withou
 | [`critic-audit-v1.0.0-mainnet.md`](critic-audit-v1.0.0-mainnet.md) | Maintainer-side critic findings (two closed, six escalated) |
 | [`montana-response-to-2026-05-19-audit.md`](montana-response-to-2026-05-19-audit.md) | Disposition for the sixteen-finding consolidated review |
 | [`montana-deep-retrospective-2026-05-21.md`](montana-deep-retrospective-2026-05-21.md) | Empirical record of the four-node mesh under operational load before the v1.0.0 tag |
+| [`transport-identifier-leakage.md`](transport-identifier-leakage.md) | Byte-by-byte analysis showing Noise_PQ XX has no plaintext long-term identifier on the wire — the MTProto `auth_key_id` correlation class is structurally not reachable |
 | [`Code/docs/SPEC_DEVIATIONS.md`](../Code/docs/SPEC_DEVIATIONS.md) | Complete spec-vs-code deviation log |
 
 — Montana maintainer, 2026-05-22.
