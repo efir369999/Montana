@@ -21,6 +21,15 @@ fn main() -> ExitCode {
             println!("{}", help_text());
             return ExitCode::SUCCESS;
         },
+        "version" | "--version" | "-V" => {
+            println!(
+                "montana-node {} (git {} {})",
+                env!("CARGO_PKG_VERSION"),
+                env!("MONTANA_GIT_SHA"),
+                env!("MONTANA_GIT_COMMIT_DATE"),
+            );
+            return ExitCode::SUCCESS;
+        },
         other => {
             eprintln!("неизвестная команда: {other}");
             eprintln!();
@@ -45,7 +54,7 @@ fn help_text() -> String {
          Использование:\n\
          \n\
            montana-node init    [--data-dir <PATH>] [--mnemonic \"<24 слова>\"]\n\
-                                 [--entropy <hex32>] [--force]\n\
+                                 [--mnemonic-stdin] [--entropy <hex32>] [--force]\n\
          \n\
            montana-node inspect [--data-dir <PATH>] [--reveal-master-seed]\n\
          \n\
@@ -92,7 +101,11 @@ fn help_text() -> String {
          \n\
            --data-dir <PATH>          Каталог данных узла. По умолчанию на macOS:\n\
                                       $HOME/Library/Application Support/Montana/node\n\
-           --mnemonic \"...\"           Восстановить identity из 24-словной фразы.\n\
+           --mnemonic \"...\"           Восстановить identity из 24-словной фразы. ВНИМАНИЕ:\n\
+                                       видна в `ps aux` другим пользователям системы.\n\
+                                       Для production используйте --mnemonic-stdin.\n\
+           --mnemonic-stdin           Прочитать 24-словную фразу из stdin (без leak\n\
+                                       через ps aux).\n\
            --entropy <hex32>          Использовать 32-байтную энтропию (64 hex).\n\
            --force                    Перезаписать существующий identity.bin.\n\
            --reveal-master-seed       В inspect: показать полный master_seed.\n\
@@ -119,6 +132,20 @@ fn parse_init(args: &[String]) -> Result<init::InitArgs, NodeError> {
             "--mnemonic" => {
                 mnemonic = Some(expect_value(args, i, "--mnemonic")?.to_string());
                 i += 2;
+            },
+            "--mnemonic-stdin" => {
+                use std::io::BufRead;
+                let stdin = std::io::stdin();
+                let mut buf = String::new();
+                stdin.lock().read_line(&mut buf).map_err(|e| {
+                    NodeError::InvalidArguments(format!("--mnemonic-stdin read: {e}"))
+                })?;
+                mnemonic = Some(
+                    buf.trim_end_matches('\n')
+                        .trim_end_matches('\r')
+                        .to_string(),
+                );
+                i += 1;
             },
             "--entropy" => {
                 entropy_hex = Some(expect_value(args, i, "--entropy")?.to_string());
