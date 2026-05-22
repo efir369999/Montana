@@ -17,6 +17,9 @@
 #   MONTANA_LISTEN=/ip4/0.0.0.0/tcp/PORT      change listen port (default 8444)
 #   MONTANA_GENESIS_MANIFEST=/path/to/file    use a custom manifest file
 #   MONTANA_REPO_BRANCH=main                  override branch (default main)
+#   INSTALL_VPN=1                             also install Xray Reality VPN
+#                                              backend on :443 (joins the
+#                                              federated /vpn/sub pool)
 #
 # Steps:
 #   1. Verify root and detect OS (Ubuntu / Debian / Fedora / RHEL / Alpine)
@@ -250,3 +253,105 @@ log "Within seconds of start, your node negotiates Noise_PQ XX with the three"
 log "Genesis peers (moscow / frankfurt / helsinki) listed in the manifest. To"
 log "confirm the connection appears in the live mesh, ask one of the Genesis"
 log "operators to grep their journal for your local XX PeerId."
+
+# ───────────────────────────────────────────────────────────────────────
+# Optional: Montana Xray Reality VPN backend
+# ───────────────────────────────────────────────────────────────────────
+# Run with INSTALL_VPN=1 to also stand up the Reality VPN endpoint on :443
+# alongside montana-node. The endpoint joins the federated /vpn/sub pool
+# served at https://montana.quest/vpn/sub. Universal shared keypair is
+# used so every Montana VPN-backend node accepts the same client config
+# (see project_montana_vpn_universal_key.md).
+#
+# Defaults (overridable via env):
+#   INSTALL_VPN=0                — set to 1 to install
+#   VPN_UNIVERSAL_UUID           — shared UUID for all Montana VPN clients
+#   VPN_UNIVERSAL_PRIVKEY        — shared Reality x25519 private key
+#   VPN_UNIVERSAL_SID            — shared Reality short_id
+#   VPN_SNI                      — Reality dest SNI
+
+if [ "${INSTALL_VPN:-0}" = "1" ]; then
+    log "--- installing Xray Reality VPN backend on :443 ---"
+    VPN_UNIVERSAL_UUID="${VPN_UNIVERSAL_UUID:-e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d}"
+    VPN_UNIVERSAL_PRIVKEY="${VPN_UNIVERSAL_PRIVKEY:-cL7D6FCqH5nWcQlHCKH9uNr-RNwCt5peRAqt8tl9mXs}"
+    VPN_UNIVERSAL_SID="${VPN_UNIVERSAL_SID:-302805bc0c25e504}"
+    VPN_SNI="${VPN_SNI:-www.googletagmanager.com}"
+    XRAY_VERSION="${XRAY_VERSION:-26.2.6}"
+
+    if ! command -v xray >/dev/null 2>&1; then
+        log "  installing xray-core v${XRAY_VERSION}..."
+        bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" \
+            @ install --version "${XRAY_VERSION}" -u root >/dev/null 2>&1 || \
+            log "  WARN xray install failed; continuing"
+    fi
+
+    if command -v xray >/dev/null 2>&1; then
+        mkdir -p /usr/local/etc/xray /var/log/xray /var/lib/montana-net
+        cat > /usr/local/etc/xray/config.json <<XRAY
+{
+  "log": {"loglevel": "warning", "access": "/var/log/xray/access.log", "error": "/var/log/xray/error.log"},
+  "dns": {"servers": ["1.1.1.1", "8.8.8.8"], "queryStrategy": "UseIP"},
+  "inbounds": [{
+      "tag": "reality-entry",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [{"id": "${VPN_UNIVERSAL_UUID}", "email": "montana-universal", "flow": "xtls-rprx-vision"}],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "dest": "${VPN_SNI}:443",
+          "xver": 0,
+          "serverNames": ["${VPN_SNI}"],
+          "privateKey": "${VPN_UNIVERSAL_PRIVKEY}",
+          "shortIds": ["${VPN_UNIVERSAL_SID}"]
+        }
+      },
+      "sniffing": {"enabled": true, "destOverride": ["http", "tls", "quic"]}
+  }],
+  "outbounds": [
+    {"tag": "direct", "protocol": "freedom", "settings": {"domainStrategy": "UseIP"}},
+    {"tag": "blocked", "protocol": "blackhole"},
+    {"tag": "dns-out", "protocol": "dns"}
+  ],
+  "routing": {"rules": [
+    {"type": "field", "port": "53", "outboundTag": "dns-out"},
+    {"type": "field", "ip": ["geoip:private"], "outboundTag": "blocked"}
+  ]}
+}
+XRAY
+
+        # Public-safe metadata file for federated /vpn/sub aggregator
+        VPN_PUBKEY=$(xray x25519 -i "${VPN_UNIVERSAL_PRIVKEY}" 2>/dev/null | awk -F': ' '/PublicKey/ {print $2}')
+        cat > /var/lib/montana-net/my-vpn.json <<META
+{
+  "UUID": "${VPN_UNIVERSAL_UUID}",
+  "PBK": "${VPN_PUBKEY}",
+  "SID": "${VPN_UNIVERSAL_SID}",
+  "SNI": "${VPN_SNI}"
+}
+META
+        chmod 644 /var/lib/montana-net/my-vpn.json
+
+        systemctl daemon-reload
+        systemctl enable xray >/dev/null 2>&1 || true
+        systemctl restart xray
+        sleep 2
+
+        if systemctl is-active --quiet xray; then
+            log "  xray active on :443"
+            log "  vless://${VPN_UNIVERSAL_UUID}@<this-host>:443?flow=xtls-rprx-vision&security=reality&sni=${VPN_SNI}&pbk=${VPN_PUBKEY}&sid=${VPN_UNIVERSAL_SID}&type=tcp"
+            log ""
+            log "To enroll this node in https://montana.quest/vpn/sub aggregator,"
+            log "ask the orchestrator operator to POST to /api/orchestrator/register"
+            log "with this node's IP, alias, country, and label."
+        else
+            log "  WARN xray failed to start; check journalctl -u xray"
+        fi
+    fi
+fi
