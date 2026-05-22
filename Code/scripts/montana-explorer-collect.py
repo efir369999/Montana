@@ -17,22 +17,25 @@ IP_CACHE = "/var/lib/montana-explorer/discovered-ip-cache.json"
 SEEN_CACHE = "/var/lib/montana-explorer/discovered-seen-since.json"
 DISCOVERY_WINDOW_SECONDS = 600  # consider a peer "live" if heartbeat OK within 10 min
 
-# IP-mask map: raw IP -> public-safe label. New nodes go here when promoted.
-# Per the public-artifact rule, no raw IPs appear in /explorer/data.json.
-IP_PUBLIC_LABEL = {
-    "<front>":  "moscow",
-    "<exit-de>":   "frankfurt",
-    "<exit-removed>":   "helsinki",
-    "<exit-am>": "yerevan",
+# Peer-id keyed public label map. Genesis peers + known external operators.
+# Per the public-artifact rule, no raw IPs appear in /explorer/data.json — IPs
+# are uniformly masked to "hidden" and the peer-id carries the public label.
+PEER_PUBLIC_LABEL = {
+    "QmSDUqLkLcenkkNw6PUKYXjesEmaDksnrEaCzbs3a5nVzj": "moscow",
+    "QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP": "frankfurt",
+    "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL": "helsinki",
+    "Qma3XZ8mJZDD4MbtJVNxCyS2sYYn9BQRzxYvfiXiMbNCp9": "yerevan",
+    "QmYEFQZmBqWYV7SFreMK6h7N87fVasNv8ho5GU27La8Y9z": "macbook",
 }
 
 def mask_ip(ip):
+    # Only the orchestrator placeholder "local" is kept; every other IP is hidden.
     if ip in ("local", "", "?"):
         return ip
-    label = IP_PUBLIC_LABEL.get(ip)
-    if label:
-        return label
-    return "external"
+    return "hidden"
+
+def peer_label(peer_id):
+    return PEER_PUBLIC_LABEL.get(peer_id, "external")
 
 
 # Pinned Genesis XX peer_ids — any other peer_id seen in journals is a discovered (external) node.
@@ -233,6 +236,7 @@ def merge_discoveries(*discovery_maps):
         uptime = now_unix - seen_since[pid]
         out.append({
             "peer_id": pid,
+            "label": peer_label(pid),
             "remote_ip": mask_ip(p["remote_ip"]),
             "witnessed_by": p["witnessed_by"],
             "last_heartbeat_seconds_ago": p.get("last_heartbeat_seconds_ago"),
