@@ -564,9 +564,13 @@ int mt_self_test(void) {
         return rc;
     }
     if (memcmp(mldsa_pk, mldsa_pk2, MT_MLDSA65_PUBKEY_SIZE) != 0) {
+        OPENSSL_cleanse(mldsa_sk, sizeof(mldsa_sk));
+        OPENSSL_cleanse(mldsa_sk2, sizeof(mldsa_sk2));
         return MT_ERR_KAT_MISMATCH;
     }
     if (memcmp(mldsa_sk, mldsa_sk2, MT_MLDSA65_SECRETKEY_SIZE) != 0) {
+        OPENSSL_cleanse(mldsa_sk, sizeof(mldsa_sk));
+        OPENSSL_cleanse(mldsa_sk2, sizeof(mldsa_sk2));
         return MT_ERR_KAT_MISMATCH;
     }
 
@@ -614,8 +618,21 @@ int mt_self_test(void) {
         return MT_ERR_KAT_MISMATCH;
     }
     if (memcmp(mlkem_sk, mlkem_sk2, MT_MLKEM768_SECRETKEY_SIZE) != 0) {
+        OPENSSL_cleanse(mldsa_sk, sizeof(mldsa_sk));
+        OPENSSL_cleanse(mldsa_sk2, sizeof(mldsa_sk2));
+        OPENSSL_cleanse(mlkem_sk, sizeof(mlkem_sk));
+        OPENSSL_cleanse(mlkem_sk2, sizeof(mlkem_sk2));
         return MT_ERR_KAT_MISMATCH;
     }
 
+    /* Zeroise every stack-resident secret-key buffer before returning so the
+       stack frame does not retain ML-DSA-65 / ML-KEM-768 secret bytes. The KAT
+       in this self-test uses seed = {0}, so the secrets are public-derivable,
+       but the discipline holds for the day this routine accepts an operator-
+       supplied seed. */
+    OPENSSL_cleanse(mldsa_sk, sizeof(mldsa_sk));
+    OPENSSL_cleanse(mldsa_sk2, sizeof(mldsa_sk2));
+    OPENSSL_cleanse(mlkem_sk, sizeof(mlkem_sk));
+    OPENSSL_cleanse(mlkem_sk2, sizeof(mlkem_sk2));
     return MT_OK;
 }
