@@ -10,13 +10,13 @@ use mt_timechain::{cemented_bundle_aggregate, next_d, vdf_step, vdf_verify};
 // ---------- VDF determinism ----------
 
 #[test]
-fn vdf_step_zero_iterations_identity() {
-    let prev = [0x42u8; 32];
-    assert_eq!(
-        vdf_step(&prev, 0),
-        prev,
-        "vdf_step(prev, 0) должна быть identity (no-op)"
-    );
+#[should_panic(expected = "outside the protocol-accepted band")]
+fn vdf_step_zero_iterations_panics() {
+    // Honest proposer never produces d=0; an adversarial input must not
+    // be silently accepted as identity (would let the proposer forge any
+    // (prev, d=0, claim=prev) triple). vdf_step panics on d=0.
+    let prev = [0u8; 32];
+    let _ = vdf_step(&prev, 0);
 }
 
 #[test]

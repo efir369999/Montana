@@ -9,8 +9,27 @@ use sha2::{Digest, Sha256};
 
 pub type WindowIndex = u64;
 
-// spec: T_r = SHA-256^d(prev). d=0 → no-op (identity).
+// Upper bound on the per-window VDF iteration count accepted by both
+// vdf_step (consensus path) and vdf_verify (validator path). Honest
+// production D values live in the [D0/8, D0*8] band (calibrated to one
+// τ₁ window on commodity x86_64); a malicious proposer that forges a
+// header with `d > MAX_D` would be able to wedge every follower's
+// vdf_verify loop for ≈ 2^32 SHA-256 rounds otherwise. Capping at
+// 2^32 - 1 keeps the verifier cost bounded while leaving multiple
+// orders of magnitude of headroom over the calibrated regime.
+pub const MAX_D: u64 = u32::MAX as u64;
+
+// spec: T_r = SHA-256^d(prev). d must satisfy 1 ≤ d ≤ MAX_D; values outside
+// the range are protocol violations and `vdf_step` panics, which is the
+// correct consensus-halt behaviour on the proposer path (state machine
+// must never run forever / never run zero iterations). Validator path
+// runs through `vdf_verify`, which returns `false` instead of panicking.
 pub fn vdf_step(prev: &Hash32, d: u64) -> Hash32 {
+    assert!(
+        (1..=MAX_D).contains(&d),
+        "vdf_step: d = {d} outside the protocol-accepted band [1, MAX_D = {}]",
+        MAX_D
+    );
     let mut current = *prev;
     for _ in 0..d {
         current = Sha256::digest(current).into();
@@ -18,7 +37,15 @@ pub fn vdf_step(prev: &Hash32, d: u64) -> Hash32 {
     current
 }
 
+// Validator-side: accepts a proposer's claimed (prev, d, claim) triple and
+// returns whether vdf_step(prev, d) == claim. Returns false for any d
+// outside the [1, MAX_D] band, so a malicious proposer cannot wedge the
+// verifier with `d = 0` (trivial identity acceptance) or `d = u64::MAX`
+// (≈ 2^64 SHA-256 rounds per validate call).
 pub fn vdf_verify(prev: &Hash32, d: u64, claim: &Hash32) -> bool {
+    if !(1..=MAX_D).contains(&d) {
+        return false;
+    }
     &vdf_step(prev, d) == claim
 }
 
@@ -116,10 +143,36 @@ mod tests {
 
     // ============ VDF ============
 
+    // Per the MAX_D guard hardening, vdf_step now panics on d outside [1, MAX_D].
+    // vdf_verify returns false for the same range without panic — that is the
+    // correct validator-side behaviour on adversarial input.
     #[test]
-    fn vdf_step_d_zero_is_identity() {
+    #[should_panic(expected = "outside the protocol-accepted band")]
+    fn vdf_step_d_zero_panics() {
         let prev = [0xABu8; 32];
-        assert_eq!(vdf_step(&prev, 0), prev);
+        let _ = vdf_step(&prev, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "outside the protocol-accepted band")]
+    fn vdf_step_d_above_max_panics() {
+        let prev = [0xABu8; 32];
+        let _ = vdf_step(&prev, MAX_D + 1);
+    }
+
+    #[test]
+    fn vdf_verify_rejects_d_zero() {
+        let prev = [0xABu8; 32];
+        let claim = prev; // identity claim would historically pass for d=0
+        assert!(!vdf_verify(&prev, 0, &claim));
+    }
+
+    #[test]
+    fn vdf_verify_rejects_d_above_max() {
+        let prev = [0xABu8; 32];
+        let bogus = [0u8; 32];
+        assert!(!vdf_verify(&prev, MAX_D + 1, &bogus));
+        assert!(!vdf_verify(&prev, u64::MAX, &bogus));
     }
 
     #[test]
