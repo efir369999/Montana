@@ -24,9 +24,7 @@ PEER_PUBLIC_LABEL = {
     "QmSDUqLkLcenkkNw6PUKYXjesEmaDksnrEaCzbs3a5nVzj": "moscow",
     "QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP": "frankfurt",
     "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL": "helsinki",
-    "Qma3XZ8mJZDD4MbtJVNxCyS2sYYn9BQRzxYvfiXiMbNCp9": "yerevan",
     "QmYEFQZmBqWYV7SFreMK6h7N87fVasNv8ho5GU27La8Y9z": "macbook",
-    "QmShTQ7kkj2ewSwhQLfFy6ifA9krf442kb6CxYeeMKkBG4": "new-york",
 }
 
 def mask_ip(ip):
@@ -46,16 +44,14 @@ GENESIS_PEER_IDS = {
     "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL",  # helsinki
 }
 
-# Every server reachable via ssh from Moscow appears as a labeled node.
-# Genesis-cohort: Moscow / Frankfurt / Helsinki (pinned in genesis-manifest.json).
-# External operators with ssh access: Yerevan / New York.
-# Local Mac stays in discovered_peers — no inbound ssh from Moscow.
+# Single source of truth: the three Genesis-cohort peers pinned in
+# Code/scripts/genesis-manifest.json. Every other operator on the live mesh
+# appears in discovered_peers[] as label="external" — without a city tag,
+# without an IP, without a hosting-provider claim.
 GENESIS_NODES = [
     ("Moscow",    "local"),
     ("Frankfurt", "<exit-de>"),
     ("Helsinki",  "<exit-removed>"),
-    ("Yerevan",   "<exit-am>"),
-    ("New York",  "86.104.72.12"),
 ]
 
 
