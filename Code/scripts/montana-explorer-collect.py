@@ -46,10 +46,16 @@ GENESIS_PEER_IDS = {
     "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL",  # helsinki
 }
 
+# Every server reachable via ssh from Moscow appears as a labeled node.
+# Genesis-cohort: Moscow / Frankfurt / Helsinki (pinned in genesis-manifest.json).
+# External operators with ssh access: Yerevan / New York.
+# Local Mac stays in discovered_peers — no inbound ssh from Moscow.
 GENESIS_NODES = [
     ("Moscow",    "local"),
-    ("Helsinki",  "<exit-removed>"),
     ("Frankfurt", "<exit-de>"),
+    ("Helsinki",  "<exit-removed>"),
+    ("Yerevan",   "<exit-am>"),
+    ("New York",  "86.104.72.12"),
 ]
 
 
@@ -263,11 +269,16 @@ def merge_discoveries(*discovery_maps):
 # --- Build the document ---
 nodes = [fetch_genesis(label, host) for (label, host) in GENESIS_NODES]
 
+# Labels claimed by the labeled-nodes list — discovered_peers with those labels
+# would be redundant, so they are filtered out below.
+labeled_label_set = {n["label"].lower().replace(" ", "-") for n in nodes}
+
 discoveries = []
 for (label, host) in GENESIS_NODES:
     dmap = collect_discovery(label, host)
     discoveries.append(dmap)
-discovered_peers = merge_discoveries(*discoveries)
+discovered_peers_all = merge_discoveries(*discoveries)
+discovered_peers = [p for p in discovered_peers_all if (p.get("label") or "external").lower() not in labeled_label_set]
 
 doc = {
     "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
