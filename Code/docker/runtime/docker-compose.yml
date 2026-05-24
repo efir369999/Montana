@@ -1,0 +1,67 @@
+# Montana — node + VPN endpoint, one compose stack.
+#
+# Three services on host network (Linux):
+#   montana-node — built locally via multi-stage Dockerfile (rust:1.95 → debian-slim).
+#                  Listens on :8444 (Noise_PQ XX p2p).
+#   xray         — official teddysun/xray image. Reality VLESS-XTLS-Vision on :443.
+#                  Reads rendered config from /etc/montana-vpn/xray-config.json on host.
+#   nginx-decoy  — nginx:alpine, plain HTTP :80 decoy page.
+#
+# Persistence:
+#   montana-data volume → /var/lib/montana (identity.bin, mnemonic.txt, state).
+#   xray-logs volume    → /var/log/xray (rotated by xray itself).
+#
+# Bring up:
+#   docker compose -f Code/docker/runtime/docker-compose.yml up -d --build
+# Bring down (keeps volumes):
+#   docker compose -f Code/docker/runtime/docker-compose.yml down
+# Bring down + wipe identity:
+#   docker compose -f Code/docker/runtime/docker-compose.yml down -v
+#
+# Use scripts/install-docker.sh on a clean VPS for full automation.
+
+services:
+  montana-node:
+    build:
+      context: ../../
+      dockerfile: docker/runtime/Dockerfile
+    image: montana-node:local
+    container_name: montana-node
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - montana-data:/var/lib/montana
+    cpus: 1.0
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /var/lib/montana/identity.bin"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  xray:
+    image: teddysun/xray:latest
+    container_name: montana-xray
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /etc/montana-vpn/xray-config.json:/etc/xray/config.json:ro
+      - xray-logs:/var/log/xray
+    depends_on:
+      - nginx-decoy
+
+  nginx-decoy:
+    image: nginx:alpine
+    container_name: montana-nginx-decoy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /etc/montana-vpn/nginx-decoy.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/montana-vpn/decoy-index.html:/usr/share/nginx/html/index.html:ro
+
+volumes:
+  montana-data:
+    name: montana-data
+  xray-logs:
+    name: montana-xray-logs
