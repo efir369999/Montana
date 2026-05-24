@@ -23,7 +23,7 @@ fn main() -> ExitCode {
         },
         "version" | "--version" | "-V" => {
             println!(
-                "montana-node {} (git {} {})",
+                "Montana Ядро 0.1 — montana-node {} (git {} {})",
                 env!("CARGO_PKG_VERSION"),
                 env!("MONTANA_GIT_SHA"),
                 env!("MONTANA_GIT_COMMIT_DATE"),

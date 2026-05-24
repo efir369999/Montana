@@ -15,6 +15,9 @@ mod ffi_c;
 #[cfg(target_arch = "wasm32")]
 mod ffi_wasm;
 
+#[cfg(target_os = "android")]
+mod ffi_jni;
+
 pub const ABI_VERSION: u32 = 1;
 
 pub const MT_MASTER_SEED_LEN: usize = 64;

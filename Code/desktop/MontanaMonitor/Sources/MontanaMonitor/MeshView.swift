@@ -98,11 +98,11 @@ struct MeshView: View {
             Divider()
             if let s = model.doc?.network_summary { summary(s) }
             Divider()
-            Text("Узлы генезиса").font(.subheadline.bold())
+            Text("Узлы Монтаны").font(.subheadline.bold())
             if let nodes = model.doc?.nodes { ForEach(nodes) { NodeRow(node: $0) } }
             if let peers = model.doc?.discovered_peers, !peers.isEmpty {
                 Divider()
-                Text("Найденные узлы").font(.subheadline.bold())
+                Text("Найденные").font(.subheadline.bold())
                 ForEach(peers) { PeerRow(peer: $0, isLocal: $0.peer_id == model.localPeerId) }
             }
             if let err = model.lastError {
@@ -116,7 +116,10 @@ struct MeshView: View {
 
     private var header: some View {
         HStack {
-            Text("Сеть Монтана").font(.title3.bold())
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Сеть Монтана").font(.title3.bold())
+                Text("Montana Ядро 0.1").font(.caption2).foregroundColor(.secondary)
+            }
             Spacer()
             if let at = model.lastFetchAt {
                 Text("обновлено \(fmt.string(from: at))")

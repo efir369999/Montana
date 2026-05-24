@@ -1,5 +1,8 @@
 #!/bin/bash
 # Montana node — one-command install on a clean Linux VPS.
+# Montana Ядро 0.1 (mainnet). Все узлы равны: после запуска новый узел
+# подключается к bootstrap peers и становится полноправным участником сети,
+# как в Bitcoin. Нет привилегированных «генезис-узлов».
 #
 # Usage (one line on the VPS):
 #   curl -sSL https://raw.githubusercontent.com/efir369999/Montana/main/Code/scripts/install-vps.sh | sudo bash
@@ -9,9 +12,9 @@
 #
 # Defaults:
 #   - listen on /ip4/0.0.0.0/tcp/8444 (Noise_PQ XX over TCP)
-#   - dial the three-node Genesis cohort from Code/scripts/genesis-manifest.json
+#   - dial the bootstrap nodes from Code/scripts/genesis-manifest.json
 #   - the new node joins as a candidate; live mesh heartbeats appear in the
-#     three Genesis peers' logs within seconds of `systemctl start`
+#     bootstrap peers' logs within seconds of `systemctl start`
 #
 # Overrides:
 #   MONTANA_LISTEN=/ip4/0.0.0.0/tcp/PORT      change listen port (default 8444)
@@ -33,7 +36,7 @@
 #   9. Install systemd unit with hardening + cross-machine networking
 #  10. Enable and start the service
 #
-# After step 10, the local node dials the three Genesis peers, negotiates
+# After step 10, the local node dials the bootstrap peers, negotiates
 # Noise_PQ XX (/montana/noise-pq-xx/1.0.0), and starts exchanging Ping/Pong
 # heartbeats. The new node appears in mos/fra/zel journals as
 # `[network] CONNECTION ESTABLISHED peer=<your XX peer_id> label=unknown`.

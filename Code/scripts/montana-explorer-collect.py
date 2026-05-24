@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Montana explorer data.json collector.
-# Polls the three Genesis nodes for their montana-node status and merges in
+# Polls the bootstrap peers for their montana-node status and merges in
 # any auto-discovered peer (any peer connected with label=unknown that has
 # emitted heartbeat OK in the recent journal window). The result is written
 # to /var/www/efir/explorer/data.json once per minute.
@@ -44,7 +44,7 @@ GENESIS_PEER_IDS = {
     "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL",  # helsinki
 }
 
-# Single source of truth: the three Genesis-cohort peers pinned in
+# Single source of truth: the three bootstrap peers pinned in
 # Code/scripts/genesis-manifest.json. Every other operator on the live mesh
 # appears in discovered_peers[] as label="external" — without a city tag,
 # without an IP, without a hosting-provider claim.

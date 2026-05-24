@@ -23,7 +23,7 @@ pub const PARAMS_ENCODED_SIZE: usize = 4094;
 //   account_id = 4c290c3d5d63e84b99c30c83fb4d172e04102af4492b4d56d0642711b09e2072
 //   node_id    = 75bfaf9026405c12ef36437f08cc63c040cfe1924773dedcba0abadf8c6928a1
 //
-// Genesis cohort: 3 узла (мос/фра/зел). После ceremony эти константы immutable.
+// Bootstrap peers: 3 early узла (мос/фра/зел) — без протокольных привилегий, просто known peers. После ceremony эти константы immutable.
 
 /// 1952 байта ML-DSA-65 публичного ключа Moscow operator account.
 pub const BOOTSTRAP_ACCOUNT_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =

@@ -21,6 +21,9 @@ mt-codec      = { path = "../mt-codec" }
 wasm-bindgen = { version = "0.2", optional = true }
 getrandom    = { version = "0.2", features = ["js"] }
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.21", default-features = false }
+
 [features]
 default = []
 wasm = ["dep:wasm-bindgen"]
