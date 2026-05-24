@@ -1,11 +1,15 @@
 # Montana — node + VPN endpoint, one compose stack.
 #
 # Three services on host network (Linux):
-#   montana-node — built locally via multi-stage Dockerfile (rust:1.95 → debian-slim).
+#   montana-node — built locally via multi-stage Dockerfile (rust:1.95 → debian-trixie).
 #                  Listens on :8444 (Noise_PQ XX p2p).
 #   xray         — official teddysun/xray image. Reality VLESS-XTLS-Vision on :443.
 #                  Reads rendered config from /etc/montana-vpn/xray-config.json on host.
 #   nginx-decoy  — nginx:alpine, plain HTTP :80 decoy page.
+#
+# Build context is the repository ROOT (parent of Code/) because mt-mnemonic
+# uses include_str!("../../../../Montana wordlist.txt") which is checked in
+# at the repo top level, not inside Code/.
 #
 # Persistence:
 #   montana-data volume → /var/lib/montana (identity.bin, mnemonic.txt, state).
@@ -23,8 +27,8 @@
 services:
   montana-node:
     build:
-      context: ../../
-      dockerfile: docker/runtime/Dockerfile
+      context: ../../../
+      dockerfile: Code/docker/runtime/Dockerfile
     image: montana-node:local
     container_name: montana-node
     restart: unless-stopped

@@ -5,9 +5,12 @@
 #   2. debian:trixie-slim — runs the binary (newer glibc covers symbols the
 #      rust image links against; bookworm-slim is too old)
 #
-# Build context is the Code/ directory of the Montana repository.
-# Standalone build:
-#   docker build -t montana-node:local -f Code/docker/runtime/Dockerfile Code/
+# Build context is the REPOSITORY ROOT (parent of Code/). mt-mnemonic uses
+# include_str!("../../../../Montana wordlist.txt") which is checked in at
+# the repo top level, so the wordlist file must be reachable from /build.
+#
+# Standalone build (from repo root):
+#   docker build -t montana-node:local -f Code/docker/runtime/Dockerfile .
 # Compose orchestration:
 #   docker compose -f Code/docker/runtime/docker-compose.yml up -d --build
 
@@ -16,7 +19,8 @@ WORKDIR /build
 COPY . /build/
 ENV CARGO_NET_RETRY=10 \
     CARGO_HTTP_MULTIPLEXING=false
-RUN cargo build --release -j 1 -p montana-node 2>&1 | tail -50 && \
+WORKDIR /build/Code
+RUN cargo build --release -j 1 -p montana-node && \
     strip target/release/montana-node && \
     ls -lh target/release/montana-node
 
@@ -26,9 +30,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     useradd -r -m -d /var/lib/montana -s /usr/sbin/nologin montana && \
     mkdir -p /etc/montana && chmod 0755 /etc/montana
-COPY --from=builder /build/target/release/montana-node /usr/local/bin/montana-node
-COPY scripts/genesis-manifest.json /etc/montana/genesis-manifest.json
-COPY docker/runtime/entrypoint.sh /usr/local/bin/montana-entrypoint
+COPY --from=builder /build/Code/target/release/montana-node /usr/local/bin/montana-node
+COPY Code/scripts/genesis-manifest.json /etc/montana/genesis-manifest.json
+COPY Code/docker/runtime/entrypoint.sh /usr/local/bin/montana-entrypoint
 RUN chmod +x /usr/local/bin/montana-entrypoint
 WORKDIR /var/lib/montana
 VOLUME ["/var/lib/montana"]

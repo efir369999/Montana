@@ -215,7 +215,7 @@ chmod 0640 "$XRAY_CONF"
 cd "$RUNTIME_DIR"
 log "building montana-node image and bringing the stack up (build is 10-30 min on small VPS)..."
 docker compose down --remove-orphans >/dev/null 2>&1 || true
-docker compose up -d --build 2>&1 | tail -20
+docker compose up -d --build 2>&1 | tee /var/log/montana-compose.log | tail -200
 
 # ── 8. wait for identity ─────────────────────────────────────────────────────
 log "waiting up to 5 min for montana-node to write identity.bin..."
