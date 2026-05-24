@@ -1738,6 +1738,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mt-bindings"
+version = "1.0.0"
+dependencies = [
+ "getrandom 0.2.15",
+ "hex",
+ "mt-account",
+ "mt-codec",
+ "mt-crypto",
+ "mt-mnemonic",
+ "mt-state",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "mt-codec"
 version = "1.0.0"
 

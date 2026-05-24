@@ -1,0 +1,28 @@
+[package]
+name = "mt-bindings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+description = "Единственный источник истины Montana для iOS / Android / Web. Re-exports mt-mnemonic, mt-crypto, mt-state, mt-account через C ABI (cdylib + staticlib) и WASM."
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+mt-mnemonic   = { path = "../mt-mnemonic" }
+mt-crypto     = { path = "../mt-crypto" }
+mt-state      = { path = "../mt-state" }
+mt-account    = { path = "../mt-account" }
+mt-codec      = { path = "../mt-codec" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2", optional = true }
+getrandom    = { version = "0.2", features = ["js"] }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]
+[dev-dependencies]
+hex = "0.4"

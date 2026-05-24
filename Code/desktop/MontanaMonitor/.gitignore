@@ -2,3 +2,6 @@
 .swiftpm/
 MontanaMonitor.app/
 *.xcodeproj/
+.cache/
+Resources/mt-bindings/libmt_bindings.a
+Resources/mt-bindings/libmt_bindings.dylib

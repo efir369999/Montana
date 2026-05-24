@@ -5,11 +5,17 @@ let package = Package(
     name: "MontanaMonitor",
     platforms: [.macOS(.v14)],
     targets: [
+        .systemLibrary(
+            name: "MontanaBindings",
+            path: "Sources/MontanaBindings"
+        ),
         .executableTarget(
             name: "MontanaMonitor",
-            path: ".",
-            exclude: ["build.sh", "quest.montana.monitor.plist", ".build", "MontanaMonitor.app"],
-            sources: ["MontanaMonitor.swift"]
+            dependencies: ["MontanaBindings"],
+            path: "Sources/MontanaMonitor",
+            linkerSettings: [
+                .unsafeFlags(["-L", "Resources/mt-bindings", "-lmt_bindings"])
+            ]
         )
     ]
 )
