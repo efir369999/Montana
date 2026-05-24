@@ -11,50 +11,65 @@
 #   curl -fsSL https://raw.githubusercontent.com/efir369999/Montana/main/Code/scripts/install-docker.sh \
 #     | sudo bash
 #
-# Optional pre-staged secrets (place BEFORE running the installer):
-#   /etc/montana-vpn/privkey    — Reality x25519 private key. If present and
-#                                  MONTANA_VPN_MODE=universal is set in env,
-#                                  the node joins the universal-key Montana
-#                                  VPN federation (same client UUID/PBK/SID
-#                                  as Helsinki/Frankfurt/US). Without this
-#                                  file, fresh keys are generated.
+# Pre-stageable secrets (optional — operator-supplied via scp BEFORE running):
+#   /etc/montana-vpn/privkey      Reality x25519 private key. Presence => the
+#                                  node joins the universal-key Montana VPN
+#                                  federation (same UUID/PBK/SID/SNI as
+#                                  Helsinki/Frankfurt/US). Absence => generate
+#                                  fresh standalone keys.
+#   /etc/montana-vpn/orch-token   Orchestrator admin secret. Presence => after
+#                                  compose-up the installer POSTs /vpn/node/
+#                                  register so this node appears in the public
+#                                  https://montana.quest/vpn/sub subscription.
 #
-# Optional environment variables:
-#   MONTANA_VPN_MODE=universal   — use universal Montana VPN keys (needs the
-#                                   privkey file above). Default: generate fresh.
-#   MONTANA_DECOY_HOST=www.googletagmanager.com   Reality dest SNI.
-#   MONTANA_CLIENT_EMAIL=montana-universal        xray client email tag.
-#   MONTANA_NODE_TAG=$(hostname)                  inbound tag suffix.
+# Operator metadata (used by orchestrator register payload; sensible defaults
+# from the VPS itself when omitted):
+#   MONTANA_ALIAS=<hostname-short>            short lowercase alias
+#   MONTANA_LABEL='Hostname Montana'          human label (any UTF-8)
+#   MONTANA_COUNTRY=<two-letter ISO>          e.g. AM, FI, DE
+#   MONTANA_HOSTING=<provider name>           e.g. WorkTitans
+#   MONTANA_COORDS='lat,lon'                  e.g. 40.18,44.51
+#
+# Other environment knobs:
+#   MONTANA_DECOY_HOST=www.googletagmanager.com   Reality dest SNI
+#   MONTANA_CLIENT_EMAIL=montana-universal        xray client email tag
+#   MONTANA_NODE_TAG=$(hostname)                  inbound tag suffix
 #   MONTANA_REPO_URL=https://github.com/efir369999/Montana.git
 #   MONTANA_REPO_BRANCH=main
-#   MONTANA_WIPE_LEGACY=1        Also remove any prior native systemd install.
+#   MONTANA_WIPE_LEGACY=1                         purge prior native systemd install
+#   MONTANA_ORCH_URL=https://montana.quest/vpn/node
+#   MONTANA_SKIP_VERIFY=0                         skip post-install self-checks
 
 set -euo pipefail
 
+# ── configuration ───────────────────────────────────────────────────────────
 REPO_URL="${MONTANA_REPO_URL:-https://github.com/efir369999/Montana.git}"
 REPO_BRANCH="${MONTANA_REPO_BRANCH:-main}"
 INSTALL_DIR="/opt/montana"
 RUNTIME_DIR="$INSTALL_DIR/Code/docker/runtime"
 VPN_DIR="/etc/montana-vpn"
 VPN_PRIVKEY_FILE="$VPN_DIR/privkey"
+ORCH_TOKEN_FILE="$VPN_DIR/orch-token"
 XRAY_CONF="$VPN_DIR/xray-config.json"
 NGX_CONF="$VPN_DIR/nginx-decoy.conf"
 DECOY_HTML="$VPN_DIR/decoy-index.html"
 
-VPN_MODE="${MONTANA_VPN_MODE:-fresh}"
 DECOY_HOST="${MONTANA_DECOY_HOST:-www.googletagmanager.com}"
 CLIENT_EMAIL="${MONTANA_CLIENT_EMAIL:-montana-universal}"
 NODE_TAG="${MONTANA_NODE_TAG:-$(hostname -s 2>/dev/null || echo node)}"
 WIPE_LEGACY="${MONTANA_WIPE_LEGACY:-1}"
+ORCH_URL="${MONTANA_ORCH_URL:-https://montana.quest/vpn/node}"
+SKIP_VERIFY="${MONTANA_SKIP_VERIFY:-0}"
 
-# Universal Montana VPN client metadata — public, distributed in VLESS subscriptions.
-# Matches Helsinki / Frankfurt / US backends.
+# Universal Montana VPN client metadata — public, distributed in VLESS subs.
 UNIVERSAL_UUID="e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d"
 UNIVERSAL_SID="302805bc0c25e504"
 
 log()  { printf '\033[1;32m[install-docker]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install-docker]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[install-docker] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+ok()   { printf '\033[1;32m[verify ✓]\033[0m %s\n' "$*"; }
+bad()  { printf '\033[1;31m[verify ✗]\033[0m %s\n' "$*" >&2; }
 
 retry() {
   local n="$1"; shift
@@ -87,25 +102,23 @@ if [ "$WIPE_LEGACY" = "1" ]; then
         /etc/systemd/system/xray.service /etc/systemd/system/xray@.service
   rm -rf /etc/systemd/system/montana-node.service.d \
          /etc/systemd/system/xray.service.d /etc/systemd/system/xray@.service.d
-  systemctl daemon-reload || true
+  systemctl daemon-reload 2>/dev/null || true
   systemctl reset-failed 2>/dev/null || true
 
-  # Native xray uninstall (idempotent)
-  if [ -x /usr/local/bin/xray ] || [ -f /usr/local/etc/xray/config.json ]; then
-    retry 2 bash -c "curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh \
-      -o /tmp/xray-uninst.sh && bash /tmp/xray-uninst.sh remove --purge" || true
-    rm -f /usr/local/bin/xray /usr/local/bin/xctl
-    rm -rf /usr/local/etc/xray /usr/local/share/xray /var/log/xray
+  # Native xray uninstall — only if there's something to remove.
+  if [ -x /usr/local/bin/xray ] && [ -f /etc/systemd/system/xray.service ]; then
+    bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" \
+      @ remove --purge >/dev/null 2>&1 || true
   fi
+  rm -f /usr/local/bin/xray /usr/local/bin/xctl
+  rm -rf /usr/local/etc/xray /usr/local/share/xray /var/log/xray
 
-  # Native nginx uninstall (keep package only if it's still serving non-decoy content)
   if dpkg -l 2>/dev/null | grep -qE '^ii  nginx'; then
-    apt-get remove --purge -y nginx nginx-core nginx-common nginx-full 2>&1 | tail -2 || true
-    apt-get autoremove -y 2>&1 | tail -1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get remove --purge -y nginx nginx-core nginx-common nginx-full >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y >/dev/null 2>&1 || true
   fi
   rm -rf /etc/nginx /var/www/decoy
 
-  # Montana data (keeps backup copy under /root)
   if [ -d /var/lib/montana ]; then
     BK="/root/montana-pre-docker-backup-$(date +%s)"
     mkdir -p "$BK"
@@ -116,7 +129,6 @@ if [ "$WIPE_LEGACY" = "1" ]; then
   rm -rf /var/lib/montana /etc/montana
   id montana >/dev/null 2>&1 && userdel -r montana 2>/dev/null || true
   rm -f /usr/local/bin/montana-node
-
   log "legacy wipe complete"
 fi
 
@@ -162,21 +174,20 @@ else
 fi
 [ -d "$RUNTIME_DIR" ] || die "expected $RUNTIME_DIR not found — repo layout drifted"
 
-# ── 6. xray config — Helsinki-style universal or fresh keys ─────────────────
+# ── 6. xray config — universal (privkey pre-staged) or fresh ────────────────
 mkdir -p "$VPN_DIR" && chmod 0700 "$VPN_DIR"
 install -m 0644 "$RUNTIME_DIR/nginx-decoy.conf"   "$NGX_CONF"
 install -m 0644 "$RUNTIME_DIR/decoy-index.html"   "$DECOY_HTML"
 
-if [ "$VPN_MODE" = "universal" ]; then
-  [ -s "$VPN_PRIVKEY_FILE" ] || die "MONTANA_VPN_MODE=universal but $VPN_PRIVKEY_FILE missing/empty.
-Stage it first:  scp helsinki-privkey root@<host>:$VPN_PRIVKEY_FILE && chmod 600 $VPN_PRIVKEY_FILE"
+if [ -s "$VPN_PRIVKEY_FILE" ]; then
+  VPN_MODE=universal
   PRIV="$(tr -d ' \n\r' < "$VPN_PRIVKEY_FILE")"
   UUID="$UNIVERSAL_UUID"
   SID="$UNIVERSAL_SID"
-  log "VPN mode: universal (Helsinki-equivalent universal Montana key)"
+  log "VPN mode: universal (privkey pre-staged at $VPN_PRIVKEY_FILE)"
 else
+  VPN_MODE=fresh
   log "VPN mode: fresh keys (standalone Reality endpoint, not in Montana federation)"
-  # One-shot xray container call to generate x25519 keypair.
   KEYS="$(docker run --rm teddysun/xray:latest xray x25519 2>&1 || true)"
   PRIV="$(echo "$KEYS" | awk -F': ' '/Private[ _]key:|PrivateKey:/ {print $NF; exit}' | tr -d ' \r')"
   PBK_FRESH="$(echo "$KEYS" | awk -F': ' '/Public[ _]key:|Password.*PublicKey/ {print $NF; exit}' | tr -d ' \r')"
@@ -186,7 +197,6 @@ else
   install -m 0600 /dev/stdin "$VPN_PRIVKEY_FILE" <<<"$PRIV"
 fi
 
-# Derive PBK from PRIV via xray container (works in both modes for consistent output).
 PBK="$(docker run --rm teddysun/xray:latest xray x25519 -i "$PRIV" 2>&1 \
   | awk -F': ' '/Public[ _]key:|Password.*PublicKey/ {print $NF; exit}' | tr -d ' \r')"
 [ -n "$PBK" ] || die "failed to derive PublicKey from PrivateKey"
@@ -207,7 +217,7 @@ log "building montana-node image and bringing the stack up (build is 10-30 min o
 docker compose down --remove-orphans >/dev/null 2>&1 || true
 docker compose up -d --build 2>&1 | tail -20
 
-# ── 8. wait for node identity to appear ──────────────────────────────────────
+# ── 8. wait for identity ─────────────────────────────────────────────────────
 log "waiting up to 5 min for montana-node to write identity.bin..."
 i=0
 while [ "$i" -lt 60 ]; do
@@ -219,22 +229,105 @@ done
 docker exec montana-node test -f /var/lib/montana/identity.bin \
   || die "identity.bin not created after 5 min — inspect: docker logs montana-node"
 
-# ── 9. report ────────────────────────────────────────────────────────────────
-PUBLIC_IP="$(curl -fs --max-time 8 https://api.ipify.org || echo '<host-ip>')"
+# ── 9. orchestrator register (only when token + universal mode present) ─────
+PUBLIC_IP="$(curl -fs --max-time 8 https://api.ipify.org || echo '')"
+ORCH_RESP=''
+if [ -s "$ORCH_TOKEN_FILE" ] && [ "$VPN_MODE" = "universal" ] && [ -n "$PUBLIC_IP" ]; then
+  TOKEN="$(tr -d ' \n\r' < "$ORCH_TOKEN_FILE")"
+  ALIAS="${MONTANA_ALIAS:-$NODE_TAG}"
+  LABEL="${MONTANA_LABEL:-${ALIAS^} Montana}"
+  COUNTRY="${MONTANA_COUNTRY:-XX}"
+  HOSTING="${MONTANA_HOSTING:-unknown}"
+  COORDS="${MONTANA_COORDS:-0,0}"
+  LAT="$(echo "$COORDS" | cut -d, -f1)"
+  LON="$(echo "$COORDS" | cut -d, -f2)"
+  log "registering with orchestrator at $ORCH_URL/register (alias=$ALIAS, country=$COUNTRY)..."
+  # Give xray a moment so the Reality probe by the orchestrator succeeds.
+  sleep 4
+  PAYLOAD=$(jq -nc \
+    --arg alias "$ALIAS" --arg ip "$PUBLIC_IP" --arg country "$COUNTRY" \
+    --arg hosting "$HOSTING" --arg label "$LABEL" --argjson lat "$LAT" --argjson lon "$LON" \
+    --arg pbk "$PBK" --arg uuid "$UUID" --arg sid "$SID" --arg secret "$TOKEN" \
+    '{alias:$alias,ip:$ip,country:$country,hosting:$hosting,label:$label,coords:[$lat,$lon],reality_pbk:$pbk,reality_uuid:$uuid,reality_sid:$sid,secret:$secret}')
+  ORCH_RESP="$(curl -sk --max-time 20 -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$ORCH_URL/register" || true)"
+  log "orchestrator response: $ORCH_RESP"
+fi
+
+# ── 10. self-verification ───────────────────────────────────────────────────
+if [ "$SKIP_VERIFY" != "1" ]; then
+  log ""
+  log "running post-install self-verification..."
+  PASS=0; FAIL=0
+  vcheck() { if eval "$1"; then ok "$2"; PASS=$((PASS+1)); else bad "$2"; FAIL=$((FAIL+1)); fi; }
+
+  vcheck "docker ps --format '{{.Names}} {{.Status}}' | grep -q 'montana-node.*healthy\|montana-node.*Up'" \
+         "container montana-node up"
+  vcheck "docker ps --format '{{.Names}} {{.Status}}' | grep -q 'montana-xray.*Up'" \
+         "container montana-xray up"
+  vcheck "docker ps --format '{{.Names}} {{.Status}}' | grep -q 'montana-nginx-decoy.*Up'" \
+         "container montana-nginx-decoy up"
+
+  # outbound peer TCP probe — bootstrap peers from genesis manifest
+  if [ -f "$INSTALL_DIR/Code/scripts/genesis-manifest.json" ]; then
+    PEER_HOSTS="$(jq -r '.peers[] | .multiaddr' "$INSTALL_DIR/Code/scripts/genesis-manifest.json" \
+      | sed -nE 's|/ip4/([0-9.]+)/tcp/([0-9]+)|\1 \2|p')"
+    while read -r ph pp; do
+      [ -z "$ph" ] && continue
+      vcheck "timeout 5 bash -c '</dev/tcp/$ph/$pp' 2>/dev/null" \
+             "peer TCP reachable: $ph:$pp"
+    done <<<"$PEER_HOSTS"
+  fi
+
+  # local Reality TLS handshake to :443
+  vcheck "echo Q | timeout 8 openssl s_client -connect 127.0.0.1:443 -servername '$DECOY_HOST' -brief 2>&1 | grep -q 'CONNECTION ESTABLISHED'" \
+         "local TLS handshake :443 via Reality cover SNI"
+
+  # decoy :80
+  vcheck "curl -sf --max-time 8 -o /dev/null 'http://127.0.0.1/'" "decoy :80 returns 200"
+
+  # ESTABLISHED peer connections from montana-node
+  EST="$(ss -tnp 2>/dev/null | grep montana-node | wc -l)"
+  vcheck "[ '$EST' -ge 1 ]" "at least 1 ESTABLISHED p2p connection (got $EST)"
+
+  # /vpn/sub membership (universal mode only — fresh keys aren't aggregated)
+  if [ "$VPN_MODE" = "universal" ] && [ -n "$PUBLIC_IP" ]; then
+    SUB="$(curl -sk --max-time 10 "${ORCH_URL%/node}/sub" | base64 -d 2>/dev/null || true)"
+    ALIAS_LOWER="$(echo "${MONTANA_ALIAS:-$NODE_TAG}" | tr '[:upper:]' '[:lower:]')"
+    # match either the alias label or this server's public IP appearing in any VLESS URL
+    vcheck "echo \"\$SUB\" | grep -qi -E '${ALIAS_LOWER}\\.montana\\.quest|${PUBLIC_IP//./\\.}'" \
+           "node appears in https://montana.quest/vpn/sub subscription"
+  fi
+
+  log ""
+  if [ "$FAIL" = "0" ]; then
+    log "self-verification: $PASS/$PASS checks passed"
+  else
+    warn "self-verification: $PASS passed / $FAIL failed — review checks above"
+  fi
+fi
+
+# ── 11. final report ────────────────────────────────────────────────────────
 log ""
 log "================================================================"
 log "  INSTALL COMPLETE"
 log "================================================================"
 log ""
 log "Containers:"
-docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || docker compose ps
+docker compose ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null || docker compose ps
 log ""
-log "Montana node identity:"
-docker exec montana-node cat /var/lib/montana/mnemonic.txt 2>/dev/null | tail -40 || \
-  warn "mnemonic.txt not yet flushed — run: docker logs montana-node"
+log "Montana node identity (24-word mnemonic — write it down NOW):"
+echo "----------------------------------------------------------------"
+docker exec montana-node cat /var/lib/montana/mnemonic.txt 2>/dev/null \
+  || warn "mnemonic.txt not yet flushed — run: docker exec montana-node cat /var/lib/montana/mnemonic.txt"
+echo "----------------------------------------------------------------"
 log ""
 log "VPN client subscription (VLESS Reality):"
-echo "vless://${UUID}@${PUBLIC_IP}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${DECOY_HOST}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp#montana-${NODE_TAG}"
+echo "vless://${UUID}@${PUBLIC_IP:-<host-ip>}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${DECOY_HOST}&fp=chrome&pbk=${PBK}&sid=${SID}&type=tcp#montana-${NODE_TAG}"
+log ""
+if [ -n "$ORCH_RESP" ]; then
+  log "Orchestrator: $ORCH_RESP"
+  log "Public subscription (decoded):  curl -sk ${ORCH_URL%/node}/sub | base64 -d"
+fi
 log ""
 log "Useful commands:"
 log "  docker compose -f $RUNTIME_DIR/docker-compose.yml ps"
