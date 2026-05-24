@@ -179,7 +179,7 @@ else
   # One-shot xray container call to generate x25519 keypair.
   KEYS="$(docker run --rm teddysun/xray:latest xray x25519 2>&1 || true)"
   PRIV="$(echo "$KEYS" | awk -F': ' '/Private[ _]key:|PrivateKey:/ {print $NF; exit}' | tr -d ' \r')"
-  PBK_FRESH="$(echo "$KEYS" | awk -F': ' '/Public[ _]key:|Password:/ {print $NF; exit}' | tr -d ' \r')"
+  PBK_FRESH="$(echo "$KEYS" | awk -F': ' '/Public[ _]key:|Password.*PublicKey/ {print $NF; exit}' | tr -d ' \r')"
   [ -n "$PRIV" ] && [ -n "$PBK_FRESH" ] || die "failed to derive fresh x25519 keypair from xray container"
   UUID="$(cat /proc/sys/kernel/random/uuid)"
   SID="$(openssl rand -hex 8)"
@@ -188,7 +188,7 @@ fi
 
 # Derive PBK from PRIV via xray container (works in both modes for consistent output).
 PBK="$(docker run --rm teddysun/xray:latest xray x25519 -i "$PRIV" 2>&1 \
-  | awk -F': ' '/Public[ _]key:|Password:/ {print $NF; exit}' | tr -d ' \r')"
+  | awk -F': ' '/Public[ _]key:|Password.*PublicKey/ {print $NF; exit}' | tr -d ' \r')"
 [ -n "$PBK" ] || die "failed to derive PublicKey from PrivateKey"
 
 sed \
