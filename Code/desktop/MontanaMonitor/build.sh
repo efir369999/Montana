@@ -50,34 +50,37 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>           <string>MontanaMonitor</string>
-  <key>CFBundleIdentifier</key>           <string>quest.montana.monitor</string>
+  <key>CFBundleIdentifier</key>           <string>quest.montana.core</string>
   <key>CFBundleName</key>                 <string>Montana</string>
-  <key>CFBundleShortVersionString</key>   <string>1.1.0</string>
-  <key>CFBundleVersion</key>              <string>1.1.0</string>
+  <key>CFBundleDisplayName</key>          <string>Montana</string>
+  <key>CFBundleShortVersionString</key>   <string>0.1</string>
+  <key>CFBundleVersion</key>              <string>2</string>
   <key>LSMinimumSystemVersion</key>       <string>14.0</string>
-  <key>LSUIElement</key>                  <true/>
   <key>NSHighResolutionCapable</key>      <true/>
+  <key>NSPrincipalClass</key>             <string>NSApplication</string>
 </dict>
 </plist>
 PLIST
 
-DEST="$HOME/Applications/MontanaMonitor.app"
+DEST="$HOME/Applications/Montana.app"
 rm -rf "$DEST"
 cp -R "$BUNDLE" "$DEST"
 echo "installed at $DEST"
 
-PLIST_SRC="$HERE/quest.montana.monitor.plist"
-PLIST_DEST="$HOME/Library/LaunchAgents/quest.montana.monitor.plist"
-LOG_DIR="$HOME/Applications/Montana/data/logs"
-mkdir -p "$LOG_DIR"
-sed -e "s|__APP_PATH__|$DEST/Contents/MacOS/MontanaMonitor|" \
-    -e "s|__LOG_OUT__|$LOG_DIR/monitor.log|" \
-    -e "s|__LOG_ERR__|$LOG_DIR/monitor.err.log|" \
-    "$PLIST_SRC" > "$PLIST_DEST"
+# Package as DMG for distribution через montana.quest/vpn/
+DMG_OUT="$HERE/dist/Montana-0.1.dmg"
+mkdir -p "$HERE/dist"
+rm -f "$DMG_OUT"
+TMPDIR_DMG=$(mktemp -d)
+cp -R "$BUNDLE" "$TMPDIR_DMG/Montana.app"
+ln -s /Applications "$TMPDIR_DMG/Applications"
+hdiutil create -volname "Montana 0.1" -srcfolder "$TMPDIR_DMG" -ov -format UDZO "$DMG_OUT" >/dev/null
+rm -rf "$TMPDIR_DMG"
+echo "DMG ready: $DMG_OUT ($(du -h "$DMG_OUT" | cut -f1))"
 
-launchctl unload "$PLIST_DEST" 2>/dev/null || true
-launchctl load -w "$PLIST_DEST"
-echo "LaunchAgent registered at $PLIST_DEST"
+# Снимаем старый launchd agent от menu-bar версии если был
+PLIST_DEST="$HOME/Library/LaunchAgents/quest.montana.monitor.plist"
+[ -f "$PLIST_DEST" ] && launchctl unload "$PLIST_DEST" 2>/dev/null && rm -f "$PLIST_DEST"
 
 if [ "${1:-}" = "run" ]; then
     open "$DEST"
