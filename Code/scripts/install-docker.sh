@@ -190,7 +190,7 @@ else
   log "VPN mode: fresh keys (standalone Reality endpoint, not in Montana federation)"
   KEYS="$(docker run --rm teddysun/xray:26.2.6 xray x25519 2>&1 || true)"
   PRIV="$(echo "$KEYS" | awk -F': ' '/Private[ _]key:|PrivateKey:/ {print $NF; exit}' | tr -d ' \r')"
-  PBK_FRESH="$(echo "$KEYS" | awk -F': ' '/Public[ _]key:|Password.*PublicKey/ {print $NF; exit}' | tr -d ' \r')"
+  PBK_FRESH="$(echo "$KEYS" | awk -F': ' '/Password|ublic/ {print $NF; exit}' | tr -d ' \r')"
   [ -n "$PRIV" ] && [ -n "$PBK_FRESH" ] || die "failed to derive fresh x25519 keypair from xray container"
   UUID="$(cat /proc/sys/kernel/random/uuid)"
   SID="$(openssl rand -hex 8)"
@@ -198,7 +198,7 @@ else
 fi
 
 PBK="$(docker run --rm teddysun/xray:26.2.6 xray x25519 -i "$PRIV" 2>&1 \
-  | awk -F': ' '/Public[ _]key:|Password.*PublicKey/ {print $NF; exit}' | tr -d ' \r')"
+  | awk -F': ' '/Password|ublic/ {print $NF; exit}' | tr -d ' \r')"
 [ -n "$PBK" ] || die "failed to derive PublicKey from PrivateKey"
 
 sed \
