@@ -6,6 +6,17 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 
+# Auto-increment build number (CFBundleVersion). Stored в .build-number,
+# растёт монотонно на каждую пересборку чтобы macOS не путал кеш .app.
+BUILD_FILE="$HERE/.build-number"
+if [ -f "$BUILD_FILE" ]; then
+    BUILD=$(($(cat "$BUILD_FILE") + 1))
+else
+    BUILD=4
+fi
+echo "$BUILD" > "$BUILD_FILE"
+echo "→ build #$BUILD"
+
 BUNDLE="$HERE/MontanaMonitor.app"
 CONTENTS="$BUNDLE/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -34,6 +45,7 @@ rm -rf "$BUNDLE"
 mkdir -p "$MACOS" "$RESOURCES"
 
 (cd "$HERE/../../" && cargo build -p mt-bindings --release)
+(cd "$HERE/../../" && cargo build -p montana-node --release)
 WORKSPACE_ROOT="$HERE/../.."
 mkdir -p "$HERE/Resources/mt-bindings"
 cp "$WORKSPACE_ROOT/target/release/libmt_bindings.a" "$HERE/Resources/mt-bindings/libmt_bindings.a"
@@ -42,7 +54,13 @@ cp "$WORKSPACE_ROOT/crates/mt-bindings/include/mt_bindings.h" "$HERE/Sources/Mon
 swift build --configuration release --package-path "$HERE"
 cp "$HERE/.build/release/MontanaMonitor" "$MACOS/MontanaMonitor"
 cp "$XRAY_BIN" "$RESOURCES/xray"
+cp "$WORKSPACE_ROOT/target/release/montana-node" "$RESOURCES/montana-node"
+chmod +x "$RESOURCES/montana-node"
+cp "$HERE/Resources/montana-vpn-proxy" "$RESOURCES/montana-vpn-proxy"
+chmod +x "$RESOURCES/montana-vpn-proxy"
 chmod +x "$RESOURCES/xray"
+
+cp "$HERE/Resources/Montana.icns" "$RESOURCES/Montana.icns"
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -53,10 +71,13 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key>           <string>quest.montana.core</string>
   <key>CFBundleName</key>                 <string>Montana</string>
   <key>CFBundleDisplayName</key>          <string>Montana</string>
+  <key>CFBundleIconFile</key>             <string>Montana</string>
   <key>CFBundleShortVersionString</key>   <string>0.1</string>
-  <key>CFBundleVersion</key>              <string>2</string>
+  <key>CFBundleVersion</key>              <string>$BUILD</string>
   <key>LSMinimumSystemVersion</key>       <string>14.0</string>
   <key>NSHighResolutionCapable</key>      <true/>
+  <key>NSQuitAlwaysKeepsWindows</key>     <false/>
+  <key>NSSupportsAutomaticTermination</key> <false/>
   <key>NSPrincipalClass</key>             <string>NSApplication</string>
 </dict>
 </plist>
@@ -82,6 +103,8 @@ echo "DMG ready: $DMG_OUT ($(du -h "$DMG_OUT" | cut -f1))"
 PLIST_DEST="$HOME/Library/LaunchAgents/quest.montana.monitor.plist"
 [ -f "$PLIST_DEST" ] && launchctl unload "$PLIST_DEST" 2>/dev/null && rm -f "$PLIST_DEST"
 
-if [ "${1:-}" = "run" ]; then
-    open "$DEST"
-fi
+# Auto-launch локально для просмотра — kill предыдущий процесс, открыть новый.
+osascript -e 'tell application "Montana" to quit' 2>/dev/null || pkill -f "/Applications/Montana.app" 2>/dev/null
+sleep 1
+open "$DEST"
+echo "→ launched Montana.app (build #$BUILD)"

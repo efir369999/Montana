@@ -1,0 +1,26 @@
+#!/bin/bash
+# montana-vpn-proxy — системный прокси-toggle узла Montana.
+# Запускается под root через NOPASSWD-правило /etc/sudoers.d/montana-vpn,
+# установленное приложением Montana при первом подключении ВПН.
+# Production main net. Никаких внешних зависимостей кроме networksetup.
+set -e
+ACTION="${1:-off}"
+SOCKS_PORT="${2:-10808}"
+HTTP_PORT="${3:-10809}"
+
+while IFS= read -r svc; do
+  [ -z "$svc" ] && continue
+  case "$svc" in \**) continue;; esac
+  if [ "$ACTION" = "on" ]; then
+    /usr/sbin/networksetup -setsocksfirewallproxy      "$svc" 127.0.0.1 "$SOCKS_PORT" 2>/dev/null || true
+    /usr/sbin/networksetup -setsocksfirewallproxystate "$svc" on                       2>/dev/null || true
+    /usr/sbin/networksetup -setwebproxy                "$svc" 127.0.0.1 "$HTTP_PORT"  2>/dev/null || true
+    /usr/sbin/networksetup -setwebproxystate           "$svc" on                       2>/dev/null || true
+    /usr/sbin/networksetup -setsecurewebproxy          "$svc" 127.0.0.1 "$HTTP_PORT"  2>/dev/null || true
+    /usr/sbin/networksetup -setsecurewebproxystate     "$svc" on                       2>/dev/null || true
+  else
+    /usr/sbin/networksetup -setsocksfirewallproxystate "$svc" off 2>/dev/null || true
+    /usr/sbin/networksetup -setwebproxystate           "$svc" off 2>/dev/null || true
+    /usr/sbin/networksetup -setsecurewebproxystate     "$svc" off 2>/dev/null || true
+  fi
+done < <(/usr/sbin/networksetup -listallnetworkservices | tail -n +2)

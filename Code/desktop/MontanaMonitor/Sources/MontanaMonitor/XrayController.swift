@@ -1,10 +1,11 @@
 import Foundation
 
-enum XrayError: Error, LocalizedError {
+enum XrayError: Error, LocalizedError, Equatable {
     case binaryMissing(String)
     case launchFailed(String)
     case proxyFailed(String)
     case timeout
+    case portBusy
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,7 @@ enum XrayError: Error, LocalizedError {
         case .launchFailed(let s):  return "не удалось запустить xray: \(s)"
         case .proxyFailed(let s):   return "не удалось настроить системный прокси: \(s)"
         case .timeout:              return "таймаут"
+        case .portBusy:             return "PORT_BUSY"
         }
     }
 }
@@ -26,6 +28,11 @@ actor XrayController {
 
     func start(server: VPNServer) async throws {
         try stopSync()
+        // Если 10808 уже слушает чужой процесс (Happ и т.п.) — наш xray не сможет
+        // забиндиться и Reality сломается. Сразу понятная ошибка.
+        if Self.isPortListening(UInt16(Self.socksPort)) {
+            throw XrayError.portBusy
+        }
         let bin = try Self.xrayBinaryPath()
         let cfg = try writeConfig(server: server)
         let p = Process()
@@ -165,29 +172,58 @@ actor XrayController {
         return dir
     }
 
+    // Стабильные пути для production main net.
+    static let helperInstallPath = "/usr/local/bin/montana-vpn-proxy"
+    static let sudoersPath = "/etc/sudoers.d/montana-vpn"
+    static var helperInstalled: Bool {
+        let fm = FileManager.default
+        return fm.isExecutableFile(atPath: helperInstallPath) && fm.fileExists(atPath: sudoersPath)
+    }
+    static let socksPort = 10808
+    static let httpPort = 10809
+
+    /// Переключить системный прокси. Первый вызов устанавливает Montana-хелпер
+    /// и NOPASSWD-правило (один запрос пароля). Далее — молча через `sudo -n`.
     static func setSystemProxy(enable: Bool) async throws {
-        let script: String
-        if enable {
-            script = """
-            for svc in $(/usr/sbin/networksetup -listallnetworkservices | tail -n +2 | grep -v '^\\*'); do
-              /usr/sbin/networksetup -setsocksfirewallproxy "$svc" 127.0.0.1 10808 || true
-              /usr/sbin/networksetup -setsocksfirewallproxystate "$svc" on || true
-              /usr/sbin/networksetup -setwebproxy "$svc" 127.0.0.1 10809 || true
-              /usr/sbin/networksetup -setwebproxystate "$svc" on || true
-              /usr/sbin/networksetup -setsecurewebproxy "$svc" 127.0.0.1 10809 || true
-              /usr/sbin/networksetup -setsecurewebproxystate "$svc" on || true
-            done
-            """
-        } else {
-            script = """
-            for svc in $(/usr/sbin/networksetup -listallnetworkservices | tail -n +2 | grep -v '^\\*'); do
-              /usr/sbin/networksetup -setsocksfirewallproxystate "$svc" off || true
-              /usr/sbin/networksetup -setwebproxystate "$svc" off || true
-              /usr/sbin/networksetup -setsecurewebproxystate "$svc" off || true
-            done
-            """
+        try ensureHelperInstalled()
+        let action = enable ? "on" : "off"
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+        p.arguments = ["-n", helperInstallPath, action, "\(socksPort)", "\(httpPort)"]
+        let err = Pipe()
+        p.standardError = err
+        try p.run()
+        p.waitUntilExit()
+        if p.terminationStatus != 0 {
+            let msg = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            throw XrayError.proxyFailed(msg.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        try runAsAdmin(script)
+    }
+
+    /// Гарантировать что Montana-хелпер скопирован в /usr/local/bin и NOPASSWD-правило
+    /// установлено. Если уже на месте — ничего не делает (нет промта). Иначе — ОДИН
+    /// privileged-вызов, который ставит и хелпер, и sudoers-правило сразу.
+    static func ensureHelperInstalled() throws {
+        let fm = FileManager.default
+        let helperOK = fm.isExecutableFile(atPath: helperInstallPath)
+        let sudoersOK = fm.fileExists(atPath: sudoersPath)
+        if helperOK && sudoersOK { return }
+
+        guard let bundled = Bundle.main.url(forResource: "montana-vpn-proxy", withExtension: nil)?.path else {
+            throw XrayError.proxyFailed("montana-vpn-proxy не найден в бандле")
+        }
+        let user = NSUserName()
+        // Единый privileged-скрипт: установить хелпер + sudoers-правило атомарно.
+        let install = """
+        /bin/mkdir -p /usr/local/bin && \
+        /bin/cp '\(bundled)' '\(helperInstallPath)' && \
+        /usr/sbin/chown root:wheel '\(helperInstallPath)' && \
+        /bin/chmod 755 '\(helperInstallPath)' && \
+        /bin/echo '\(user) ALL=(root) NOPASSWD: \(helperInstallPath)' > '\(sudoersPath)' && \
+        /usr/sbin/chown root:wheel '\(sudoersPath)' && \
+        /bin/chmod 440 '\(sudoersPath)'
+        """
+        try runAsAdmin(install)
     }
 
     private static func runAsAdmin(_ shell: String) throws {
