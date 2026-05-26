@@ -24,11 +24,14 @@
 #
 # Operator metadata (used by orchestrator register payload; sensible defaults
 # from the VPS itself when omitted):
+# Country, city and coordinates are auto-detected from the node's public IP
+# (ip-api.com) when the variables below are omitted; override only if needed:
 #   MONTANA_ALIAS=<hostname-short>            short lowercase alias
-#   MONTANA_LABEL='Hostname Montana'          human label (any UTF-8)
-#   MONTANA_COUNTRY=<two-letter ISO>          e.g. AM, FI, DE
+#   MONTANA_CITY=<city name>                  auto from geo-IP; e.g. Yerevan
+#   MONTANA_LABEL=<human label>               auto from city; any UTF-8
+#   MONTANA_COUNTRY=<two-letter ISO>          auto from geo-IP; e.g. AM, FI, DE
 #   MONTANA_HOSTING=<provider name>           e.g. WorkTitans
-#   MONTANA_COORDS='lat,lon'                  e.g. 40.18,44.51
+#   MONTANA_COORDS='lat,lon'                  auto from geo-IP; e.g. 40.18,44.51
 #
 # Other environment knobs:
 #   MONTANA_DECOY_HOST=www.googletagmanager.com   Reality dest SNI
@@ -231,14 +234,28 @@ docker exec montana-node test -f /var/lib/montana/identity.bin \
 
 # ── 9. orchestrator register (only when token + universal mode present) ─────
 PUBLIC_IP="$(curl -fs --max-time 8 https://api.ipify.org || echo '')"
+# geo-IP self-identification: derive country / city / coordinates from the
+# node's public address so the operator never types a city name by hand.
+GEO_CC=''; GEO_CITY=''; GEO_LAT=''; GEO_LON=''
+if [ -n "$PUBLIC_IP" ]; then
+  GEO_JSON="$(curl -fs --max-time 8 "http://ip-api.com/json/${PUBLIC_IP}?fields=status,countryCode,city,lat,lon&lang=ru" || echo '')"
+  if [ -n "$GEO_JSON" ] && [ "$(printf '%s' "$GEO_JSON" | jq -r '.status' 2>/dev/null)" = "success" ]; then
+    GEO_CC="$(printf '%s' "$GEO_JSON" | jq -r '.countryCode // empty' 2>/dev/null)"
+    GEO_CITY="$(printf '%s' "$GEO_JSON" | jq -r '.city // empty' 2>/dev/null)"
+    GEO_LAT="$(printf '%s' "$GEO_JSON" | jq -r '.lat // empty' 2>/dev/null)"
+    GEO_LON="$(printf '%s' "$GEO_JSON" | jq -r '.lon // empty' 2>/dev/null)"
+    log "geo-IP: country=$GEO_CC city=$GEO_CITY coords=$GEO_LAT,$GEO_LON"
+  fi
+fi
 ORCH_RESP=''
 if [ -s "$ORCH_TOKEN_FILE" ] && [ "$VPN_MODE" = "universal" ] && [ -n "$PUBLIC_IP" ]; then
   TOKEN="$(tr -d ' \n\r' < "$ORCH_TOKEN_FILE")"
   ALIAS="${MONTANA_ALIAS:-$NODE_TAG}"
-  LABEL="${MONTANA_LABEL:-${ALIAS^} Montana}"
-  COUNTRY="${MONTANA_COUNTRY:-XX}"
+  COUNTRY="${MONTANA_COUNTRY:-${GEO_CC:-XX}}"
+  CITY="${MONTANA_CITY:-${GEO_CITY:-${ALIAS^}}}"
+  LABEL="${MONTANA_LABEL:-$CITY}"
   HOSTING="${MONTANA_HOSTING:-unknown}"
-  COORDS="${MONTANA_COORDS:-0,0}"
+  COORDS="${MONTANA_COORDS:-${GEO_LAT:-0},${GEO_LON:-0}}"
   LAT="$(echo "$COORDS" | cut -d, -f1)"
   LON="$(echo "$COORDS" | cut -d, -f2)"
   log "registering with orchestrator at $ORCH_URL/register (alias=$ALIAS, country=$COUNTRY)..."
@@ -246,9 +263,10 @@ if [ -s "$ORCH_TOKEN_FILE" ] && [ "$VPN_MODE" = "universal" ] && [ -n "$PUBLIC_I
   sleep 4
   PAYLOAD=$(jq -nc \
     --arg alias "$ALIAS" --arg ip "$PUBLIC_IP" --arg country "$COUNTRY" \
+    --arg city "$CITY" \
     --arg hosting "$HOSTING" --arg label "$LABEL" --argjson lat "$LAT" --argjson lon "$LON" \
     --arg pbk "$PBK" --arg uuid "$UUID" --arg sid "$SID" --arg secret "$TOKEN" \
-    '{alias:$alias,ip:$ip,country:$country,hosting:$hosting,label:$label,coords:[$lat,$lon],reality_pbk:$pbk,reality_uuid:$uuid,reality_sid:$sid,secret:$secret}')
+    '{alias:$alias,ip:$ip,country:$country,city:$city,hosting:$hosting,label:$label,coords:[$lat,$lon],reality_pbk:$pbk,reality_uuid:$uuid,reality_sid:$sid,secret:$secret}')
   ORCH_RESP="$(curl -sk --max-time 20 -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$ORCH_URL/register" || true)"
   log "orchestrator response: $ORCH_RESP"
 fi
