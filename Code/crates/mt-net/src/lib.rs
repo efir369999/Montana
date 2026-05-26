@@ -41,8 +41,8 @@ pub use mesh::{
 };
 
 pub use reachability::{
-    ReachabilityAdvert, MAX_OBSERVATIONS_PER_VANTAGE, PROFILE_MAX, REACHABILITY_ADVERT_SIZE,
-    REACHABILITY_QUORUM,
+    RankedEntry, ReachabilityAdvert, ReachabilityMap, MAX_OBSERVATIONS_PER_VANTAGE, PROFILE_MAX,
+    REACHABILITY_ADVERT_SIZE, REACHABILITY_QUORUM,
 };
 pub use msg_type::MsgType;
 pub use nat::{

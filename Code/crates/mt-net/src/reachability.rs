@@ -119,6 +119,138 @@ impl ReachabilityAdvert {
     }
 }
 
+/// Aggregated, advisory reachability map. Ingests adverts keyed by
+/// (country_code, asn, target_ref, profile); a triple becomes actionable only
+/// when corroborated by at least REACHABILITY_QUORUM distinct /16 source groups
+/// (the diversity unit of the outgoing-connection constraints). Bounded per
+/// vantage by MAX_OBSERVATIONS_PER_VANTAGE; outside consensus state.
+use alloc::collections::{BTreeMap, BTreeSet};
+
+type TripleKey = ([u8; 2], u32, [u8; 32], u8);
+
+#[derive(Debug, Clone)]
+struct TripleAgg {
+    sources: BTreeSet<[u8; 2]>,
+    latest: ReachabilityAdvert,
+}
+
+#[derive(Debug, Default)]
+pub struct ReachabilityMap {
+    entries: BTreeMap<TripleKey, TripleAgg>,
+}
+
+/// A ranked, actionable entry candidate for auto-steering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RankedEntry {
+    pub target_ref: [u8; 32],
+    pub profile: u8,
+    pub reachable_num: u16,
+    pub reachable_den: u16,
+}
+
+impl ReachabilityMap {
+    pub fn new() -> Self {
+        ReachabilityMap { entries: BTreeMap::new() }
+    }
+
+    fn key(a: &ReachabilityAdvert) -> TripleKey {
+        (a.country_code, a.asn, a.target_ref, a.profile)
+    }
+
+    /// Ingest an advert reported by a peer in `source_prefix16` (/16 of the
+    /// reporter), valid at `known_window`. Stale adverts are rejected. The
+    /// per-vantage entry count is bounded; on overflow the lowest-fraction
+    /// triple for that vantage is evicted.
+    pub fn ingest(
+        &mut self,
+        advert: ReachabilityAdvert,
+        source_prefix16: [u8; 2],
+        known_window: u32,
+        staleness_bound: u32,
+    ) -> bool {
+        if !advert.is_fresh(known_window, staleness_bound) {
+            return false;
+        }
+        let k = Self::key(&advert);
+        let vantage = (advert.country_code, advert.asn);
+        let entry = self.entries.entry(k).or_insert_with(|| TripleAgg {
+            sources: BTreeSet::new(),
+            latest: advert.clone(),
+        });
+        entry.sources.insert(source_prefix16);
+        entry.latest = advert;
+        self.enforce_vantage_bound(vantage);
+        true
+    }
+
+    fn enforce_vantage_bound(&mut self, vantage: ([u8; 2], u32)) {
+        let count = self
+            .entries
+            .keys()
+            .filter(|(cc, asn, _, _)| (*cc, *asn) == vantage)
+            .count();
+        if count <= MAX_OBSERVATIONS_PER_VANTAGE {
+            return;
+        }
+        // Evict the lowest reachable_fraction triple for this vantage.
+        let victim = self
+            .entries
+            .iter()
+            .filter(|((cc, asn, _, _), _)| (*cc, *asn) == vantage)
+            .min_by(|(_, a), (_, b)| {
+                let fa = a.latest.reachable_num as u32 * b.latest.reachable_den as u32;
+                let fb = b.latest.reachable_num as u32 * a.latest.reachable_den as u32;
+                fa.cmp(&fb)
+            })
+            .map(|(k, _)| *k);
+        if let Some(k) = victim {
+            self.entries.remove(&k);
+        }
+    }
+
+    /// True when the triple is corroborated by at least REACHABILITY_QUORUM
+    /// distinct /16 source groups.
+    pub fn is_actionable(&self, advert: &ReachabilityAdvert) -> bool {
+        self.entries
+            .get(&Self::key(advert))
+            .map(|e| e.sources.len() >= REACHABILITY_QUORUM)
+            .unwrap_or(false)
+    }
+
+    /// Actionable entry candidates for a vantage, ranked by reachable_fraction
+    /// descending (cross-multiplication, no floating point). Advisory ranking
+    /// for auto-steering; the local IBT probe remains authoritative.
+    pub fn ranked_for_vantage(&self, country_code: [u8; 2], asn: u32) -> Vec<RankedEntry> {
+        let mut out: Vec<RankedEntry> = self
+            .entries
+            .iter()
+            .filter(|((cc, a, _, _), agg)| {
+                *cc == country_code && *a == asn && agg.sources.len() >= REACHABILITY_QUORUM
+            })
+            .map(|((_, _, target, profile), agg)| RankedEntry {
+                target_ref: *target,
+                profile: *profile,
+                reachable_num: agg.latest.reachable_num,
+                reachable_den: agg.latest.reachable_den,
+            })
+            .collect();
+        out.sort_by(|x, y| {
+            let lhs = x.reachable_num as u32 * y.reachable_den as u32;
+            let rhs = y.reachable_num as u32 * x.reachable_den as u32;
+            rhs.cmp(&lhs)
+        });
+        out
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,5 +356,58 @@ mod tests {
         assert!(a.is_fresh(20200, 100)); // within [20100, 20200]
         assert!(!a.is_fresh(20300, 100)); // below 20200 lower bound
         assert!(!a.is_fresh(20159, 100)); // above known
+    }
+
+    #[test]
+    fn map_quorum_gate() {
+        let mut m = ReachabilityMap::new();
+        let a = sample();
+        // two distinct /16 -> not actionable
+        m.ingest(a.clone(), [10, 0], 20160, 100);
+        m.ingest(a.clone(), [11, 0], 20160, 100);
+        assert!(!m.is_actionable(&a));
+        // third distinct /16 -> actionable
+        m.ingest(a.clone(), [12, 0], 20160, 100);
+        assert!(m.is_actionable(&a));
+    }
+
+    #[test]
+    fn map_same_prefix_not_quorum() {
+        let mut m = ReachabilityMap::new();
+        let a = sample();
+        // three reports from the SAME /16 -> still one distinct source
+        m.ingest(a.clone(), [10, 0], 20160, 100);
+        m.ingest(a.clone(), [10, 0], 20160, 100);
+        m.ingest(a.clone(), [10, 0], 20160, 100);
+        assert!(!m.is_actionable(&a));
+    }
+
+    #[test]
+    fn map_stale_rejected() {
+        let mut m = ReachabilityMap::new();
+        let a = sample(); // observed_window = 20160
+        assert!(!m.ingest(a.clone(), [10, 0], 21000, 100)); // 20160 < 20900 lower bound
+        assert!(m.is_empty());
+    }
+
+    #[test]
+    fn map_ranking_desc() {
+        let mut m = ReachabilityMap::new();
+        let mut hi = sample();
+        hi.target_ref = [0xAAu8; 32];
+        hi.reachable_num = 9;
+        hi.reachable_den = 10; // 0.9
+        let mut lo = sample();
+        lo.target_ref = [0xBBu8; 32];
+        lo.reachable_num = 1;
+        lo.reachable_den = 10; // 0.1
+        for src in [[1u8, 0], [2, 0], [3, 0]] {
+            m.ingest(hi.clone(), src, 20160, 100);
+            m.ingest(lo.clone(), src, 20160, 100);
+        }
+        let ranked = m.ranked_for_vantage(*b"AM", 0x0001_0203);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].target_ref, [0xAAu8; 32]); // higher fraction first
+        assert_eq!(ranked[1].target_ref, [0xBBu8; 32]);
     }
 }
