@@ -63,3 +63,9 @@ Agents/
 External-Audit/claude-opus-*.md
 External-Audit/critic-analysis-*.md
 
+
+# local docs/ — symlinks to English specs for unified browsing
+/docs/
+
+# Internal ops/role docs — contain IPs and secret key material, never publish
+_internal-private/
