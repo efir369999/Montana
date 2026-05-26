@@ -242,6 +242,54 @@ impl ReachabilityMap {
         out
     }
 
+    /// Reorder diversity-selected candidate node_ids by reachable_fraction for
+    /// the given vantage, highest first. Candidates with an actionable map entry
+    /// (>= REACHABILITY_QUORUM distinct /16) are ranked ahead of candidates with
+    /// none; the latter keep their input relative order. Diversity is enforced by
+    /// the caller (PeerTable::select_diverse_outbound); steering only reorders
+    /// within the already-satisfied set, and the local IBT probe stays
+    /// authoritative over this advisory order.
+    pub fn steer(
+        &self,
+        candidates: &[[u8; 32]],
+        country_code: [u8; 2],
+        asn: u32,
+    ) -> Vec<[u8; 32]> {
+        let ranked = self.ranked_for_vantage(country_code, asn);
+        // best (num, den) per target across its profiles
+        let mut best: BTreeMap<[u8; 32], (u16, u16)> = BTreeMap::new();
+        for e in &ranked {
+            let cur = best.get(&e.target_ref).copied();
+            let better = match cur {
+                None => true,
+                Some((n, d)) => {
+                    (e.reachable_num as u32 * d as u32) > (n as u32 * e.reachable_den as u32)
+                },
+            };
+            if better {
+                best.insert(e.target_ref, (e.reachable_num, e.reachable_den));
+            }
+        }
+        let mut have: Vec<[u8; 32]> = Vec::new();
+        let mut none: Vec<[u8; 32]> = Vec::new();
+        for c in candidates {
+            if best.contains_key(c) {
+                have.push(*c);
+            } else {
+                none.push(*c);
+            }
+        }
+        have.sort_by(|x, y| {
+            let (xn, xd) = best[x];
+            let (yn, yd) = best[y];
+            let lhs = xn as u32 * yd as u32;
+            let rhs = yn as u32 * xd as u32;
+            rhs.cmp(&lhs)
+        });
+        have.extend(none);
+        have
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
@@ -409,5 +457,36 @@ mod tests {
         assert_eq!(ranked.len(), 2);
         assert_eq!(ranked[0].target_ref, [0xAAu8; 32]); // higher fraction first
         assert_eq!(ranked[1].target_ref, [0xBBu8; 32]);
+    }
+
+    #[test]
+    fn steer_orders_ranked_first_then_unranked() {
+        let mut m = ReachabilityMap::new();
+        let a = [0xAAu8; 32];
+        let b = [0xBBu8; 32];
+        let c = [0xCCu8; 32];
+        let mk = |t: [u8; 32], n: u16, d: u16| {
+            let mut x = sample();
+            x.target_ref = t;
+            x.reachable_num = n;
+            x.reachable_den = d;
+            x
+        };
+        for src in [[1u8, 0], [2, 0], [3, 0]] {
+            m.ingest(mk(a, 1, 10), src, 20160, 100); // 0.1
+            m.ingest(mk(c, 9, 10), src, 20160, 100); // 0.9
+        }
+        // b has no map entry; candidates in arbitrary order [a, b, c]
+        let out = m.steer(&[a, b, c], *b"AM", 0x0001_0203);
+        // ranked desc (c=0.9, a=0.1) then unranked b
+        assert_eq!(out, vec![c, a, b]);
+    }
+
+    #[test]
+    fn steer_empty_map_preserves_order() {
+        let m = ReachabilityMap::new();
+        let a = [0xAAu8; 32];
+        let b = [0xBBu8; 32];
+        assert_eq!(m.steer(&[a, b], *b"AM", 1), vec![a, b]);
     }
 }
