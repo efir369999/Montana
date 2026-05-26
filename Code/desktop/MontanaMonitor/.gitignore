@@ -5,4 +5,4 @@ MontanaMonitor.app/
 .cache/
 Resources/mt-bindings/libmt_bindings.a
 Resources/mt-bindings/libmt_bindings.dylib
-Code/desktop/MontanaMonitor/dist/
+dist/
