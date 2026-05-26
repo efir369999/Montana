@@ -12,6 +12,8 @@ use alloc::vec::Vec;
 
 pub mod exit;
 pub use exit::{ExitPolicy, ExitSession, ExitSessionError, OpenOutcome};
+pub mod client;
+pub use client::{select_exit, ExitSelector};
 
 use mt_codec::{write_bytes, write_u16, write_u32, write_u8};
 use mt_net::NetError;
