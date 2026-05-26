@@ -10,6 +10,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+pub mod exit;
+pub use exit::{ExitPolicy, ExitSession, ExitSessionError, OpenOutcome};
+
 use mt_codec::{write_bytes, write_u16, write_u32, write_u8};
 use mt_net::NetError;
 
