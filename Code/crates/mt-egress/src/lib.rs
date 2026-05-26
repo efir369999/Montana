@@ -14,6 +14,8 @@ pub mod exit;
 pub use exit::{ExitPolicy, ExitSession, ExitSessionError, OpenOutcome};
 pub mod client;
 pub use client::{select_exit, ExitSelector};
+pub mod relay;
+pub use relay::{RelayBudget, RelayClass, RelayError, CONSENSUS_RELAY_CAP_BYTES_PER_SEC};
 
 use mt_codec::{write_bytes, write_u16, write_u32, write_u8};
 use mt_net::NetError;
