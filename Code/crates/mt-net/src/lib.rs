@@ -13,6 +13,7 @@ pub mod nat;
 pub mod payloads;
 pub mod peers;
 pub mod pow;
+pub mod reachability;
 pub mod store_forward;
 
 pub use dandelion::{
@@ -37,6 +38,11 @@ pub use mesh::{
     apply_mesh_frame, decode_mesh_frame, encode_mesh_frame, LocalMeshState, MeshFrame, MeshIntake,
     MeshRejectReason, MESH_BROADCAST_HINT, MESH_FLAG_CONTINUATION, MESH_HEADER_SIZE,
     MESH_RECIPIENT_HINT_SIZE,
+};
+
+pub use reachability::{
+    ReachabilityAdvert, MAX_OBSERVATIONS_PER_VANTAGE, PROFILE_MAX, REACHABILITY_ADVERT_SIZE,
+    REACHABILITY_QUORUM,
 };
 pub use msg_type::MsgType;
 pub use nat::{
