@@ -216,9 +216,32 @@ chmod 0640 "$XRAY_CONF"
 
 # ── 7. compose up (build + start) ────────────────────────────────────────────
 cd "$RUNTIME_DIR"
-log "building montana-node image and bringing the stack up (build is 10-30 min on small VPS)..."
+log "building montana-node image (10-30 min on small VPS)..."
 docker compose down --remove-orphans >/dev/null 2>&1 || true
-docker compose up -d --build 2>&1 | tee /var/log/montana-compose.log | tail -200
+BUILD_LOG=/var/log/montana-compose.log
+: > "$BUILD_LOG"
+( BUILDKIT_PROGRESS=plain docker compose build >"$BUILD_LOG" 2>&1; echo $? >/tmp/.mt_build_rc ) &
+BPID=$!
+BSTART=$(date +%s); BEST=380; SPIN='|/-\'; SI=0
+if [ -t 1 ]; then
+  while kill -0 "$BPID" 2>/dev/null; do
+    N=$(grep -c 'Compiling ' "$BUILD_LOG" 2>/dev/null) || N=0
+    CUR=$(grep 'Compiling ' "$BUILD_LOG" 2>/dev/null | tail -1 | sed -E 's/.*Compiling ([^ ]+).*/\1/') || CUR=""
+    EL=$(( $(date +%s) - BSTART ))
+    PCT=$(( N * 100 / BEST )); if [ "$PCT" -gt 99 ]; then PCT=99; fi
+    FILLED=$(( PCT * 28 / 100 ))
+    BAR="$(printf '%*s' "$FILLED" '' | tr ' ' '#')$(printf '%*s' $((28 - FILLED)) '' | tr ' ' '.')"
+    printf '\r\033[1;32m[build]\033[0m [%s] %3d%% %3dc %5ds %c %-22.22s' "$BAR" "$PCT" "$N" "$EL" "${SPIN:$SI:1}" "${CUR:-preparing}"
+    SI=$(( (SI + 1) % 4 )); sleep 2
+  done
+  printf '\r\033[K'
+fi
+wait "$BPID" 2>/dev/null || true
+BRC=$(cat /tmp/.mt_build_rc 2>/dev/null || echo 1); rm -f /tmp/.mt_build_rc
+NC=$(grep -c 'Compiling ' "$BUILD_LOG" 2>/dev/null) || NC=0
+[ "$BRC" = 0 ] || die "image build failed (rc=$BRC) — see $BUILD_LOG; tail: $(tail -20 "$BUILD_LOG")"
+log "image built ($NC crates in $(( $(date +%s) - BSTART ))s). starting stack..."
+docker compose up -d 2>&1 | tail -20
 
 # ── 8. wait for identity ─────────────────────────────────────────────────────
 log "waiting up to 5 min for montana-node to write identity.bin..."
@@ -269,6 +292,14 @@ if [ -s "$ORCH_TOKEN_FILE" ] && [ "$VPN_MODE" = "universal" ] && [ -n "$PUBLIC_I
     '{alias:$alias,ip:$ip,country:$country,city:$city,hosting:$hosting,label:$label,coords:[$lat,$lon],reality_pbk:$pbk,reality_uuid:$uuid,reality_sid:$sid,secret:$secret}')
   ORCH_RESP="$(curl -sk --max-time 20 -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$ORCH_URL/register" || true)"
   log "orchestrator response: $ORCH_RESP"
+  if command -v jq >/dev/null 2>&1 && [ -n "$ORCH_RESP" ]; then
+    MR="$(printf '%s' "$ORCH_RESP" | jq -r '.moscow_reachable // empty' 2>/dev/null || true)"
+    RTT="$(printf '%s' "$ORCH_RESP" | jq -r '.moscow_rtt_ms // empty' 2>/dev/null || true)"
+    CEN="$(printf '%s' "$ORCH_RESP" | jq -r '.cascade.enabled // empty' 2>/dev/null || true)"
+    CRE="$(printf '%s' "$ORCH_RESP" | jq -r '.cascade.reason // empty' 2>/dev/null || true)"
+    if [ "$MR" = "true" ]; then log "Moscow cross-check: reachable (TCP :443, RTT ${RTT}ms)"; else log "Moscow cross-check: NOT reachable from Moscow datacenter"; fi
+    if [ "$CEN" = "true" ]; then log "Cascade: ENABLED via de.montana.quest (reason: $CRE) — clients enter at the front, traffic exits on THIS node"; else log "Cascade: not needed — direct connection"; fi
+  fi
 fi
 
 # ── 10. self-verification ───────────────────────────────────────────────────
