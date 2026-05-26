@@ -1,6 +1,6 @@
 # Montana — VPN Alliance Architecture
 
-**Version:** 1.0.0 (2026-05-26)
+**Version:** 1.1.0 (2026-05-26)
 
 **Layer:** Application — a federation pattern over the Egress layer. Defines no consensus state.
 
@@ -13,6 +13,22 @@ A VPN Alliance is the voluntary federation of Montana nodes that opt into the ex
 The alliance is a service of its member operators, not a protocol guarantee. The consensus layer neither requires nor records alliance membership. A node participates fully in consensus and messaging whether or not it joins the alliance.
 
 ---
+
+## Why an operator joins
+
+The alliance is addressed to operators who already run paid VPN exits and face the same recurring costs. Membership is concrete operational value, stated without embellishment:
+
+- **Reachability insurance for a blocked address.** When a censor adds an operator's exit IP to a per-network filter, the exit normally becomes unsellable to clients on that network. Inside the alliance the exit stays reachable: a client connects through any member front it can reach, which relays to the operator's exit. The operator's country stays on sale even while its own address is filtered for part of the client base. Removing the country requires filtering every member front, across operators and address ranges — not one address.
+
+- **Entry load is absorbed by partners; the exit monetises egress.** The front carries the client's session as opaque ciphertext and performs no decryption (Circuit Relay v2, end-to-end Noise_PQ XX to the exit). Cryptographic and egress work — the billable resource — runs on the chosen exit, the operator's own server. A member contributes light front capacity to partners and receives light front capacity in return, while each operator's heavy load stays on the exit it sells.
+
+- **Post-quantum transport by default.** The client-to-exit session is Noise_PQ XX (ML-KEM-768 + ML-DSA-65 + ChaCha20-Poly1305). Traffic recorded today is not decryptable by a future quantum adversary. An operator inherits this without implementing post-quantum cryptography in-house.
+
+- **One subscription, instant country listing.** Members that adopt the alliance universal key share one client-facing identity; a new member's country appears in the shared subscription on registration, with no per-client credential exchange. An operator reaches the alliance's existing client base on day one.
+
+- **Self-healing reduces support load.** Per-network blocks are detected and routed around by reachability sensing without operator intervention; a client converges on a working front automatically. Fewer "it stopped working on my ISP" tickets reach the operator.
+
+- **Sovereignty — opt-in, no lock-in.** Membership is voluntary. Each operator keeps its own egress policy, its own pricing, and its own key choice (universal, or an own key when its port is shared with a website). The protocol imposes no reward and takes no cut; an operator leaves by deregistering. The alliance is a cooperation pattern, not an intermediary.
 
 ## Membership
 

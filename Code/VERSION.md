@@ -1,13 +1,13 @@
 # Version
 
 **Implementation:** `1.0.0` (mainnet — M1..M6 + M9 audit-ready; Noise_PQ XX is the production transport across the four-node Genesis + Yerevan mesh; M7 fast-sync snapshot mechanism live; DEV-012 Phase B+C and M7 client-side handler carried into v1.0.1 hot-fix track)
-**Spec target:** Montana Protocol v35.25.1 + Montana Network v1.2.0 + Montana App v3.12.0 + Montana Egress v1.0.0 + Montana VPN Alliance v1.0.0 (2026-05-26)
+**Spec target:** Montana Protocol v35.25.1 + Montana Network v1.2.0 + Montana App v3.12.0 + Montana Egress v1.0.0 + Montana VPN Alliance v1.1.0 (2026-05-26)
 **Release tag:** v1.0.0 (2026-05-22) — first mainnet release
 **Spec paths:**
 - Protocol: `../Montana Protocol v35.25.1.md`
 - Network:  `../Montana Network v1.2.0.md`
 - Egress:   `../Montana Egress v1.0.0.md`
-- Alliance: `../Montana VPN Alliance v1.0.0.md`
+- Alliance: `../Montana VPN Alliance v1.1.0.md`
 - App:      `../Montana App v3.12.0.md`
 
 ## Policy

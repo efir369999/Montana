@@ -59,7 +59,7 @@ The protocol is specified as three layered documents — each independently audi
 | 2. Network | [`Montana Network v1.2.0.md`](Montana%20Network%20v1.2.0.md) | libp2p transport, Noise_PQ XX (production), Identity-Bound Tunnel, transport randomness, PeerRecord, mesh transport, sync protocols, network-layer threat model, KAT vectors |
 | 3. App | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | UI, wallet, messenger (Double Ratchet PQ), channels, contacts, profile, Junona AI agent, browser, premium, application-layer economy |
 | 4. Egress | [`Montana Egress v1.0.0.md`](Montana%20Egress%20v1.0.0.md) | clearnet egress over the mesh: entry/relay/exit roles, egress directory, manual/auto country selection, two-session architecture, exit policy, threat model |
-| 5. Alliance | [`Montana VPN Alliance v1.0.0.md`](Montana%20VPN%20Alliance%20v1.0.0.md) | federation pattern: universal-key membership, mutual reachability insurance, front-light/exit-heavy load model, resilience |
+| 5. Alliance | [`Montana VPN Alliance v1.1.0.md`](Montana%20VPN%20Alliance%20v1.1.0.md) | federation pattern: universal-key membership, mutual reachability insurance, front-light/exit-heavy load model, resilience |
 
 Layer dependency direction: Protocol (low) ← Network (mid) ← App (high). Each layer depends on layers below it; no upward dependency.
 
