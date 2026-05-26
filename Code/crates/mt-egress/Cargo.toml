@@ -1,0 +1,11 @@
+[package]
+name = "mt-egress"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mt-codec = { path = "../mt-codec" }
+mt-net = { path = "../mt-net" }
