@@ -1,0 +1,227 @@
+# F-CT-MONTANA-1 — Cache EVP_PKEY for SK lifetime in mt-crypto-native
+
+**Severity.** HIGH (audit finding `F-CT-MONTANA-1`).
+**Status.** Architectural change. In scope for v1.0.1 closure of `S-C1 / MONT-001`.
+**Closure path.** Independent CT-pass over `mt-crypto-native` per
+[`MAINNET-READINESS-v1.0.0.md §2.3`](../MAINNET-READINESS-v1.0.0.md).
+
+## Motivation
+
+The audit found that Montana's current FFI pattern bypasses OpenSSL's internal
+`CONSTTIME_SECRET` / `CONSTTIME_DECLASSIFY` annotations:
+
+1. `keypair_from_seed_mlkem(seed)` calls `EVP_PKEY_keygen` → internally
+   OpenSSL marks the secret-key polynomial as `CONSTTIME_SECRET`.
+2. Montana then extracts `OSSL_PKEY_PARAM_PRIV_KEY` to **raw bytes**.
+3. On every sign / decap call, Montana rebuilds the `EVP_PKEY*` from the raw
+   bytes via `EVP_PKEY_fromdata(KEYPAIR)`. This re-import path:
+   - hits `ossl_ml_kem_parse_private_key` (8 CT-relevant contexts in our valgrind run);
+   - hits `ml_dsa_key.c:485` (`memcmp(out->priv_encoding, sk, sk_len)` — real CT leak
+     because `sk` here is operator's secret material);
+   - hits `ml_dsa_key.c:277` (when `EVP_PKEY_eq` is invoked during fromdata).
+
+By **caching the `EVP_PKEY*` from the moment of keygen** through the entire
+process lifetime (or identity-file unlock lifetime), Montana avoids the
+re-import path entirely. Every sign / decap call after the first one operates
+on the already-initialised `EVP_PKEY` opaque handle — inside which OpenSSL's
+internal CONSTTIME annotations apply.
+
+## API change
+
+`mt-crypto-native` adds three new opaque-handle types:
+
+```c
+/* mt_crypto.h additions */
+
+typedef struct mt_mldsa_signing_key_st mt_mldsa_signing_key;
+typedef struct mt_mldsa_verify_key_st  mt_mldsa_verify_key;
+typedef struct mt_mlkem_decap_key_st   mt_mlkem_decap_key;
+
+/* Constructors take seed once, allocate & retain EVP_PKEY internally. */
+mt_mldsa_signing_key *mt_mldsa_signing_key_from_seed(const uint8_t seed[32]);
+void                  mt_mldsa_signing_key_free(mt_mldsa_signing_key *k);
+
+mt_mldsa_verify_key  *mt_mldsa_verify_key_from_public(const uint8_t pk[1952]);
+void                  mt_mldsa_verify_key_free(mt_mldsa_verify_key *k);
+
+mt_mlkem_decap_key   *mt_mlkem_decap_key_from_seed(const uint8_t seed[64]);
+void                  mt_mlkem_decap_key_free(mt_mlkem_decap_key *k);
+
+/* Hot-path operations now take opaque handles, NOT raw bytes. */
+int mt_mldsa_sign_with(const mt_mldsa_signing_key *k,
+                       const uint8_t *msg, size_t msg_len,
+                       uint8_t sig_out[3309]);
+
+int mt_mldsa_verify_with(const mt_mldsa_verify_key *k,
+                         const uint8_t *msg, size_t msg_len,
+                         const uint8_t sig[3309]);
+
+int mt_mlkem_decap_with(const mt_mlkem_decap_key *k,
+                        const uint8_t ct[1088], uint8_t ss_out[32]);
+```
+
+The old `mt_sign_mldsa(sk_bytes, msg, msg_len, sig_out)` API is **retained**
+as a thin compatibility shim — it constructs a transient `mt_mldsa_signing_key`,
+signs, frees. This keeps existing call sites working until they migrate.
+
+## Rust-side change (`crates/mt-crypto/src/lib.rs`)
+
+```diff
++use std::sync::Arc;
++
+ pub struct SecretKey(Box<[u8; SECRET_KEY_SIZE]>);
++
++/// Live ML-DSA-65 signing context. Wraps a long-lived `EVP_PKEY*` that
++/// was constructed by `mt_keypair_from_seed_mldsa`. Sign operations hit
++/// only the constant-time annotated paths inside OpenSSL.
++pub struct SigningContext {
++    handle: Arc<MtMldsaSigningKeyHandle>,
++}
++
++impl SigningContext {
++    pub fn from_seed(seed: &[u8; KEYPAIR_SEED_SIZE]) -> Result<Self, CryptoError> {
++        let handle = unsafe { mt_mldsa_signing_key_from_seed(seed.as_ptr()) };
++        if handle.is_null() { return Err(CryptoError::KeygenFailed); }
++        Ok(SigningContext { handle: Arc::new(MtMldsaSigningKeyHandle(handle)) })
++    }
++
++    pub fn sign(&self, msg: &[u8]) -> Result<Signature, CryptoError> {
++        let mut sig = [0u8; SIGNATURE_SIZE];
++        let r = unsafe {
++            mt_mldsa_sign_with(self.handle.0, msg.as_ptr(), msg.len(), sig.as_mut_ptr())
++        };
++        if r != MT_OK { return Err(CryptoError::from_code(r)); }
++        Ok(Signature(sig))
++    }
++}
++
++struct MtMldsaSigningKeyHandle(*mut mt_mldsa_signing_key);
++
++// SAFETY: the opaque handle is reference-counted via Arc; the underlying
++// EVP_PKEY is allocated by OpenSSL and is not Send-unsafe.
++unsafe impl Send for MtMldsaSigningKeyHandle {}
++unsafe impl Sync for MtMldsaSigningKeyHandle {}
++
++impl Drop for MtMldsaSigningKeyHandle {
++    fn drop(&mut self) {
++        unsafe { mt_mldsa_signing_key_free(self.0); }
++    }
++}
++
++extern "C" {
++    fn mt_mldsa_signing_key_from_seed(seed: *const u8) -> *mut mt_mldsa_signing_key;
++    fn mt_mldsa_signing_key_free(k: *mut mt_mldsa_signing_key);
++    fn mt_mldsa_sign_with(k: *const mt_mldsa_signing_key,
++                          msg: *const u8, msg_len: usize,
++                          sig_out: *mut u8) -> c_int;
++}
++#[repr(C)] pub struct mt_mldsa_signing_key { _private: [u8; 0] }
+```
+
+## C-side change (`crates/mt-crypto-native/csrc/mt_crypto.c`)
+
+```diff
++struct mt_mldsa_signing_key_st {
++    EVP_PKEY *pkey;       /* retained from EVP_PKEY_generate */
++};
++
++MT_EXPORT mt_mldsa_signing_key *mt_mldsa_signing_key_from_seed(
++    const uint8_t seed[MT_MLDSA65_SEED_SIZE]
++) {
++    if (seed == NULL) return NULL;
++    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_from_name(NULL, "ML-DSA-65", NULL);
++    if (ctx == NULL) return NULL;
++    if (EVP_PKEY_keygen_init(ctx) != 1) { EVP_PKEY_CTX_free(ctx); return NULL; }
++    OSSL_PARAM params[2];
++    params[0] = OSSL_PARAM_construct_octet_string(
++        OSSL_PKEY_PARAM_ML_DSA_SEED, (void*)seed, MT_MLDSA65_SEED_SIZE);
++    params[1] = OSSL_PARAM_construct_end();
++    if (EVP_PKEY_CTX_set_params(ctx, params) != 1) {
++        EVP_PKEY_CTX_free(ctx); return NULL;
++    }
++    EVP_PKEY *pkey = NULL;
++    if (EVP_PKEY_generate(ctx, &pkey) != 1 || pkey == NULL) {
++        EVP_PKEY_CTX_free(ctx); return NULL;
++    }
++    EVP_PKEY_CTX_free(ctx);
++    mt_mldsa_signing_key *k = OPENSSL_zalloc(sizeof(*k));
++    if (k == NULL) { EVP_PKEY_free(pkey); return NULL; }
++    k->pkey = pkey;
++    return k;
++}
++
++MT_EXPORT void mt_mldsa_signing_key_free(mt_mldsa_signing_key *k) {
++    if (k == NULL) return;
++    EVP_PKEY_free(k->pkey);  /* clears internal SK material via OpenSSL_clear_free */
++    OPENSSL_clear_free(k, sizeof(*k));
++}
++
++MT_EXPORT int mt_mldsa_sign_with(
++    const mt_mldsa_signing_key *k,
++    const uint8_t *msg, size_t msg_len,
++    uint8_t sig_out[MT_MLDSA65_SIGNATURE_SIZE]
++) {
++    if (k == NULL || k->pkey == NULL || sig_out == NULL
++        || (msg == NULL && msg_len != 0)) {
++        return MT_ERR_INVALID_INPUT;
++    }
++    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
++    if (md_ctx == NULL) return MT_ERR_OPENSSL_INIT;
++    int rc = MT_ERR_SIGN_FAILED;
++    OSSL_PARAM sig_params[2];
++    int deterministic = 1;
++    sig_params[0] = OSSL_PARAM_construct_int(
++        OSSL_SIGNATURE_PARAM_DETERMINISTIC, &deterministic);
++    sig_params[1] = OSSL_PARAM_construct_end();
++    if (EVP_DigestSignInit_ex(md_ctx, NULL, NULL, NULL, NULL, k->pkey, sig_params) != 1) {
++        goto cleanup;
++    }
++    size_t sig_len = MT_MLDSA65_SIGNATURE_SIZE;
++    if (EVP_DigestSign(md_ctx, sig_out, &sig_len, msg, msg_len) != 1) {
++        goto cleanup;
++    }
++    if (sig_len != MT_MLDSA65_SIGNATURE_SIZE) { rc = MT_ERR_SIGN_LENGTH_MISMATCH; goto cleanup; }
++    rc = MT_OK;
++cleanup:
++    EVP_MD_CTX_free(md_ctx);
++    return rc;
++}
+```
+
+## ML-KEM analogous
+
+The same pattern applies to `mt_mlkem_decap_key`. The `EVP_PKEY*` returned by
+`EVP_PKEY_generate` for ML-KEM-768 is held for the lifetime of the identity;
+every decap call hits `EVP_PKEY_decapsulate(k->pkey, ...)` without going
+through `EVP_PKEY_fromdata`.
+
+This eliminates the 8 CT-violation contexts in `ossl_ml_kem_parse_private_key`
+we observed in the valgrind run (§11.3.6 of the audit report).
+
+## What happens to the existing `SecretKey` type
+
+`SecretKey(Box<[u8; 4032]>)` is retained for:
+- mnemonic-recovery flow (regenerate from seed, then convert to `SigningContext`);
+- identity-file persistence (load 4032 bytes from `~/.montana/identity.bin`).
+
+After loading, the application **immediately** constructs `SigningContext::from_seed(...)`
+and drops the raw `SecretKey`. The hot path (consensus signing, libp2p Noise handshake)
+holds only `SigningContext`.
+
+## Verification plan
+
+1. `cargo test -p mt-crypto --test security_invariants` — 13 invariants must still pass;
+   add new invariant `signing_context_is_not_clone`.
+2. `cargo test -p mt-crypto-native --test nist_acvp_kat` — all 3 NIST KATs must
+   pass byte-exact through the new `mt_mldsa_sign_with` path.
+3. Re-run the ctgrind from §11.3.6 with the new flow:
+   ```bash
+   valgrind --tool=memcheck --track-origins=yes /tmp/ctgrind_mlkem_cached
+   ```
+   Expected: **0 errors** in `ossl_ml_kem_parse_private_key` (path never hit).
+
+## Estimated effort
+
+~ 12 hours of focused work: 4h for the C API, 3h for the Rust wrapper, 2h for
+migrating call sites in `mt-mnemonic`, `montana-node`, `mt-noise-pq` to use
+`SigningContext` instead of raw `SecretKey`, 3h for testing + ctgrind re-run.

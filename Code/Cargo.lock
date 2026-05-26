@@ -1859,6 +1859,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mt-egress"
+version = "1.0.0"
+dependencies = [
+ "mt-codec",
+ "mt-net",
+]
+
+[[package]]
 name = "mt-entry"
 version = "1.0.0"
 dependencies = [

@@ -1,0 +1,132 @@
+# S-N1 — Post-decap transcript binding for Noise_PQ XX handshake
+
+**Severity.** HIGH (audit finding `S-N1`).
+**Status.** Wire-format change. Bumps protocol name from
+`/montana/noise-pq-xx/1.0.0` to `/montana/noise-pq-xx/1.1.0`. KAT-vectors regenerate.
+**Closure path.** Deferred to v1.0.1 per maintainer response
+[`audit-response-2026-05-22-claude-opus-4-7-1m.md`](../audit-response-2026-05-22-claude-opus-4-7-1m.md).
+
+## Motivation
+
+Per Noise_PQ literature (Hülsing/Stebila, Kyber-Noise drafts) the ML-DSA-65 identity
+signature in msg2/msg3 SHOULD cover the **post-decapsulation** transcript hash, so the
+signer commits to the actual shared secret derived from `ML-KEM-768.Decap(ke_sk, ct)`,
+not only to the ciphertext.
+
+Currently, the v1.0.0 implementation
+([`Code/crates/mt-noise-pq/src/xx_handshake.rs`](../../Code/crates/mt-noise-pq/src/xx_handshake.rs))
+hashes only the ciphertexts (`ct_i`, `ct_r`) and the public keys; the shared secrets
+`ss_i` / `ss_r` are mixed into the AEAD master derivation in `derive_session()` but are
+NOT under the ML-DSA-65 signature. ML-KEM-768 IND-CCA2 + implicit-rejection (FIPS 203 §6.3)
+makes the binding `ct → ss` non-malleable, so an immediate attack path is not visible —
+but the construction deviates from current PQ-Noise pattern and an external cryptographer
+will flag it.
+
+## Diff (against `crates/mt-noise-pq/src/xx_handshake.rs` at commit `14a8dac`)
+
+```diff
+--- a/Code/crates/mt-noise-pq/src/xx_handshake.rs
++++ b/Code/crates/mt-noise-pq/src/xx_handshake.rs
+@@ -185,6 +185,7 @@ pub fn responder_send_msg2(
+     transcript.extend_from_slice(ke_pk_r.as_bytes());
+     transcript.extend_from_slice(ct_i.as_bytes());
+     transcript.extend_from_slice(state.rs_id_pk.as_bytes());
++    transcript.extend_from_slice(ss_i_wrapped.as_bytes());      // S-N1: bind post-decap ss_i
+
+     let sig_input: [u8; 32] = Sha256::new()
+         .chain_update(SIG_DOMAIN_RESPONDER)
+@@ -202,6 +203,9 @@ pub fn responder_send_msg2(
+     wire.extend_from_slice(state.rs_id_pk.as_bytes());
+     wire.extend_from_slice(sig_r.as_bytes());
+
++    // Trim ss_i_wrapped from transcript before storing — it is not on the wire.
++    transcript.truncate(transcript.len() - 32);
++
+     transcript.extend_from_slice(sig_r.as_bytes());
+
+     Ok((
+@@ -255,6 +259,7 @@ pub fn initiator_receive_msg2(
+     transcript.extend_from_slice(ke_pk_r.as_bytes());
+     transcript.extend_from_slice(ct_i.as_bytes());
+     transcript.extend_from_slice(rs_id_pk.as_bytes());
++    transcript.extend_from_slice(ss_i_wrapped.as_bytes());      // S-N1: bind post-decap ss_i
+
+     let sig_input: [u8; 32] = Sha256::new()
+         .chain_update(SIG_DOMAIN_RESPONDER)
+@@ -266,6 +271,8 @@ pub fn initiator_receive_msg2(
+         return Err(NoisePqError::BadResponderSignature);
+     }
+
++    transcript.truncate(transcript.len() - 32);                 // drop ss_i (off-wire)
++
+     transcript.extend_from_slice(sig_r.as_bytes());
+
+     Ok(InitiatorAfterMsg2 {
+@@ -302,6 +309,7 @@ pub fn initiator_send_msg3(
+
+     transcript_through_msg2.extend_from_slice(ct_r.as_bytes());
+     transcript_through_msg2.extend_from_slice(is_id_pk.as_bytes());
++    transcript_through_msg2.extend_from_slice(&ss_r_bytes);     // S-N1: bind post-encap ss_r
+
+     let sig_input: [u8; 32] = Sha256::new()
+         .chain_update(SIG_DOMAIN_INITIATOR)
+@@ -311,6 +319,8 @@ pub fn initiator_send_msg3(
+
+     let sig_i = sign(&is_id_sk, &sig_input)?;
+
++    transcript_through_msg2.truncate(transcript_through_msg2.len() - 32);  // drop ss_r off-wire
++
+     transcript_through_msg2.extend_from_slice(sig_i.as_bytes());
+
+     let mut wire = Vec::with_capacity(XX_MSG3_SIZE);
+@@ -355,6 +365,7 @@ pub fn responder_receive_msg3(
+     let mut transcript = state.transcript_through_msg2;
+     transcript.extend_from_slice(ct_r.as_bytes());
+     transcript.extend_from_slice(is_id_pk.as_bytes());
++    transcript.extend_from_slice(&ss_r_bytes);                  // S-N1: bind post-decap ss_r
+
+     let sig_input: [u8; 32] = Sha256::new()
+         .chain_update(SIG_DOMAIN_INITIATOR)
+@@ -366,6 +377,8 @@ pub fn responder_receive_msg3(
+         return Err(NoisePqError::BadInitiatorSignature);
+     }
+
++    transcript.truncate(transcript.len() - 32);                 // drop ss_r off-wire
++
+     transcript.extend_from_slice(sig_i.as_bytes());
+
+     let session = derive_session(&state.ss_i.as_bytes(), &ss_r_bytes, &transcript, is_id_pk)?;
+```
+
+## Companion changes
+
+1. **Protocol name bump** in
+   [`crates/mt-noise-pq/src/xx_libp2p_upgrade.rs`](../../Code/crates/mt-noise-pq/src/xx_libp2p_upgrade.rs):
+   ```diff
+   -pub const XX_PROTOCOL_NAME: &str = "/montana/noise-pq-xx/1.0.0";
+   +pub const XX_PROTOCOL_NAME: &str = "/montana/noise-pq-xx/1.1.0";
+   ```
+   v1.0.0 nodes will reject `/1.1.0` upgrade. The wire format is incompatible —
+   `ss` bytes go into the signature but NOT onto the wire, so v1.0.0 and v1.1.0
+   nodes derive different `sig_input` values. Coordinated upgrade across the
+   live Genesis cohort + Yerevan operator is required.
+
+2. **KAT vectors regenerate**:
+   - `crates/mt-noise-pq/tests/kat.rs` — re-record `msg2 / msg3 / sig_r / sig_i / sk_i_to_r / sk_r_to_i`
+     for the deterministic seed in the test.
+   - All three tests in `crates/mt-noise-pq/tests/loopback.rs`,
+     `libp2p_upgrade_e2e.rs`, `e2e_handshake_plus_stream.rs` continue to pass
+     mechanically (they round-trip the handshake — only the wire bytes change).
+
+3. **`crates/mt-net-transport/tests/three_peer_e2e.rs`** continues to pass —
+   the swarm negotiates `/1.1.0` if both sides advertise it.
+
+## Verification plan (post-patch)
+
+- `cargo test -p mt-noise-pq --release` — all 14 tests pass with regen-ed KAT.
+- `cargo test -p mt-net-transport --release` — three-peer e2e passes.
+- Tampering tests `xx_tamper_msg2_signature` / `xx_tamper_msg3_signature` continue
+  to detect forgery because the transcript hash includes more material, not less.
+- Cross-version handshake (`v1.0.0 ↔ v1.1.0`): MUST fail because `sig_input`
+  differs by 32 bytes. Add `crates/mt-noise-pq/tests/cross_version_rejection.rs`
+  to lock in this fact.
