@@ -41,6 +41,16 @@ extern "C" fn shutdown_handler(_: libc::c_int) {
 // lag snapshot delivery is bandwidth-bound and cheaper than apply_proposal loop.
 const FAST_SYNC_LAG_THRESHOLD: u64 = 1000;
 
+// Operational override of the fast-sync lag threshold via env. The threshold is
+// network-layer (not consensus); operators tune it for deployment/observation.
+// Empty, unparsable, or zero values fall back to the production default.
+fn resolve_fast_sync_lag_threshold(override_val: Option<String>) -> u64 {
+    override_val
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|&t| t > 0)
+        .unwrap_or(FAST_SYNC_LAG_THRESHOLD)
+}
+
 pub struct StartArgs {
     pub data_dir: Option<PathBuf>,
     pub max_windows: Option<u64>,
@@ -162,6 +172,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         .map_err(|e| NodeError::InvalidArguments(format!("FsStore::open: {e:?}")))?;
 
     // M7 fast-sync: held across loop iterations while a snapshot is in flight.
+    let fast_sync_lag_threshold =
+        resolve_fast_sync_lag_threshold(std::env::var("MONTANA_FASTSYNC_LAG_THRESHOLD").ok());
+    println!("fast-sync lag    : порог {fast_sync_lag_threshold} окон");
     let mut fast_sync: Option<mt_sync::FastSyncClient> = None;
 
     loop {
@@ -220,7 +233,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         // proposer already confirmed as bootstrap above. The
                         // anchor-authenticity gate (Proposal signature) is M10 —
                         // identical to the window-by-window replay path.
-                        if window_index.saturating_sub(current) > FAST_SYNC_LAG_THRESHOLD {
+                        if window_index.saturating_sub(current) > fast_sync_lag_threshold {
                             let mut anchor_root = [0u8; 32];
                             anchor_root.copy_from_slice(&msg.payload[172..204]);
                             let mut payload = Vec::new();
@@ -236,7 +249,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             )) {
                                 Ok(()) => {
                                     eprintln!(
-                                        "[m7] {} windows behind (> {FAST_SYNC_LAG_THRESHOLD}) \u{2192} fast-sync anchored at window {window_index}",
+                                        "[m7] {} windows behind (> {fast_sync_lag_threshold}) \u{2192} fast-sync anchored at window {window_index}",
                                         window_index.saturating_sub(current)
                                     );
                                     fast_sync = Some(mt_sync::FastSyncClient::new(
@@ -987,4 +1000,20 @@ fn spawn_network_thread(
 pub struct NetworkHandle {
     pub broadcast_tx: tokio::sync::mpsc::UnboundedSender<mt_net::ProtocolMessage>,
     pub incoming_rx: tokio::sync::mpsc::UnboundedReceiver<mt_net::ProtocolMessage>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_fast_sync_lag_threshold as resolve;
+    use super::FAST_SYNC_LAG_THRESHOLD as DEFAULT;
+
+    #[test]
+    fn lag_threshold_override_resolution() {
+        assert_eq!(resolve(None), DEFAULT);
+        assert_eq!(resolve(Some("5".to_string())), 5);
+        assert_eq!(resolve(Some("  7 ".to_string())), 7);
+        assert_eq!(resolve(Some("0".to_string())), DEFAULT);
+        assert_eq!(resolve(Some("abc".to_string())), DEFAULT);
+        assert_eq!(resolve(Some(String::new())), DEFAULT);
+    }
 }
