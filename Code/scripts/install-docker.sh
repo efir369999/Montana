@@ -64,15 +64,6 @@ WIPE_LEGACY="${MONTANA_WIPE_LEGACY:-1}"
 ORCH_URL="${MONTANA_ORCH_URL:-https://montana.quest/vpn/node}"
 SKIP_VERIFY="${MONTANA_SKIP_VERIFY:-0}"
 
-# Built-in orchestrator token — every Montana node auto-registers on install.
-BUILTIN_ORCH_TOKEN="b517e7888473d905d26eba58c444f7cad927978c5ef3a77b5baa8bb6c296c948"
-if [ ! -s "$ORCH_TOKEN_FILE" ]; then
-  EFFECTIVE_TOKEN="${MONTANA_ORCH_TOKEN:-$BUILTIN_ORCH_TOKEN}"
-  mkdir -p "$VPN_DIR" && chmod 0700 "$VPN_DIR"
-  install -m 0600 /dev/stdin "$ORCH_TOKEN_FILE" <<<"$EFFECTIVE_TOKEN"
-  log "orch-token written (${MONTANA_ORCH_TOKEN:+env override}${MONTANA_ORCH_TOKEN:-built-in})"
-fi
-
 # Universal Montana VPN client metadata — public, distributed in VLESS subs.
 UNIVERSAL_UUID="e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d"
 UNIVERSAL_SID="302805bc0c25e504"
@@ -94,6 +85,15 @@ retry() {
   done
   return 1
 }
+
+# Built-in orchestrator token — every Montana node auto-registers on install.
+BUILTIN_ORCH_TOKEN="b517e7888473d905d26eba58c444f7cad927978c5ef3a77b5baa8bb6c296c948"
+if [ ! -s "$ORCH_TOKEN_FILE" ]; then
+  EFFECTIVE_TOKEN="${MONTANA_ORCH_TOKEN:-$BUILTIN_ORCH_TOKEN}"
+  mkdir -p "$VPN_DIR" && chmod 0700 "$VPN_DIR"
+  install -m 0600 /dev/stdin "$ORCH_TOKEN_FILE" <<<"$EFFECTIVE_TOKEN"
+  log "orch-token written (${MONTANA_ORCH_TOKEN:+env override}${MONTANA_ORCH_TOKEN:-built-in})"
+fi
 
 # ── 1. preconditions ─────────────────────────────────────────────────────────
 [ "$(id -u)" = "0" ] || die "root privileges required"
