@@ -64,6 +64,13 @@ WIPE_LEGACY="${MONTANA_WIPE_LEGACY:-1}"
 ORCH_URL="${MONTANA_ORCH_URL:-https://montana.quest/vpn/node}"
 SKIP_VERIFY="${MONTANA_SKIP_VERIFY:-0}"
 
+# Allow passing orch-token via env (alternative to pre-staging the file).
+if [ -n "${MONTANA_ORCH_TOKEN:-}" ] && [ ! -s "$ORCH_TOKEN_FILE" ]; then
+  mkdir -p "$VPN_DIR" && chmod 0700 "$VPN_DIR"
+  install -m 0600 /dev/stdin "$ORCH_TOKEN_FILE" <<<"$MONTANA_ORCH_TOKEN"
+  log "orch-token written from MONTANA_ORCH_TOKEN env"
+fi
+
 # Universal Montana VPN client metadata — public, distributed in VLESS subs.
 UNIVERSAL_UUID="e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d"
 UNIVERSAL_SID="302805bc0c25e504"
@@ -296,7 +303,8 @@ if [ -s "$ORCH_TOKEN_FILE" ] && [ "$VPN_MODE" = "universal" ] && [ -n "$PUBLIC_I
     CEN="$(printf '%s' "$ORCH_RESP" | jq -r '.cascade.enabled // empty' 2>/dev/null || true)"
     CRE="$(printf '%s' "$ORCH_RESP" | jq -r '.cascade.reason // empty' 2>/dev/null || true)"
     if [ "$MR" = "true" ]; then log "Moscow cross-check: reachable (TCP :443, RTT ${RTT}ms)"; else log "Moscow cross-check: NOT reachable from Moscow datacenter"; fi
-    if [ "$CEN" = "true" ]; then log "Cascade: ENABLED via de.montana.quest (reason: $CRE) — clients enter at the front, traffic exits on THIS node"; else log "Cascade: not needed — direct connection"; fi
+    CFRONTS="$(printf '%s' "$ORCH_RESP" | jq -r '(.cascade.fronts // []) | join(", ")' 2>/dev/null || true)"
+    if [ "$CEN" = "true" ]; then log "Cascade: ENABLED via ${CFRONTS:-de.montana.quest} (reason: $CRE) — clients enter at any of 5 fronts, traffic exits on THIS node"; else log "Cascade: not needed — direct connection"; fi
   fi
 fi
 
