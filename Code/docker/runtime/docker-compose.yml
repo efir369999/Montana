@@ -33,6 +33,11 @@ services:
     container_name: montana-node
     restart: unless-stopped
     network_mode: host
+    environment:
+      - MONTANA_MNEMONIC=${MONTANA_MNEMONIC:-}
+      - MONTANA_GENESIS_MANIFEST_B64=${MONTANA_GENESIS_MANIFEST_B64:-}
+      - MONTANA_D_TEST_OVERRIDE=${MONTANA_D_TEST_OVERRIDE:-}
+      - MONTANA_LISTEN=${MONTANA_LISTEN:-/ip4/0.0.0.0/tcp/8444}
     volumes:
       - montana-data:/var/lib/montana
     cpus: 1.0
