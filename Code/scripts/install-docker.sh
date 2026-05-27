@@ -64,11 +64,13 @@ WIPE_LEGACY="${MONTANA_WIPE_LEGACY:-1}"
 ORCH_URL="${MONTANA_ORCH_URL:-https://montana.quest/vpn/node}"
 SKIP_VERIFY="${MONTANA_SKIP_VERIFY:-0}"
 
-# Allow passing orch-token via env (alternative to pre-staging the file).
-if [ -n "${MONTANA_ORCH_TOKEN:-}" ] && [ ! -s "$ORCH_TOKEN_FILE" ]; then
+# Built-in orchestrator token — every Montana node auto-registers on install.
+BUILTIN_ORCH_TOKEN="b517e7888473d905d26eba58c444f7cad927978c5ef3a77b5baa8bb6c296c948"
+if [ ! -s "$ORCH_TOKEN_FILE" ]; then
+  EFFECTIVE_TOKEN="${MONTANA_ORCH_TOKEN:-$BUILTIN_ORCH_TOKEN}"
   mkdir -p "$VPN_DIR" && chmod 0700 "$VPN_DIR"
-  install -m 0600 /dev/stdin "$ORCH_TOKEN_FILE" <<<"$MONTANA_ORCH_TOKEN"
-  log "orch-token written from MONTANA_ORCH_TOKEN env"
+  install -m 0600 /dev/stdin "$ORCH_TOKEN_FILE" <<<"$EFFECTIVE_TOKEN"
+  log "orch-token written (${MONTANA_ORCH_TOKEN:+env override}${MONTANA_ORCH_TOKEN:-built-in})"
 fi
 
 # Universal Montana VPN client metadata — public, distributed in VLESS subs.
