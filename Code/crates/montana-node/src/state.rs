@@ -140,6 +140,29 @@ impl LocalState {
             .map_err(|e| NodeError::InvalidArguments(format!("save candidates: {e:?}")))?;
         Ok(())
     }
+
+    // Применение проверенного fast-sync снимка: вызывающая сторона передаёт
+    // TypedTables только после того как FastSyncClient::finalize сверил
+    // reconstructed state_root с доверенным anchor root окна W. Здесь снимок
+    // уже доверенный — заменяем три consensus-таблицы и фиксируем
+    // meta_last_cemented = W (точка восстановления после перезапуска).
+    pub fn apply_fast_sync(
+        &mut self,
+        tables: mt_sync::snapshot::TypedTables,
+        data_dir: &Path,
+        anchor_window: u64,
+    ) -> Result<(), NodeError> {
+        self.accounts = tables.accounts;
+        self.nodes = tables.nodes;
+        self.candidates = tables.candidates;
+        self.save(data_dir)?;
+        let store = FsStore::open(data_dir)
+            .map_err(|e| NodeError::InvalidArguments(format!("открытие хранилища: {e:?}")))?;
+        store
+            .save_meta_last_cemented(anchor_window)
+            .map_err(|e| NodeError::InvalidArguments(format!("save_meta_last_cemented: {e:?}")))?;
+        Ok(())
+    }
 }
 
 // SPEC DEVIATION DEV-010 (closed 2026-05-02 в M9 Phase 1):
@@ -147,3 +170,71 @@ impl LocalState {
 // (а не из operator's own pk). Это унифицирует bootstrap entry между всеми
 // узлами cohort-а — необходимо для apply_proposal validation на receivers.
 // Inline в LocalState::bootstrap(); helper удалён.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mt_crypto::PUBLIC_KEY_SIZE;
+    use mt_state::{AccountTable, CandidatePool, NodeTable};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn tempdir() -> PathBuf {
+        let mut p = std::env::temp_dir();
+        let mut buf = [0u8; 8];
+        getrandom::getrandom(&mut buf).unwrap();
+        p.push(format!(
+            "montana-state-test-{:016x}",
+            u64::from_le_bytes(buf)
+        ));
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn sample_account(seed: u8) -> AccountRecord {
+        AccountRecord {
+            account_id: [seed; 32],
+            balance: 500,
+            suite_id: 1,
+            is_node_operator: false,
+            frontier_hash: [seed; 32],
+            op_height: 0,
+            account_chain_length: 0,
+            account_chain_length_snapshot: 0,
+            current_pubkey: [seed; PUBLIC_KEY_SIZE],
+            creation_window: 0,
+            last_op_window: 0,
+            last_activation_window: 0,
+        }
+    }
+
+    #[test]
+    fn apply_fast_sync_replaces_tables_and_persists_anchor() {
+        let dir = tempdir();
+        let mut state = LocalState {
+            accounts: AccountTable::new(),
+            nodes: NodeTable::new(),
+            candidates: CandidatePool::new(),
+        };
+
+        let mut accounts = AccountTable::new();
+        accounts.insert(sample_account(0xAB));
+        accounts.insert(sample_account(0xCD));
+        let tables = mt_sync::snapshot::TypedTables {
+            accounts,
+            nodes: NodeTable::new(),
+            candidates: CandidatePool::new(),
+        };
+
+        state.apply_fast_sync(tables, &dir, 75_850).unwrap();
+
+        assert_eq!(state.accounts.len(), 2);
+
+        let store = FsStore::open(&dir).unwrap();
+        assert_eq!(store.load_meta_last_cemented().unwrap(), Some(75_850));
+        assert_eq!(store.load_account_table().unwrap().len(), 2);
+        assert!(store.load_node_table().unwrap().is_empty());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+}
