@@ -1,6 +1,6 @@
 # Montana — Network Layer Specification
 
-**Version:** 1.2.0 (2026-05-26)
+**Version:** 1.3.0 (2026-05-27)
 
 **Layer:** Network — sits between Protocol (low) and App (high).
 
@@ -458,6 +458,17 @@ When selecting an entry point a node consults the map for its own `vantage_class
 A single reported observation does not move the map: a `(vantage_class, target_ref, profile)` triple is treated as reachable only when corroborated by observations from at least `REACHABILITY_QUORUM = 3` distinct /16 source groups — the diversity unit of the outgoing-connection constraints. An adversary reporting false reachability from one position therefore cannot steer honest nodes toward a dead or hostile entry: honest nodes require independent corroboration across network positions and ultimately verify by direct IBT probe.
 
 Reachability sensing, the map, and steering are local network-stack behaviour on the node's own clock and sit outside the scope of consensus state.
+
+#### Gateway entry-point failover
+
+Where clients reach the network through a managed gateway rather than by direct peer connection, the same reachability discipline governs the gateway tier. A client holds a single stable entry identifier; the network binds that identifier to the currently reachable gateway and rebinds it on failure, so the client never reconfigures.
+
+An ordered set of gateway fronts backs the identifier. Election is deterministic: the highest-priority front whose transport handshake currently succeeds owns the identifier. Liveness is decided by a completed transport handshake of the deployed obfuscation profile, not by a bare TCP or ICMP probe — a port that accepts a connection but does not complete the handshake is not a live gateway, so an unrelated service answering on the same port is never mistaken for a working front. A front is demoted only after a corroborated run of failed handshakes (hysteresis) and reclaims its priority on recovery; rebinding moves the same identifier between fronts that present identical client-facing transport parameters, so sessions migrate with no client-visible change.
+
+External exposure is minimized as a censorship countermeasure. Only the currently bound entry is externally resolvable; reserve fronts and exit relays are not enumerable from outside and appear at the entry identifier only when promoted. An adversary who resolves the identifier learns exactly one address — blocking it triggers rebinding to a reserve for which the adversary holds no prior address, rather than collapsing a pre-enumerated fleet. Exit relays are reached only through a front and are never client-facing, so the client-visible surface is one address at a time regardless of fleet size.
+
+By preference the bound entry is a single address reachable inside the client's own jurisdiction: a domestic first hop minimizes the connection signature and relocates the cross-border segment to the gateway-to-exit link, which carries datacenter-grade capacity under the same handshake obfuscation. The gateway tier is deployment infrastructure: it enters no state root and forms no consensus state.
+
 
 ### Dandelion++ (sender anonymity)
 

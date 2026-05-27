@@ -410,14 +410,19 @@ async fn handler_balance(
 }
 
 async fn handler_sub() -> impl IntoResponse {
-    let link = "vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@cdn.montana.quest:443\
-                ?flow=xtls-rprx-vision&type=tcp&headerType=none&security=reality\
-                &fp=chrome&sni=www.googletagmanager.com\
-                &pbk=EkTs2aGKnFNgFZ0f7wgft2sJp3VjwFQqIrwkZKM4gD8\
-                &sid=302805bc0c25e504\
-                #%C9%88%20%D0%9C%D0%BE%D0%BD%D1%82%D0%B0%D0%BD%D0%B0";
+    let reality = "type=tcp&headerType=none&security=reality                   &fp=chrome&sni=www.googletagmanager.com                   &pbk=EkTs2aGKnFNgFZ0f7wgft2sJp3VjwFQqIrwkZKM4gD8                   &sid=302805bc0c25e504";
+    let entry = "entry.montana.quest:443";
+    let links = [
+        format!("vless://094f9073-aff0-4c07-a4af-6ca4c924f6a9@{entry}?{reality}#%F0%9F%87%AB%F0%9F%87%AE%20%D0%A5%D0%B5%D0%BB%D1%8C%D1%81%D0%B8%D0%BD%D0%BA%D0%B8"),
+        format!("vless://75e281f1-b702-5eb9-ba5c-8a5d38fa3c31@{entry}?{reality}#%F0%9F%87%A9%F0%9F%87%AA%20%D0%A4%D1%80%D0%B0%D0%BD%D0%BA%D1%84%D1%83%D1%80%D1%82"),
+        format!("vless://43ba0c0e-c1e3-4e30-8ae8-c2e68d24d7c7@{entry}?{reality}#%F0%9F%87%A6%F0%9F%87%B2%20%D0%95%D1%80%D0%B5%D0%B2%D0%B0%D0%BD"),
+        format!("vless://fc8a174d-f42b-4945-8548-ab5c9f448f81@{entry}?{reality}#%F0%9F%87%B1%F0%9F%87%B9%20%D0%92%D0%B8%D0%BB%D1%8C%D0%BD%D1%8E%D1%81"),
+        format!("vless://dad79315-0b80-5eca-9703-afee839e0131@{entry}?{reality}#%F0%9F%87%A8%F0%9F%87%BE%20%D0%9D%D0%B8%D0%BA%D0%BE%D1%81%D0%B8%D1%8F"),
+        format!("vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@{entry}?flow=xtls-rprx-vision&{reality}#%C9%88%20%D0%9C%D0%BE%D0%BD%D1%82%D0%B0%D0%BD%D0%B0"),
+    ];
+    let body = links.join("\n");
     use base64::Engine;
-    let enc = base64::engine::general_purpose::STANDARD.encode(link.as_bytes());
+    let enc = base64::engine::general_purpose::STANDARD.encode(body.as_bytes());
     (
         [
             ("content-type", "text/plain; charset=utf-8"),
