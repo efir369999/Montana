@@ -19,10 +19,12 @@
 //! over the existing Noise_PQ XX session — bounded by network bandwidth,
 //! not by CPU iteration count.
 
+pub mod client;
 pub mod request;
 pub mod response;
 pub mod snapshot;
 
+pub use client::{AcceptOutcome, FastSyncClient, FastSyncClientError};
 pub use request::FastSyncRequest;
 pub use response::{FastSyncChunk, FastSyncResponse, FastSyncTableId};
 pub use snapshot::{Snapshot, SnapshotError, SnapshotVerifier};
