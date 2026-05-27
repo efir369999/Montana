@@ -297,7 +297,14 @@ if [ -s "$ORCH_TOKEN_FILE" ] && [ "$VPN_MODE" = "universal" ] && [ -n "$PUBLIC_I
     --arg hosting "$HOSTING" --arg label "$LABEL" --argjson lat "$LAT" --argjson lon "$LON" \
     --arg pbk "$PBK" --arg uuid "$UUID" --arg sid "$SID" --arg secret "$TOKEN" \
     '{alias:$alias,ip:$ip,country:$country,city:$city,hosting:$hosting,label:$label,coords:[$lat,$lon],reality_pbk:$pbk,reality_uuid:$uuid,reality_sid:$sid,secret:$secret}')
-  ORCH_RESP="$(curl -sk --max-time 20 -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$ORCH_URL/register" || true)"
+  for _attempt in 1 2 3; do
+    ORCH_RESP="$(curl -sk --max-time 20 -X POST -H 'Content-Type: application/json' -d "$PAYLOAD" "$ORCH_URL/register" 2>/dev/null || true)"
+    if [ -n "$ORCH_RESP" ] && printf '%s' "$ORCH_RESP" | jq -e '.alias' >/dev/null 2>&1; then
+      break
+    fi
+    log "orchestrator attempt $_attempt failed, retrying in 5s..."
+    sleep 5
+  done
   log "orchestrator response: $ORCH_RESP"
   if command -v jq >/dev/null 2>&1 && [ -n "$ORCH_RESP" ]; then
     MR="$(printf '%s' "$ORCH_RESP" | jq -r '.moscow_reachable // empty' 2>/dev/null || true)"
