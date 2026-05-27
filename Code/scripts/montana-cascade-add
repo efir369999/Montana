@@ -103,7 +103,10 @@ def main():
            "front_to_backend": front_to_backend, "changed": changed, "restarted": False}
     if changed:
         ts = time.strftime("%Y%m%d-%H%M%S"); bak = cfg_path + ".bak-" + ts
-        shutil.copy2(cfg_path, bak); tmp = cfg_path + ".new"
+        shutil.copy2(cfg_path, bak)
+        # xray determines format by file extension — tmp must end with .json
+        tmp_dir = os.path.dirname(cfg_path)
+        tmp = os.path.join(tmp_dir, f"cascade-test-{ts}.json")
         json.dump(cfg, open(tmp, "w"), indent=2, ensure_ascii=False)
 
         if xray_type == "native":
