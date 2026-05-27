@@ -9,6 +9,7 @@
 #   MONTANA_MNEMONIC               fixed identity (so a test manifest can pre-list this node)
 #   MONTANA_GENESIS_MANIFEST_B64   base64 of a custom genesis manifest (test cohort)
 #   MONTANA_D_TEST_OVERRIDE        small D → fast windows → fast admission VDF
+#   MONTANA_FASTSYNC_LAG_THRESHOLD lower lag threshold → observe fast-sync on a young chain
 
 set -eu
 
@@ -50,7 +51,13 @@ if [ -n "${MONTANA_D_TEST_OVERRIDE:-}" ]; then
   echo "[entrypoint] TEST MODE: $DTEST"
 fi
 
-exec runuser -u montana -- /usr/local/bin/montana-node start \
+FASTSYNC_ENV=""
+if [ -n "${MONTANA_FASTSYNC_LAG_THRESHOLD:-}" ]; then
+  FASTSYNC_ENV="MONTANA_FASTSYNC_LAG_THRESHOLD=$MONTANA_FASTSYNC_LAG_THRESHOLD"
+  echo "[entrypoint] fast-sync lag threshold override: $MONTANA_FASTSYNC_LAG_THRESHOLD"
+fi
+
+exec runuser -u montana -- env $FASTSYNC_ENV /usr/local/bin/montana-node start \
   --data-dir "$DATA_DIR" \
   --listen "$LISTEN" \
   --genesis-manifest "$MANIFEST" \
