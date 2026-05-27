@@ -36,10 +36,16 @@ pub struct ExitPolicy {
 
 impl ExitPolicy {
     pub fn default_allow() -> Self {
-        ExitPolicy { default_allow: true, port_exceptions: BTreeSet::new() }
+        ExitPolicy {
+            default_allow: true,
+            port_exceptions: BTreeSet::new(),
+        }
     }
     pub fn default_deny() -> Self {
-        ExitPolicy { default_allow: false, port_exceptions: BTreeSet::new() }
+        ExitPolicy {
+            default_allow: false,
+            port_exceptions: BTreeSet::new(),
+        }
     }
     pub fn with_exception(mut self, port: u16) -> Self {
         self.port_exceptions.insert(port);
@@ -77,7 +83,11 @@ pub struct ExitSession {
 
 impl ExitSession {
     pub fn new(policy: ExitPolicy) -> Self {
-        ExitSession { authed: false, streams: BTreeSet::new(), policy }
+        ExitSession {
+            authed: false,
+            streams: BTreeSet::new(),
+            policy,
+        }
     }
 
     /// Mark the session authenticated. The caller invokes this only after
@@ -159,7 +169,10 @@ mod tests {
     fn auth_then_open_allowed_port() {
         let mut s = ExitSession::new(ExitPolicy::default_allow());
         s.authenticate();
-        assert_eq!(s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 443), Ok(OpenOutcome::Open));
+        assert_eq!(
+            s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 443),
+            Ok(OpenOutcome::Open)
+        );
         assert!(s.has_stream(1));
         assert_eq!(s.open_stream_count(), 1);
     }
@@ -168,17 +181,29 @@ mod tests {
     fn policy_default_allow_denies_listed_port() {
         let mut s = ExitSession::new(ExitPolicy::default_allow().with_exception(25));
         s.authenticate();
-        assert_eq!(s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 25), Ok(OpenOutcome::RefusedByPolicy));
+        assert_eq!(
+            s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 25),
+            Ok(OpenOutcome::RefusedByPolicy)
+        );
         assert!(!s.has_stream(1));
-        assert_eq!(s.handle_open(2, &EgressAddr::V4([1, 1, 1, 1]), 443), Ok(OpenOutcome::Open));
+        assert_eq!(
+            s.handle_open(2, &EgressAddr::V4([1, 1, 1, 1]), 443),
+            Ok(OpenOutcome::Open)
+        );
     }
 
     #[test]
     fn policy_default_deny_allows_only_listed() {
         let mut s = ExitSession::new(ExitPolicy::default_deny().with_exception(443));
         s.authenticate();
-        assert_eq!(s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 80), Ok(OpenOutcome::RefusedByPolicy));
-        assert_eq!(s.handle_open(2, &EgressAddr::V4([1, 1, 1, 1]), 443), Ok(OpenOutcome::Open));
+        assert_eq!(
+            s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 80),
+            Ok(OpenOutcome::RefusedByPolicy)
+        );
+        assert_eq!(
+            s.handle_open(2, &EgressAddr::V4([1, 1, 1, 1]), 443),
+            Ok(OpenOutcome::Open)
+        );
     }
 
     #[test]
@@ -186,7 +211,10 @@ mod tests {
         let mut s = ExitSession::new(ExitPolicy::default_allow());
         s.authenticate();
         for i in 0..MAX_STREAMS_PER_SESSION {
-            assert_eq!(s.handle_open(i, &EgressAddr::V4([1, 1, 1, 1]), 443), Ok(OpenOutcome::Open));
+            assert_eq!(
+                s.handle_open(i, &EgressAddr::V4([1, 1, 1, 1]), 443),
+                Ok(OpenOutcome::Open)
+            );
         }
         assert_eq!(s.open_stream_count(), MAX_STREAMS_PER_SESSION as usize);
         assert_eq!(
@@ -199,7 +227,8 @@ mod tests {
     fn close_removes_and_unknown_errors() {
         let mut s = ExitSession::new(ExitPolicy::default_allow());
         s.authenticate();
-        s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 443).unwrap();
+        s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 443)
+            .unwrap();
         assert!(s.check_data(1).is_ok());
         assert_eq!(s.handle_close(1), Ok(()));
         assert!(!s.has_stream(1));
@@ -211,7 +240,8 @@ mod tests {
     fn duplicate_stream_rejected() {
         let mut s = ExitSession::new(ExitPolicy::default_allow());
         s.authenticate();
-        s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 443).unwrap();
+        s.handle_open(1, &EgressAddr::V4([1, 1, 1, 1]), 443)
+            .unwrap();
         assert_eq!(
             s.handle_open(1, &EgressAddr::V4([2, 2, 2, 2]), 80),
             Err(ExitSessionError::DuplicateStream)

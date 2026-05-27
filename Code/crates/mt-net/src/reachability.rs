@@ -44,7 +44,7 @@ pub struct ReachabilityAdvert {
 }
 
 fn is_iso_alpha(b: u8) -> bool {
-    (b'A'..=b'Z').contains(&b)
+    b.is_ascii_uppercase()
 }
 
 impl ReachabilityAdvert {
@@ -150,7 +150,9 @@ pub struct RankedEntry {
 
 impl ReachabilityMap {
     pub fn new() -> Self {
-        ReachabilityMap { entries: BTreeMap::new() }
+        ReachabilityMap {
+            entries: BTreeMap::new(),
+        }
     }
 
     fn key(a: &ReachabilityAdvert) -> TripleKey {
@@ -249,12 +251,7 @@ impl ReachabilityMap {
     /// the caller (PeerTable::select_diverse_outbound); steering only reorders
     /// within the already-satisfied set, and the local IBT probe stays
     /// authoritative over this advisory order.
-    pub fn steer(
-        &self,
-        candidates: &[[u8; 32]],
-        country_code: [u8; 2],
-        asn: u32,
-    ) -> Vec<[u8; 32]> {
+    pub fn steer(&self, candidates: &[[u8; 32]], country_code: [u8; 2], asn: u32) -> Vec<[u8; 32]> {
         let ranked = self.ranked_for_vantage(country_code, asn);
         // best (num, den) per target across its profiles
         let mut best: BTreeMap<[u8; 32], (u16, u16)> = BTreeMap::new();

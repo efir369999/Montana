@@ -7,9 +7,7 @@
 // two Noise_PQ XX sessions are transport glue verified separately by the
 // Network layer; this test fixes the application control plane.
 
-use mt_egress::{
-    EgressAddr, EgressControl, ExitPolicy, ExitSession, OpenOutcome,
-};
+use mt_egress::{EgressAddr, EgressControl, ExitPolicy, ExitSession, OpenOutcome};
 
 /// Drive one control message client -> wire -> exit, returning the exit's
 /// optional EgressOpenAck (re-encoded and re-decoded to prove the round trip).
@@ -24,11 +22,19 @@ fn deliver(session: &mut ExitSession, msg: &EgressControl) -> Option<EgressContr
             session.authenticate();
             None
         },
-        EgressControl::Open { stream_id, addr, dest_port, .. } => {
+        EgressControl::Open {
+            stream_id,
+            addr,
+            dest_port,
+            ..
+        } => {
             let outcome = session
                 .handle_open(stream_id, &addr, dest_port)
                 .expect("authed open");
-            let ack = EgressControl::OpenAck { stream_id, status: outcome.status() };
+            let ack = EgressControl::OpenAck {
+                stream_id,
+                status: outcome.status(),
+            };
             // round-trip the ack back through the wire to the client
             let mut ackbuf = Vec::new();
             ack.encode(&mut ackbuf);
@@ -52,7 +58,12 @@ fn full_egress_control_flow() {
     let mut exit = ExitSession::new(ExitPolicy::default_allow());
 
     // 1. Auth
-    deliver(&mut exit, &EgressControl::Auth { proof: vec![0xAB; 64] });
+    deliver(
+        &mut exit,
+        &EgressControl::Auth {
+            proof: vec![0xAB; 64],
+        },
+    );
     assert!(exit.is_authenticated());
 
     // 2. Open a TCP stream to a hostname:443
@@ -73,10 +84,22 @@ fn full_egress_control_flow() {
     assert!(exit.has_stream(1));
 
     // 3. Data on the open stream
-    deliver(&mut exit, &EgressControl::Data { stream_id: 1, payload: vec![1, 2, 3] });
+    deliver(
+        &mut exit,
+        &EgressControl::Data {
+            stream_id: 1,
+            payload: vec![1, 2, 3],
+        },
+    );
 
     // 4. Close
-    deliver(&mut exit, &EgressControl::Close { stream_id: 1, reason: 0 });
+    deliver(
+        &mut exit,
+        &EgressControl::Close {
+            stream_id: 1,
+            reason: 0,
+        },
+    );
     assert!(!exit.has_stream(1));
     assert_eq!(exit.open_stream_count(), 0);
 }
@@ -93,7 +116,13 @@ fn open_before_auth_is_rejected_end_to_end() {
     let mut wire = Vec::new();
     open.encode(&mut wire);
     let decoded = EgressControl::decode(&wire).unwrap();
-    if let EgressControl::Open { stream_id, addr, dest_port, .. } = decoded {
+    if let EgressControl::Open {
+        stream_id,
+        addr,
+        dest_port,
+        ..
+    } = decoded
+    {
         // exit must refuse Open before a verified Auth (session closes per spec)
         assert!(exit.handle_open(stream_id, &addr, dest_port).is_err());
     } else {

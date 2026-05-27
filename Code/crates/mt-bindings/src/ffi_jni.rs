@@ -13,7 +13,9 @@ use jni::sys::{jbyteArray, jint};
 use jni::JNIEnv;
 
 use mt_codec::domain;
-use mt_crypto::{keypair_from_seed, sign as mldsa_sign, verify as mldsa_verify, PublicKey, SecretKey, Signature};
+use mt_crypto::{
+    keypair_from_seed, sign as mldsa_sign, verify as mldsa_verify, PublicKey, SecretKey, Signature,
+};
 use mt_mnemonic::{entropy_to_mnemonic, mldsa_seed_for_role, mnemonic_to_master_seed};
 use mt_state::derive_account_id;
 
@@ -96,8 +98,9 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountFromMnemon
     };
     let account_id = derive_account_id(MT_SUITE_MLDSA65, pk.as_bytes());
 
-    let mut buf =
-        Vec::with_capacity(super::MT_MLDSA_PUBKEY_SIZE + super::MT_MLDSA_SECKEY_SIZE + super::MT_ACCOUNT_ID_LEN);
+    let mut buf = Vec::with_capacity(
+        super::MT_MLDSA_PUBKEY_SIZE + super::MT_MLDSA_SECKEY_SIZE + super::MT_ACCOUNT_ID_LEN,
+    );
     buf.extend_from_slice(pk.as_bytes());
     buf.extend_from_slice(sk.as_bytes());
     buf.extend_from_slice(&account_id);
@@ -168,5 +171,9 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeVerify<'local>(
         Some(s) => s,
         None => return -1,
     };
-    if mldsa_verify(&pk, &m, &signature) { 1 } else { 0 }
+    if mldsa_verify(&pk, &m, &signature) {
+        1
+    } else {
+        0
+    }
 }

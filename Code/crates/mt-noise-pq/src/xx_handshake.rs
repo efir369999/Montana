@@ -425,6 +425,7 @@ fn derive_session(
 mod tests {
     use super::*;
     use mt_crypto::{keypair_from_seed, KEYPAIR_SEED_SIZE};
+    use std::sync::Arc;
 
     fn make_id(seed_byte: u8) -> (PublicKey, SecretKey) {
         keypair_from_seed(&[seed_byte; KEYPAIR_SEED_SIZE]).unwrap()
@@ -435,10 +436,12 @@ mod tests {
         let (rs_id_pk, rs_id_sk) = make_id(0x11);
         let (is_id_pk, is_id_sk) = make_id(0x22);
 
-        let (msg1, init_after_msg1) = initiator_send_msg1(is_id_sk, is_id_pk.clone()).unwrap();
+        let (msg1, init_after_msg1) =
+            initiator_send_msg1(Arc::new(is_id_sk), is_id_pk.clone()).unwrap();
         assert_eq!(msg1.len(), XX_MSG1_SIZE);
 
-        let resp_after_msg1 = responder_receive_msg1(&msg1, rs_id_sk, rs_id_pk.clone()).unwrap();
+        let resp_after_msg1 =
+            responder_receive_msg1(&msg1, Arc::new(rs_id_sk), rs_id_pk.clone()).unwrap();
         let (msg2, resp_after_msg2) = responder_send_msg2(resp_after_msg1).unwrap();
         assert_eq!(msg2.len(), XX_MSG2_SIZE);
 
@@ -461,8 +464,10 @@ mod tests {
         let (rs_id_pk, rs_id_sk) = make_id(0x11);
         let (is_id_pk, is_id_sk) = make_id(0x22);
 
-        let (msg1, init_after_msg1) = initiator_send_msg1(is_id_sk, is_id_pk.clone()).unwrap();
-        let resp_after_msg1 = responder_receive_msg1(&msg1, rs_id_sk, rs_id_pk.clone()).unwrap();
+        let (msg1, init_after_msg1) =
+            initiator_send_msg1(Arc::new(is_id_sk), is_id_pk.clone()).unwrap();
+        let resp_after_msg1 =
+            responder_receive_msg1(&msg1, Arc::new(rs_id_sk), rs_id_pk.clone()).unwrap();
         let (mut msg2, _resp_after_msg2) = responder_send_msg2(resp_after_msg1).unwrap();
 
         let sig_offset = MLKEM_PUBLIC_KEY_SIZE + MLKEM_CIPHERTEXT_SIZE + PUBLIC_KEY_SIZE;
@@ -476,8 +481,10 @@ mod tests {
         let (rs_id_pk, rs_id_sk) = make_id(0x11);
         let (is_id_pk, is_id_sk) = make_id(0x22);
 
-        let (msg1, init_after_msg1) = initiator_send_msg1(is_id_sk, is_id_pk.clone()).unwrap();
-        let resp_after_msg1 = responder_receive_msg1(&msg1, rs_id_sk, rs_id_pk.clone()).unwrap();
+        let (msg1, init_after_msg1) =
+            initiator_send_msg1(Arc::new(is_id_sk), is_id_pk.clone()).unwrap();
+        let resp_after_msg1 =
+            responder_receive_msg1(&msg1, Arc::new(rs_id_sk), rs_id_pk.clone()).unwrap();
         let (msg2, resp_after_msg2) = responder_send_msg2(resp_after_msg1).unwrap();
         let init_after_msg2 = initiator_receive_msg2(&msg2, init_after_msg1).unwrap();
         let (mut msg3, _) = initiator_send_msg3(init_after_msg2).unwrap();
@@ -493,8 +500,10 @@ mod tests {
         let (rs_id_pk, rs_id_sk) = make_id(0xAA);
         let (is_id_pk, is_id_sk) = make_id(0xBB);
 
-        let (msg1, init_after_msg1) = initiator_send_msg1(is_id_sk, is_id_pk.clone()).unwrap();
-        let resp_after_msg1 = responder_receive_msg1(&msg1, rs_id_sk, rs_id_pk.clone()).unwrap();
+        let (msg1, init_after_msg1) =
+            initiator_send_msg1(Arc::new(is_id_sk), is_id_pk.clone()).unwrap();
+        let resp_after_msg1 =
+            responder_receive_msg1(&msg1, Arc::new(rs_id_sk), rs_id_pk.clone()).unwrap();
         let (msg2, resp_after_msg2) = responder_send_msg2(resp_after_msg1).unwrap();
         let init_after_msg2 = initiator_receive_msg2(&msg2, init_after_msg1).unwrap();
         let (msg3, init_session) = initiator_send_msg3(init_after_msg2).unwrap();

@@ -40,10 +40,6 @@ pub use mesh::{
     MESH_RECIPIENT_HINT_SIZE,
 };
 
-pub use reachability::{
-    RankedEntry, ReachabilityAdvert, ReachabilityMap, MAX_OBSERVATIONS_PER_VANTAGE, PROFILE_MAX,
-    REACHABILITY_ADVERT_SIZE, REACHABILITY_QUORUM,
-};
 pub use msg_type::MsgType;
 pub use nat::{
     NatMethod, NatState, ReachabilityHint, UpnpMapping, UPNP_RENEW_INTERVAL_LOCAL_SECONDS,
@@ -59,6 +55,10 @@ pub use peers::{
     PRUNING_IDLE_TAU1_MULTIPLIER, ROTATION_PER_TAU2,
 };
 pub use pow::{pow_solve, pow_verify, PowError, Target, DOMAIN_BOOTSTRAP_POW, POW_HASH_SIZE};
+pub use reachability::{
+    RankedEntry, ReachabilityAdvert, ReachabilityMap, MAX_OBSERVATIONS_PER_VANTAGE, PROFILE_MAX,
+    REACHABILITY_ADVERT_SIZE, REACHABILITY_QUORUM,
+};
 pub use store_forward::{
     apply_store_and_forward, decode_sf_envelope, encode_sf_envelope, LocalSfState, SfEnvelope,
     SfIntake, SfRejectReason, SF_HEADER_SIZE, SF_PER_SENDER_QUOTA_PER_TAU1, SF_RECIPIENT_HINT_SIZE,

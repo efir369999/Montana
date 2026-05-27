@@ -31,7 +31,7 @@ pub const MAX_STREAMS_PER_SESSION: u32 = 256;
 pub const MAX_DIRECTORY_ENTRIES: usize = 4096;
 
 fn is_iso_alpha(b: u8) -> bool {
-    (b'A'..=b'Z').contains(&b)
+    b.is_ascii_uppercase()
 }
 
 /// Advisory directory advertisement for an opt-in exit node.
@@ -110,11 +110,27 @@ impl EgressAddr {
 /// Egress control / data message. Travels over the inner end-to-end session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EgressControl {
-    Auth { proof: Vec<u8> },
-    Open { stream_id: u32, protocol: u8, addr: EgressAddr, dest_port: u16 },
-    OpenAck { stream_id: u32, status: u8 },
-    Data { stream_id: u32, payload: Vec<u8> },
-    Close { stream_id: u32, reason: u8 },
+    Auth {
+        proof: Vec<u8>,
+    },
+    Open {
+        stream_id: u32,
+        protocol: u8,
+        addr: EgressAddr,
+        dest_port: u16,
+    },
+    OpenAck {
+        stream_id: u32,
+        status: u8,
+    },
+    Data {
+        stream_id: u32,
+        payload: Vec<u8>,
+    },
+    Close {
+        stream_id: u32,
+        reason: u8,
+    },
     Keepalive,
 }
 
@@ -134,7 +150,12 @@ impl EgressControl {
         write_u8(buf, self.msg_type());
         match self {
             EgressControl::Auth { proof } => write_bytes(buf, proof),
-            EgressControl::Open { stream_id, protocol, addr, dest_port } => {
+            EgressControl::Open {
+                stream_id,
+                protocol,
+                addr,
+                dest_port,
+            } => {
                 write_u32(buf, *stream_id);
                 write_u8(buf, *protocol);
                 write_u8(buf, addr.addr_type());
@@ -168,7 +189,9 @@ impl EgressControl {
                 if body.is_empty() {
                     return Err(NetError::InvalidPayloadField);
                 }
-                Ok(EgressControl::Auth { proof: body.to_vec() })
+                Ok(EgressControl::Auth {
+                    proof: body.to_vec(),
+                })
             },
             0x02 => {
                 // stream_id(4) protocol(1) addr_type(1) addr(var) dest_port(2)
@@ -220,7 +243,12 @@ impl EgressControl {
                     return Err(NetError::PayloadLengthMismatch);
                 }
                 let dest_port = rd_u16(&body[off..off + 2]);
-                Ok(EgressControl::Open { stream_id, protocol, addr, dest_port })
+                Ok(EgressControl::Open {
+                    stream_id,
+                    protocol,
+                    addr,
+                    dest_port,
+                })
             },
             0x03 => {
                 if body.len() != 5 {
@@ -238,7 +266,10 @@ impl EgressControl {
                     return Err(NetError::TruncatedPayload);
                 }
                 let stream_id = rd_u32(&body[0..4]);
-                Ok(EgressControl::Data { stream_id, payload: body[4..].to_vec() })
+                Ok(EgressControl::Data {
+                    stream_id,
+                    payload: body[4..].to_vec(),
+                })
             },
             0x05 => {
                 if body.len() != 5 {
@@ -313,24 +344,56 @@ mod tests {
         };
         let mut buf = Vec::new();
         e.encode(&mut buf);
-        assert!(matches!(EgressDirectoryEntry::decode(&buf), Err(NetError::InvalidPayloadField)));
+        assert!(matches!(
+            EgressDirectoryEntry::decode(&buf),
+            Err(NetError::InvalidPayloadField)
+        ));
         e.country_code = *b"FR";
         e.capacity_class = 3;
         let mut buf2 = Vec::new();
         e.encode(&mut buf2);
-        assert!(matches!(EgressDirectoryEntry::decode(&buf2), Err(NetError::InvalidPayloadField)));
+        assert!(matches!(
+            EgressDirectoryEntry::decode(&buf2),
+            Err(NetError::InvalidPayloadField)
+        ));
     }
 
     #[test]
     fn control_roundtrips() {
         let msgs = [
-            EgressControl::Auth { proof: alloc::vec![0xAB; 64] },
-            EgressControl::Open { stream_id: 7, protocol: 0, addr: EgressAddr::V4([1, 2, 3, 4]), dest_port: 443 },
-            EgressControl::Open { stream_id: 8, protocol: 1, addr: EgressAddr::V6([9u8; 16]), dest_port: 53 },
-            EgressControl::Open { stream_id: 9, protocol: 0, addr: EgressAddr::Host(b"example.com".to_vec()), dest_port: 80 },
-            EgressControl::OpenAck { stream_id: 7, status: 0 },
-            EgressControl::Data { stream_id: 7, payload: alloc::vec![1, 2, 3, 4, 5] },
-            EgressControl::Close { stream_id: 7, reason: 2 },
+            EgressControl::Auth {
+                proof: alloc::vec![0xAB; 64],
+            },
+            EgressControl::Open {
+                stream_id: 7,
+                protocol: 0,
+                addr: EgressAddr::V4([1, 2, 3, 4]),
+                dest_port: 443,
+            },
+            EgressControl::Open {
+                stream_id: 8,
+                protocol: 1,
+                addr: EgressAddr::V6([9u8; 16]),
+                dest_port: 53,
+            },
+            EgressControl::Open {
+                stream_id: 9,
+                protocol: 0,
+                addr: EgressAddr::Host(b"example.com".to_vec()),
+                dest_port: 80,
+            },
+            EgressControl::OpenAck {
+                stream_id: 7,
+                status: 0,
+            },
+            EgressControl::Data {
+                stream_id: 7,
+                payload: alloc::vec![1, 2, 3, 4, 5],
+            },
+            EgressControl::Close {
+                stream_id: 7,
+                reason: 2,
+            },
             EgressControl::Keepalive,
         ];
         for m in &msgs {
@@ -340,7 +403,12 @@ mod tests {
 
     #[test]
     fn open_kat_v4() {
-        let m = EgressControl::Open { stream_id: 7, protocol: 0, addr: EgressAddr::V4([1, 2, 3, 4]), dest_port: 443 };
+        let m = EgressControl::Open {
+            stream_id: 7,
+            protocol: 0,
+            addr: EgressAddr::V4([1, 2, 3, 4]),
+            dest_port: 443,
+        };
         let mut buf = Vec::new();
         m.encode(&mut buf);
         let mut expected = Vec::new();
@@ -356,23 +424,54 @@ mod tests {
     #[test]
     fn control_rejects() {
         // bad protocol
-        let m = EgressControl::Open { stream_id: 1, protocol: 2, addr: EgressAddr::V4([0; 4]), dest_port: 1 };
+        let m = EgressControl::Open {
+            stream_id: 1,
+            protocol: 2,
+            addr: EgressAddr::V4([0; 4]),
+            dest_port: 1,
+        };
         let mut b = Vec::new();
         m.encode(&mut b);
-        assert!(matches!(EgressControl::decode(&b), Err(NetError::InvalidPayloadField)));
+        assert!(matches!(
+            EgressControl::decode(&b),
+            Err(NetError::InvalidPayloadField)
+        ));
         // bad status
         let mut b2 = Vec::new();
-        EgressControl::OpenAck { stream_id: 1, status: 9 }.encode(&mut b2);
-        assert!(matches!(EgressControl::decode(&b2), Err(NetError::InvalidPayloadField)));
+        EgressControl::OpenAck {
+            stream_id: 1,
+            status: 9,
+        }
+        .encode(&mut b2);
+        assert!(matches!(
+            EgressControl::decode(&b2),
+            Err(NetError::InvalidPayloadField)
+        ));
         // bad reason
         let mut b3 = Vec::new();
-        EgressControl::Close { stream_id: 1, reason: 9 }.encode(&mut b3);
-        assert!(matches!(EgressControl::decode(&b3), Err(NetError::InvalidPayloadField)));
+        EgressControl::Close {
+            stream_id: 1,
+            reason: 9,
+        }
+        .encode(&mut b3);
+        assert!(matches!(
+            EgressControl::decode(&b3),
+            Err(NetError::InvalidPayloadField)
+        ));
         // unknown type
-        assert!(matches!(EgressControl::decode(&[0x7F, 0, 0]), Err(NetError::InvalidMsgType(0x7F))));
+        assert!(matches!(
+            EgressControl::decode(&[0x7F, 0, 0]),
+            Err(NetError::InvalidMsgType(0x7F))
+        ));
         // empty
-        assert!(matches!(EgressControl::decode(&[]), Err(NetError::TruncatedPayload)));
+        assert!(matches!(
+            EgressControl::decode(&[]),
+            Err(NetError::TruncatedPayload)
+        ));
         // auth empty proof
-        assert!(matches!(EgressControl::decode(&[0x01]), Err(NetError::InvalidPayloadField)));
+        assert!(matches!(
+            EgressControl::decode(&[0x01]),
+            Err(NetError::InvalidPayloadField)
+        ));
     }
 }

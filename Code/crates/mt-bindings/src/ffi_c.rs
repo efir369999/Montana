@@ -7,7 +7,9 @@ use core::slice;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};
 
-use mt_crypto::{keypair_from_seed, sign as mldsa_sign, verify as mldsa_verify, PublicKey, SecretKey, Signature};
+use mt_crypto::{
+    keypair_from_seed, sign as mldsa_sign, verify as mldsa_verify, PublicKey, SecretKey, Signature,
+};
 use mt_mnemonic::{mldsa_seed_for_role, mnemonic_to_master_seed};
 use mt_state::derive_account_id;
 
@@ -39,7 +41,7 @@ pub unsafe extern "C" fn mt_mnemonic_to_master_seed(
                 slice::from_raw_parts_mut(out_master_seed, MT_MASTER_SEED_LEN)
                     .copy_from_slice(&seed);
                 MT_OK
-            }
+            },
             Err(e) => match e {
                 mt_mnemonic::MnemonicError::WordCount(_) => MT_ERR_MNEMONIC_WORD_COUNT,
                 mt_mnemonic::MnemonicError::UnknownWord(_) => MT_ERR_MNEMONIC_UNKNOWN_WORD,
@@ -88,7 +90,7 @@ pub unsafe extern "C" fn mt_mldsa_keypair_from_seed(
                 slice::from_raw_parts_mut(out_seckey, MT_MLDSA_SECKEY_SIZE)
                     .copy_from_slice(sk.as_bytes());
                 MT_OK
-            }
+            },
             Err(_) => MT_ERR_KEYGEN_FAILED,
         }
     })
@@ -160,13 +162,17 @@ pub unsafe extern "C" fn mt_sign(
             Some(k) => k,
             None => return MT_ERR_SIGN_FAILED,
         };
-        let m: &[u8] = if msg_len == 0 { &[] } else { slice::from_raw_parts(msg, msg_len) };
+        let m: &[u8] = if msg_len == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(msg, msg_len)
+        };
         match mldsa_sign(&sk, m) {
             Ok(sig) => {
                 slice::from_raw_parts_mut(out_sig, MT_MLDSA_SIG_SIZE)
                     .copy_from_slice(sig.as_bytes());
                 MT_OK
-            }
+            },
             Err(_) => MT_ERR_SIGN_FAILED,
         }
     })
@@ -193,8 +199,16 @@ pub unsafe extern "C" fn mt_verify(
             Some(s) => s,
             None => return MT_ERR_VERIFY_FAILED,
         };
-        let m: &[u8] = if msg_len == 0 { &[] } else { slice::from_raw_parts(msg, msg_len) };
-        if mldsa_verify(&pk, m, &signature) { MT_OK } else { MT_ERR_VERIFY_FAILED }
+        let m: &[u8] = if msg_len == 0 {
+            &[]
+        } else {
+            slice::from_raw_parts(msg, msg_len)
+        };
+        if mldsa_verify(&pk, m, &signature) {
+            MT_OK
+        } else {
+            MT_ERR_VERIFY_FAILED
+        }
     })
 }
 

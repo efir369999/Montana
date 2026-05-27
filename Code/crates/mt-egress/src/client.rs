@@ -54,20 +54,22 @@ pub fn select_exit(
             // unranked candidate (map empty).
             let head = ranked.first().copied();
             match head {
-                Some(id)
-                    if directory
-                        .iter()
-                        .any(|e| e.exit_node_id == id) =>
-                {
+                Some(id) if directory.iter().any(|e| e.exit_node_id == id) => {
                     // prefer reachability head; if map was empty steer preserves
                     // input order, so refine to highest capacity for determinism
                     if map.is_empty() {
-                        directory.iter().max_by_key(|e| e.capacity_class).map(|e| e.exit_node_id)
+                        directory
+                            .iter()
+                            .max_by_key(|e| e.capacity_class)
+                            .map(|e| e.exit_node_id)
                     } else {
                         Some(id)
                     }
                 },
-                _ => directory.iter().max_by_key(|e| e.capacity_class).map(|e| e.exit_node_id),
+                _ => directory
+                    .iter()
+                    .max_by_key(|e| e.capacity_class)
+                    .map(|e| e.exit_node_id),
             }
         },
     }
@@ -102,14 +104,20 @@ mod tests {
     fn manual_none_when_country_absent() {
         let dir = [entry(1, b"FR", 1)];
         let map = ReachabilityMap::new();
-        assert_eq!(select_exit(&dir, &ExitSelector::Manual(*b"US"), &map, *b"AM", 1), None);
+        assert_eq!(
+            select_exit(&dir, &ExitSelector::Manual(*b"US"), &map, *b"AM", 1),
+            None
+        );
     }
 
     #[test]
     fn auto_empty_directory_none() {
         let dir: [EgressDirectoryEntry; 0] = [];
         let map = ReachabilityMap::new();
-        assert_eq!(select_exit(&dir, &ExitSelector::Auto, &map, *b"AM", 1), None);
+        assert_eq!(
+            select_exit(&dir, &ExitSelector::Auto, &map, *b"AM", 1),
+            None
+        );
     }
 
     #[test]
@@ -117,7 +125,10 @@ mod tests {
         let dir = [entry(1, b"FR", 0), entry(2, b"DE", 2), entry(3, b"US", 1)];
         let map = ReachabilityMap::new();
         // map empty -> highest capacity (id 2)
-        assert_eq!(select_exit(&dir, &ExitSelector::Auto, &map, *b"AM", 1), Some([2u8; 32]));
+        assert_eq!(
+            select_exit(&dir, &ExitSelector::Auto, &map, *b"AM", 1),
+            Some([2u8; 32])
+        );
     }
 
     #[test]

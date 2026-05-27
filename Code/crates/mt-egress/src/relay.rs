@@ -40,8 +40,7 @@ impl RelayBudget {
     pub fn consensus(window_seconds: u64) -> Self {
         RelayBudget {
             class: RelayClass::Consensus,
-            cap_bytes_per_window: CONSENSUS_RELAY_CAP_BYTES_PER_SEC
-                .saturating_mul(window_seconds),
+            cap_bytes_per_window: CONSENSUS_RELAY_CAP_BYTES_PER_SEC.saturating_mul(window_seconds),
             used: 0,
         }
     }

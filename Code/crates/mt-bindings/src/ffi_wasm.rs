@@ -6,7 +6,9 @@
 
 use wasm_bindgen::prelude::*;
 
-use mt_crypto::{keypair_from_seed, sign as mldsa_sign, verify as mldsa_verify, PublicKey, SecretKey, Signature};
+use mt_crypto::{
+    keypair_from_seed, sign as mldsa_sign, verify as mldsa_verify, PublicKey, SecretKey, Signature,
+};
 use mt_mnemonic::{mldsa_seed_for_role, mnemonic_to_master_seed};
 use mt_state::derive_account_id;
 
@@ -30,11 +32,13 @@ pub fn account_from_mnemonic(mnemonic: &str) -> Result<Vec<u8>, JsValue> {
     let master = mnemonic_to_master_seed(mnemonic)
         .map_err(|e| JsValue::from_str(&format!("mnemonic: {e:?}")))?;
     let acc_seed = mldsa_seed_for_role(&master, mt_codec::domain::ACCOUNT_KEY);
-    let (pk, sk) = keypair_from_seed(&acc_seed)
-        .map_err(|e| JsValue::from_str(&format!("keygen: {e:?}")))?;
+    let (pk, sk) =
+        keypair_from_seed(&acc_seed).map_err(|e| JsValue::from_str(&format!("keygen: {e:?}")))?;
     let account_id = derive_account_id(MT_SUITE_MLDSA65, pk.as_bytes());
 
-    let mut out = Vec::with_capacity(super::MT_MLDSA_PUBKEY_SIZE + super::MT_MLDSA_SECKEY_SIZE + super::MT_ACCOUNT_ID_LEN);
+    let mut out = Vec::with_capacity(
+        super::MT_MLDSA_PUBKEY_SIZE + super::MT_MLDSA_SECKEY_SIZE + super::MT_ACCOUNT_ID_LEN,
+    );
     out.extend_from_slice(pk.as_bytes());
     out.extend_from_slice(sk.as_bytes());
     out.extend_from_slice(&account_id);
