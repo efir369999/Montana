@@ -2,7 +2,6 @@
 
 > Post-quantum reference blockchain. Sequential-delay TimeChain consensus over SHA-256. Time-as-scarcity instead of fees.
 > Production transport is **Noise_PQ XX** (ML-KEM-768 + ML-DSA-65 + ChaCha20-Poly1305).
-> Live four-node mesh: Moscow, Frankfurt, Helsinki, Yerevan.
 > Mainnet **v0.2** spec package. Rust reference implementation `1.0.0`. Dual-licensed Apache-2.0 / MIT.
 > **First mainnet release:** [v1.0.0](https://github.com/efir369999/Montana/releases/tag/v1.0.0) (2026-05-22).
 
@@ -13,7 +12,6 @@
 Montana is a post-quantum sovereignty stack. Every primitive in the protocol layer is post-quantum:
 
 | Layer | Primitive | Standard |
-|------|-----------|----------|
 | Consensus signatures | ML-DSA-65 | NIST FIPS 204 |
 | Application key encapsulation | ML-KEM-768 | NIST FIPS 203 |
 | Transport handshake | Noise_PQ XX (ML-KEM-768 + ML-DSA-65) | This project |
@@ -54,7 +52,6 @@ The whitepaper covers, in present-tense factual form:
 The protocol is specified as three layered documents — each independently auditable:
 
 | Layer | Spec | Scope |
-|-------|------|-------|
 | 1. Protocol | [`Montana Protocol v35.25.1.md`](Montana%20Protocol%20v35.25.1.md) | State machine, crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256), sequential-delay TimeChain, lottery, Account / Node tables, Genesis Decree, `apply_proposal` pipeline, consensus operations |
 | 2. Network | [`Montana Network v1.3.0.md`](Montana%20Network%20v1.3.0.md) | libp2p transport, Noise_PQ XX (production), Identity-Bound Tunnel, transport randomness, PeerRecord, mesh transport, sync protocols, network-layer threat model, KAT vectors |
 | 3. App | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | UI, wallet, messenger (Double Ratchet PQ), channels, contacts, profile, Junona AI agent, browser, premium, application-layer economy |
@@ -67,15 +64,9 @@ Layer dependency direction: Protocol (low) ← Network (mid) ← App (high). Eac
 
 ## Live network
 
-Three-node Genesis cohort, full 6/6 pairwise mesh over Noise_PQ XX (`/montana/noise-pq-xx/1.0.0`):
+The reference implementation runs a live production mesh with full pairwise Noise_PQ XX sessions (`/montana/noise-pq-xx/1.0.0`). Node addresses, identities, and locations are not published; the network is reached through the censorship-resistant discovery channels defined in the Network specification, not a static list.
 
-| Label | Region | XX PeerId (SHA-256 multihash of ML-DSA-65 pk) |
-|-------|--------|-----------------------------------------------|
-| moscow | Russia | `QmSDUqLkLcenkkNw6PUKYXjesEmaDksnrEaCzbs3a5nVzj` |
-| frankfurt | Germany | `QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP` |
-| helsinki | Finland | `QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL` |
 
-Dashboard with 60-second auto-refresh: [efir.org/explorer/](https://efir.org/explorer/). Current snapshot: [`STATUS.md`](STATUS.md).
 
 ---
 
@@ -145,7 +136,6 @@ The full installer prints a 24-word recovery mnemonic for the node and a VLESS U
 ## Status by milestone
 
 | Milestone | State | Tests |
-|-----------|-------|-------|
 | M1 foundational primitives (mt-codec, mt-crypto, mt-crypto-native, mt-mnemonic) | ready | 100+ unit + 51 NIST KAT |
 | M2 state foundation (mt-merkle, mt-genesis, mt-state, mt-timechain) | ready | 95+ unit + 60 invariants |
 | M3 apply_proposal (mt-account) | ready | 89 unit + 29 invariants |
@@ -161,7 +151,6 @@ The full installer prints a 24-word recovery mnemonic for the node and a VLESS U
 ## Repository layout
 
 | Path | Contents |
-|------|----------|
 | [`Whitepaper Montana.md`](Whitepaper%20Montana.md) | Academic paper in the style of the Bitcoin paper. Metzdowd-list submission text |
 | [`Montana Protocol v35.25.1.md`](Montana%20Protocol%20v35.25.1.md) | Full protocol specification |
 | [`Montana Network v1.3.0.md`](Montana%20Network%20v1.3.0.md) | Network-layer specification (Noise_PQ XX, IBT, mesh, sync) |
