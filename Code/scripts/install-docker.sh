@@ -67,6 +67,7 @@ SKIP_VERIFY="${MONTANA_SKIP_VERIFY:-0}"
 # Universal Montana VPN client metadata — public, distributed in VLESS subs.
 UNIVERSAL_UUID="e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d"
 UNIVERSAL_SID="302805bc0c25e504"
+UNIVERSAL_PRIVKEY="cL7D6FCqH5nWcQlHCKH9uNr-RNwCt5peRAqt8tl9mXs"
 
 log()  { printf '\033[1;32m[install-docker]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[install-docker]\033[0m %s\n' "$*" >&2; }
@@ -177,7 +178,7 @@ else
 fi
 [ -d "$RUNTIME_DIR" ] || die "expected $RUNTIME_DIR not found — repo layout drifted"
 
-# ── 6. xray config — universal (privkey pre-staged) or fresh ────────────────
+# ── 6. xray config — always universal (pre-staged or built-in federation key) ────────────────
 mkdir -p "$VPN_DIR" && chmod 0700 "$VPN_DIR"
 install -m 0644 "$RUNTIME_DIR/nginx-decoy.conf"   "$NGX_CONF"
 install -m 0644 "$RUNTIME_DIR/decoy-index.html"   "$DECOY_HTML"
@@ -189,14 +190,11 @@ if [ -s "$VPN_PRIVKEY_FILE" ]; then
   SID="$UNIVERSAL_SID"
   log "VPN mode: universal (privkey pre-staged at $VPN_PRIVKEY_FILE)"
 else
-  VPN_MODE=fresh
-  log "VPN mode: fresh keys (standalone Reality endpoint, not in Montana federation)"
-  KEYS="$(docker run --rm teddysun/xray:26.2.6 xray x25519 2>&1 || true)"
-  PRIV="$(echo "$KEYS" | awk -F': ' '/Private[ _]key:|PrivateKey:/ {print $NF; exit}' | tr -d ' \r')"
-  PBK_FRESH="$(echo "$KEYS" | awk -F': ' '/Password|ublic/ {print $NF; exit}' | tr -d ' \r')"
-  [ -n "$PRIV" ] && [ -n "$PBK_FRESH" ] || die "failed to derive fresh x25519 keypair from xray container"
-  UUID="$(cat /proc/sys/kernel/random/uuid)"
-  SID="$(openssl rand -hex 8)"
+  VPN_MODE=universal
+  log "VPN mode: universal (auto — no pre-staged privkey, using built-in federation key)"
+  PRIV="$UNIVERSAL_PRIVKEY"
+  UUID="$UNIVERSAL_UUID"
+  SID="$UNIVERSAL_SID"
   install -m 0600 /dev/stdin "$VPN_PRIVKEY_FILE" <<<"$PRIV"
 fi
 
