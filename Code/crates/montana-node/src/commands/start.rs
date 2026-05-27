@@ -35,6 +35,12 @@ extern "C" fn shutdown_handler(_: libc::c_int) {
     STOP.store(true, Ordering::SeqCst);
 }
 
+// M7 fast-sync trigger threshold (network-layer implementation guidance per
+// Network spec — not consensus-critical, may vary between implementations).
+// Replay costs ~6 min / 1000 windows on 1 vCPU (mt-sync lib doc); beyond this
+// lag snapshot delivery is bandwidth-bound and cheaper than apply_proposal loop.
+const FAST_SYNC_LAG_THRESHOLD: u64 = 1000;
+
 pub struct StartArgs {
     pub data_dir: Option<PathBuf>,
     pub max_windows: Option<u64>,
@@ -155,6 +161,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let store = FsStore::open(&data_dir)
         .map_err(|e| NodeError::InvalidArguments(format!("FsStore::open: {e:?}")))?;
 
+    // M7 fast-sync: held across loop iterations while a snapshot is in flight.
+    let mut fast_sync: Option<mt_sync::FastSyncClient> = None;
+
     loop {
         // M9 Phase 2: drain incoming Proposal envelopes от bootstrap. Decode window_index
         // и proposer_node_id напрямую из 3722-байтного header layout без полного
@@ -198,6 +207,47 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             continue;
                         }
                         if window_index <= current {
+                            continue;
+                        }
+                        // M7 fast-sync: while a snapshot is already in flight,
+                        // do not replay windows in parallel — wait for it.
+                        if fast_sync.is_some() {
+                            continue;
+                        }
+                        // Far behind → request a snapshot instead of replaying
+                        // thousands of apply_proposal iterations. Trusted anchor
+                        // = state_root from THIS Proposal header (offset 172..204);
+                        // proposer already confirmed as bootstrap above. The
+                        // anchor-authenticity gate (Proposal signature) is M10 —
+                        // identical to the window-by-window replay path.
+                        if window_index.saturating_sub(current) > FAST_SYNC_LAG_THRESHOLD {
+                            let mut anchor_root = [0u8; 32];
+                            anchor_root.copy_from_slice(&msg.payload[172..204]);
+                            let mut payload = Vec::new();
+                            mt_net::FastSyncRequest {
+                                anchor_window: window_index,
+                                resume_offset: 0,
+                            }
+                            .encode(&mut payload);
+                            match handle.broadcast_tx.send(ProtocolMessage::new(
+                                MsgType::FastSyncRequest,
+                                msg.request_id,
+                                payload,
+                            )) {
+                                Ok(()) => {
+                                    eprintln!(
+                                        "[m7] {} windows behind (> {FAST_SYNC_LAG_THRESHOLD}) \u{2192} fast-sync anchored at window {window_index}",
+                                        window_index.saturating_sub(current)
+                                    );
+                                    fast_sync = Some(mt_sync::FastSyncClient::new(
+                                        window_index,
+                                        anchor_root,
+                                    ));
+                                },
+                                Err(e) => {
+                                    eprintln!("[m7] FastSyncRequest broadcast failed: {e}")
+                                },
+                            }
                             continue;
                         }
                         let mut applied_count = 0u64;
@@ -283,6 +333,47 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             Err(e) => {
                                 eprintln!("[m7] FastSyncRequest decode failed: {e:?}");
                             },
+                        }
+                    },
+                    MsgType::FastSyncResponse => {
+                        if let Some(mut client) = fast_sync.take() {
+                            let parsed = mt_net::FastSyncResponseChunk::decode(&msg.payload)
+                                .map_err(|e| format!("decode: {e:?}"))
+                                .and_then(|w| {
+                                    crate::commands::fastsync::wire_chunk_to_sync(w)
+                                        .map_err(|e| format!("wire: {e:?}"))
+                                });
+                            match parsed {
+                                Ok(chunk) => match client.accept_chunk(chunk) {
+                                    Ok(mt_sync::AcceptOutcome::Complete) => {
+                                        let anchor = client.anchor_window();
+                                        match client.finalize() {
+                                            Ok(tables) => {
+                                                state.apply_fast_sync(
+                                                    tables, &data_dir, anchor,
+                                                )?;
+                                                current = anchor;
+                                                save_current_window(&data_dir, current)?;
+                                                eprintln!("[m7] fast-sync complete \u{2192} state replaced, current_window={current}");
+                                            },
+                                            Err(e) => eprintln!(
+                                                "[m7] fast-sync finalize rejected: {e:?} \u{2014} retry on next lag"
+                                            ),
+                                        }
+                                    },
+                                    Ok(mt_sync::AcceptOutcome::Progress { received, total }) => {
+                                        eprintln!("[m7] fast-sync chunk {received}/{total}");
+                                        fast_sync = Some(client);
+                                    },
+                                    Err(e) => eprintln!(
+                                        "[m7] fast-sync chunk rejected: {e:?} \u{2014} discard, retry on next lag"
+                                    ),
+                                },
+                                Err(reason) => {
+                                    eprintln!("[m7] FastSyncResponse {reason}");
+                                    fast_sync = Some(client);
+                                },
+                            }
                         }
                     },
                     MsgType::BundledConfirmation => {
