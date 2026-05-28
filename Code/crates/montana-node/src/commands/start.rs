@@ -920,21 +920,21 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                             .get(&rec_bc.window_index)
                                             .copied()
                                             .unwrap_or(timechain.t_r);
-                                        if rec_bc.window_index == current
-                                            && mt_lottery::validate_bundle(
-                                                &rec_bc,
-                                                &state.nodes,
-                                                &exp_t_r,
-                                            )
-                                            .is_ok()
+                                        if mt_lottery::validate_bundle(
+                                            &rec_bc,
+                                            &state.nodes,
+                                            &exp_t_r,
+                                        )
+                                        .is_ok()
                                         {
                                             let nid = rec_bc.node_id;
+                                            let w = rec_bc.window_index;
                                             bc_accumulator
-                                                .entry(current)
+                                                .entry(w)
                                                 .or_default()
                                                 .insert(nid, rec_bc);
                                             eprintln!(
-                                                "[dev-012] accepted BC from {} for w={current}",
+                                                "[dev-012] accepted BC from {} for w={w} (current={current})",
                                                 hex16(&nid)
                                             );
                                         }
