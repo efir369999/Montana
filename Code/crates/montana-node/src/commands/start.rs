@@ -243,6 +243,22 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             eprintln!("[consensus] Proposal от не-bootstrap proposer, skip");
                             continue;
                         }
+                        // M10: cryptographic verification of the bootstrap
+                        // signature over signed_scope (bytes 0..413). Rejects
+                        // any forged or tampered Proposal — closes the M9
+                        // Phase 2 deferred-signature gate symmetrically for
+                        // the replay path and (via recent_roots) for fast-sync.
+                        let mut sig_bytes = [0u8; mt_crypto::SIGNATURE_SIZE];
+                        sig_bytes.copy_from_slice(&msg.payload[413..3722]);
+                        let sig = mt_crypto::Signature::from_array(sig_bytes);
+                        let bootstrap_pk =
+                            mt_crypto::PublicKey::from_array(params.bootstrap_node_pubkey);
+                        if !mt_crypto::verify(&bootstrap_pk, &msg.payload[0..413], &sig) {
+                            eprintln!(
+                                "[consensus] Proposal w={window_index} с невалидной подписью bootstrap — skip"
+                            );
+                            continue;
+                        }
                         // Record this bootstrap Proposal's state_root as a trusted
                         // fast-sync anchor (offset 172..204), bounded to recent windows.
                         let mut sr = [0u8; 32];
