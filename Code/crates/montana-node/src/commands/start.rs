@@ -191,6 +191,10 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let store = FsStore::open(&data_dir)
         .map_err(|e| NodeError::InvalidArguments(format!("FsStore::open: {e:?}")))?;
 
+    // DEV-012 T_r history: per-window T_r snapshot for BC endpoint validation
+    // when BCs arrive after current has advanced.
+    let mut t_r_history: BTreeMap<u64, Hash32> = BTreeMap::new();
+
     // DEV-012 multi-confirmer: per-window accumulator of BCs from Active peers.
     // Keyed by window then node_id so duplicates from same node deduplicate.
     let mut bc_accumulator: BTreeMap<u64, BTreeMap<mt_state::NodeId, BundledConfirmation>> =
@@ -571,7 +575,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                 // current-window BCs this is timechain.t_r; for past windows
                                 // we'd need history. Simplification: validate against
                                 // current t_r only; older BCs may fail and be ignored.
-                                if mt_lottery::validate_bundle(&bc, &state.nodes, &timechain.t_r)
+                                let expected_t_r = t_r_history
+                                    .get(&bc.window_index)
+                                    .copied()
+                                    .unwrap_or(timechain.t_r);
+                                if mt_lottery::validate_bundle(&bc, &state.nodes, &expected_t_r)
                                     .is_ok()
                                 {
                                     let node_id = bc.node_id;
@@ -839,7 +847,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
                 };
 
-                // DEV-012: insert own BC into accumulator first.
+                // DEV-012: record T_r for this window so late-arriving BCs validate
+                // against historical T_r (not Armenia's current after window advances).
+                t_r_history.insert(current, timechain.t_r);
+                while t_r_history.len() > 64 {
+                    let oldest = *t_r_history.keys().next().unwrap();
+                    t_r_history.remove(&oldest);
+                }
+                // Insert own BC into accumulator first.
                 bc_accumulator
                     .entry(current)
                     .or_default()
@@ -901,11 +916,15 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                     if let Ok((rec_bc, _)) =
                                         BundledConfirmation::decode(&msg.payload)
                                     {
+                                        let exp_t_r = t_r_history
+                                            .get(&rec_bc.window_index)
+                                            .copied()
+                                            .unwrap_or(timechain.t_r);
                                         if rec_bc.window_index == current
                                             && mt_lottery::validate_bundle(
                                                 &rec_bc,
                                                 &state.nodes,
-                                                &timechain.t_r,
+                                                &exp_t_r,
                                             )
                                             .is_ok()
                                         {
