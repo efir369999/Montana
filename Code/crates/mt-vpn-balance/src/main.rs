@@ -55,7 +55,6 @@ fn exit_node_label(ip: &str) -> Option<(&'static str, &'static str)> {
     match ip {
         "<exit-removed>" => Some(("helsinki", "Хельсинки")),
         "<exit-de>" => Some(("frankfurt", "Франкфурт")),
-        "86.104.72.12" => Some(("newyork", "Нью-Йорк")),
         _ => None,
     }
 }
@@ -634,10 +633,6 @@ mod tests {
         assert_eq!(
             exit_node_label("<exit-de>"),
             Some(("frankfurt", "Франкфурт"))
-        );
-        assert_eq!(
-            exit_node_label("86.104.72.12"),
-            Some(("newyork", "Нью-Йорк"))
         );
         assert_eq!(exit_node_label("1.2.3.4"), None);
     }
