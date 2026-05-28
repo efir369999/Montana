@@ -54,6 +54,14 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
     println!("--- ваша identity ---");
     println!("account_id            : {}", hex_lower(&my_account));
     println!("node_id               : {}", hex_lower(&my_node));
+    println!(
+        "node_pubkey_hex       : {}",
+        hex_lower(identity.node_pk.as_bytes())
+    );
+    println!(
+        "account_pubkey_hex    : {}",
+        hex_lower(identity.account_pk.as_bytes())
+    );
     println!();
     println!("--- размеры таблиц локального state ---");
     println!("AccountTable          : {} записей", state.accounts.len());
