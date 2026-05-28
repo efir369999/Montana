@@ -89,6 +89,75 @@ impl CanonicalEncode for BundledConfirmation {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum BcDecodeError {
+    Truncated,
+    HashCountOverflow,
+}
+
+impl BundledConfirmation {
+    pub fn decode(input: &[u8]) -> Result<(Self, usize), BcDecodeError> {
+        // node_id 32 + endpoint 32 + window 8 + u16 op_count + op_count*32 +
+        // u16 reveal_count + reveal_count*32 + signature SIGNATURE_SIZE
+        let mut o = 0;
+        if input.len() < 32 + 32 + 8 + 2 {
+            return Err(BcDecodeError::Truncated);
+        }
+        let mut node_id = [0u8; 32];
+        node_id.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let mut endpoint = [0u8; 32];
+        endpoint.copy_from_slice(&input[o..o + 32]);
+        o += 32;
+        let mut w = [0u8; 8];
+        w.copy_from_slice(&input[o..o + 8]);
+        let window_index = u64::from_le_bytes(w);
+        o += 8;
+        let mut c = [0u8; 2];
+        c.copy_from_slice(&input[o..o + 2]);
+        let op_count = u16::from_le_bytes(c) as usize;
+        o += 2;
+        if input.len() < o + op_count * 32 + 2 {
+            return Err(BcDecodeError::Truncated);
+        }
+        let mut op_hashes = Vec::with_capacity(op_count);
+        for _ in 0..op_count {
+            let mut h = [0u8; 32];
+            h.copy_from_slice(&input[o..o + 32]);
+            op_hashes.push(h);
+            o += 32;
+        }
+        let mut rc = [0u8; 2];
+        rc.copy_from_slice(&input[o..o + 2]);
+        let reveal_count = u16::from_le_bytes(rc) as usize;
+        o += 2;
+        if input.len() < o + reveal_count * 32 + SIGNATURE_SIZE {
+            return Err(BcDecodeError::Truncated);
+        }
+        let mut reveal_hashes = Vec::with_capacity(reveal_count);
+        for _ in 0..reveal_count {
+            let mut h = [0u8; 32];
+            h.copy_from_slice(&input[o..o + 32]);
+            reveal_hashes.push(h);
+            o += 32;
+        }
+        let mut sig_bytes = [0u8; SIGNATURE_SIZE];
+        sig_bytes.copy_from_slice(&input[o..o + SIGNATURE_SIZE]);
+        o += SIGNATURE_SIZE;
+        Ok((
+            BundledConfirmation {
+                node_id,
+                endpoint,
+                window_index,
+                op_hashes,
+                reveal_hashes,
+                signature: Signature::from_array(sig_bytes),
+            },
+            o,
+        ))
+    }
+}
+
 // spec: Правило R2 — bundle_hash = SHA-256("mt-bundle" || signed_scope(bundle))
 pub fn bundle_hash(bc: &BundledConfirmation) -> Hash32 {
     let mut scope = Vec::new();
@@ -1776,5 +1845,35 @@ mod tests {
         // quorum(0) = 0, cemented_sum = 0 ≥ 0 → cemented
         // Это эдж кейс — в реальности active=0 halt liveness, не consensus
         assert!(is_cemented(0, 0));
+    }
+    #[test]
+    fn bc_encode_decode_roundtrip() {
+        let bc = BundledConfirmation {
+            node_id: [0x11; 32],
+            endpoint: [0x22; 32],
+            window_index: 12345,
+            op_hashes: vec![[0xAA; 32], [0xBB; 32], [0xCC; 32]],
+            reveal_hashes: vec![[0xDD; 32]],
+            signature: Signature::from_array([0xEE; SIGNATURE_SIZE]),
+        };
+        let mut buf = Vec::new();
+        bc.encode(&mut buf);
+        let (decoded, consumed) = BundledConfirmation::decode(&buf).expect("decode ok");
+        assert_eq!(consumed, buf.len());
+        assert_eq!(decoded, bc);
+    }
+
+    #[test]
+    fn bc_decode_truncated_returns_error() {
+        let mut buf = vec![0u8; 50];
+        assert!(matches!(
+            BundledConfirmation::decode(&buf),
+            Err(BcDecodeError::Truncated)
+        ));
+        buf.clear();
+        assert!(matches!(
+            BundledConfirmation::decode(&buf),
+            Err(BcDecodeError::Truncated)
+        ));
     }
 }
