@@ -1,80 +1,115 @@
 # The Montana Manifesto
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Date:** 2026-05-28
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
 
-> *"He who controls the past controls the future. He who controls the present controls the past."*
-> — George Orwell, *1984*
+> *"Who controls the past controls the future. Who controls the present controls the past."*
+> — Orwell, *1984*
 
-## I. The Question
+**The cash system Bitcoin promised. The economics of time the digital-money tradition has not yet built.**
 
-Bitcoin answered one question: **Whom do we trust with money?** *No one. Trust mathematics.*
+## I. The Cash System Bitcoin Did Not Build
 
-Bitcoin removed trust from money but left trust in time. Its difficulty adjusts to the wall-clocks of its miners; its block heights are measured against the watches of the world outside.
+Bitcoin's title was *A Peer-to-Peer Electronic Cash System*. Its cryptographic answer is famous: *whom do we trust with money?* — no one, trust mathematics. The cash-system answer never arrived.
 
-Montana answers a deeper question: **Whom do we trust with time?**
+A merchant at the corner cannot receive seven cents from the customer at the counter: the fee consumes the transaction. Settlement waits for block confirmation that is ten minutes at best and unbounded under congestion: the merchant cannot let the customer leave. Anti-spam is denominated in the very currency the system creates: under congestion the small user is priced out, under abundance the spammer re-enters at marginal cost — the mechanism oscillates with demand and does not converge.
 
-Money is a derivative of time, not the other way around. Today the infrastructure of time (NTP), of position (GPS), of communication (messaging servers) and of history (centralized databases) demands unconditional trust in a third party. One point of failure is one point of control. To control this infrastructure is to control the present. To control the databases is to rewrite the past.
+Bitcoin became **digital gold**. The medium-of-exchange property its title promised was never delivered.
 
-Montana makes *1984* technically impossible.
+Two things were missing.
 
-## II. Time as Computation
+- **A cash-system tokenomics.** Zero fees, so the seven-cent transaction settles. Asynchronous finality at window cementing — within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration), with no fee auction and no block queue ahead of the next operation. A non-speculative emission unit.
+- **An economics of time.** A non-monetary scarcity that replaces fees in anti-abuse, so the cash properties above are not undermined by the very mechanism that defends them — which is how Bitcoin lost its cash character in the first place.
 
-In Montana, a Verifiable Delay Function is not a clock that *displays* time. The VDF *is* time, written into the work of a sequential SHA-256 hash chain (FIPS 180-4). Each window is a sequential computation of `D ≈ 325 000 000` iterations on commodity x86_64 hardware. It cannot be parallelized; it cannot be faked; it cannot be hurried beyond the physics of the processor.
+The economics of time is a domain Bitcoin's framing did not see. The cash system is what Bitcoin's framing said but did not build. Montana takes both.
 
-Montana does not consume external time. Montana **produces** it. The output is an unbreakable cryptographic arrow of time — the **TimeChain**.
+Montana addresses, at the same level, three places where trust must still be removed:
 
-We chose a sequential SHA-256 delay function over the efficiently-verifiable constructions of Boneh, Bonneau, Bünz and Fisch [CRYPTO 2018], Pietrzak [ITCS 2019] and Wesolowski [EUROCRYPT 2019] deliberately. Verification cost equals computation cost. The minimal cryptographic surface is its own audit. SHA-256 is already required for hashing, addressing and Merkle commitments; no new assumption is added.
+- **Trust in time.** The protocol produces a canonical order of events with no external source.
+- **Trust in storage.** A user's data lives on the user's node, not in a corporation's database.
+- **Trust in communication.** Messages flow between users through their nodes, with no intermediary.
+
+The solution to the first problem is the foundation of the other two — and the carrier of the time-economics that makes the cash system viable.
+
+## II. Canonical Order, Not Wall-Clock Time
+
+Each Montana node performs a **sequential delay computation** — an iterated SHA-256 hash chain `T_W = SHA-256^D (T_{W-1})` with `D = 325 000 000` iterations per window. `D` is fixed in the Genesis Decree from a single quartz measurement on the genesis hardware (Apple iMac M1 2021, idle, single-thread); after Genesis the protocol consults no clock ([I-18]). The wall-clock duration of a window is an emergent property of each node's hardware and is not part of consensus state.
+
+This is **not** a verifiable delay function in the sense of Boneh-Bonneau-Bünz-Fisch [CRYPTO 2018], Pietrzak [ITCS 2019] or Wesolowski [EUROCRYPT 2019]. Those constructions provide succinct verification of order `O(log T)` or `O(1)`, but they operate over RSA groups or class groups of imaginary quadratic fields — assumptions broken by Shor's algorithm. A production-grade post-quantum succinct VDF does not yet exist. Montana takes the simpler primitive: an iterated SHA-256 chain. Verification cost equals computation cost; a verifier re-runs the same iterations the prover ran. SHA-256 is already required for addressing, hashing and Merkle commitments — no new assumption is added. The cryptographic surface is minimized to one primitive ([I-7]).
+
+The output is the **TimeChain**: a canonical, monotonic, unambiguous, independently verifiable sequence of windows. Montana does not measure physical duration. Mapping a window number to a calendar is the observer's task, not the protocol's.
 
 ## III. The Hierarchy of Truth
 
-Montana is built on a strict dependency. Every layer is impossible without the one below.
+Every layer is impossible without the one below.
 
-1. **Time** (`TimeChain`) — irreversible computation. The base layer of physics. Every operator ticks independently; together they form one global oscillator.
-2. **Presence** (`NodeChain`) — proof that a specific identity accompanied this stream of time. Weight in the network is measured by proven time of presence, not by capital. Capital does not buy more time.
-3. **Money** (`Account`, `TimeCoin`) — the quantitative derivative of proven presence. The unit `Ɉ` is not a reward for solving meaningless puzzles; it is the recording of a passed second in the network's ledger. Emission is closed-form: `supply(W) = 13 × (W + 1) Ɉ`. No premine. No presale. No founder allocation.
-4. **History** (`Anchor`) — the binding of any external fact (document, message, transaction) to this protected timeline. A hash is sealed in the TimeChain. To rewrite it is to recompute every iteration of the VDF from genesis. Mathematically impossible.
+1. **Canonical order** (`TimeChain`) — irreversible sequential computation. The base layer.
+2. **Presence** (`NodeChain`) — a node's chain length, accumulated one window at a time as the node is canonically cemented into the order. Weight in consensus is presence, not capital. Capital cannot retroactively purchase past participation.
+3. **Money** (`Account`, the Montana currency) — a quantitative derivative of presence. The reward for sealing a window is `EMISSION_moneta = 13 × 10⁹ moneta = 13 Ɉ`. Supply is closed-form: `supply_moneta(W) = EMISSION_moneta × (W + 1)`. No premine, no presale, no founder allocation, no halving, no supply cap, no discretionary issuance.
+4. **History** (`Anchor`) — a 32-byte hash bound to a window for the lifetime of the network. Rewriting it requires recomputing every iteration of the chain from the Genesis Decree. Mathematically impossible.
 
-*Money without proven presence is a phantom. Presence without verifiable time is a claim. Time without irreversible computation is trust.*
+`1 Ɉ = 10⁹ moneta`. The international ticker is `MONT`.
 
 ## IV. Post-Quantum from the First Day
 
-All consensus signatures are **ML-DSA-65** (FIPS 204). All transport key encapsulation is **ML-KEM-768** (FIPS 203). Hashing is **SHA-256** (FIPS 180-4). The transport handshake is **Noise_PQ XX**: ephemeral ML-KEM-768 on both sides, an ML-DSA-65 signature binding the full handshake transcript, and ChaCha20-Poly1305 AEAD framing on the established session (RFC 8439).
+- **Consensus signatures:** ML-DSA-65 (FIPS 204).
+- **Transport key encapsulation:** ML-KEM-768 (FIPS 203).
+- **Hashing:** SHA-256 (FIPS 180-4).
+- **Transport handshake:** Noise_PQ XX — ephemeral ML-KEM-768 on both sides, an ML-DSA-65 signature binding the full transcript, ChaCha20-Poly1305 AEAD framing (RFC 8439) on the established session.
+- **PeerId:** the SHA-256 multihash of each peer's ML-DSA-65 identity public key.
 
 No ECDSA. No EdDSA. No classical Diffie-Hellman. No assumption that Shor's algorithm will be late.
 
-PeerId is the SHA-256 multihash of each peer's ML-DSA-65 identity public key. Routing identity and consensus identity are bound to the same key material.
+## V. The Cash-System Tokenomics
 
-## V. Architecture Without Compromise
+The properties that make Montana a peer-to-peer electronic cash system are not features layered on a chain — they are the chain.
 
-- **Zero fees.** Anti-spam is operated by time, not by money: per-identity rate per window, `account_chain_length` thresholds, seniority gating. The protocol contains no `fee` field on any operation.
-- **Asynchronous finality.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators in approximately 300 milliseconds.
-- **No plutocracy.** Whoever holds one billion `Ɉ` has no more power in consensus than the operator of a Mac Mini. Emission (chronometric) and consensus (Proof of Time) are mathematically separated. The lottery seed incorporates `cemented_bundle_aggregate(W-2)` — a value an attacker cannot precompute without forging the signatures of honest participants.
-- **No governance in state.** There is no DAO, no treasury, no founder veto. Advisory councils may exist outside the protocol; none of them have binding force inside it. The author is removed from the protocol.
-- **No genesis nodes.** Montana launches as a peer-to-peer network in the style of Bitcoin. Any participant joins by running one command in a terminal. There is no founder-controlled bootstrap quorum.
-- **67% honest active chain length.** Safety holds while honest operators control more than two-thirds of `active_chain_length`. Capital does not enter this threshold.
+- **Zero fees.** The protocol contains no `fee` field on any operation. The seven-cent transaction settles.
+- **Asynchronous finality.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration; the wall-clock duration is emergent, not part of consensus state). The merchant lets the customer leave.
+- **Constant monotonic emission.** `13 Ɉ` per window, fixed by the Genesis Decree, closed-form. No halving, no supply cap, no discretionary issuance. Supply is predictable for decades through one formula. The unit of money is not speculative; it is the record of a sealed window.
+- **No plutocracy by construction.** Whoever holds a billion `Ɉ` has no more power in consensus than the operator of a Mac Mini. A node's weight is its chain length — its history of cemented presence. The lottery seed incorporates `cemented_bundle_aggregate(W-2)`, signatures from honest operators two windows back, which closes the grinding attack class under hardware asymmetry without depending on rational-cost arguments.
+- **Two-thirds honest chain length.** Safety holds while honest operators control more than two-thirds of `active_chain_length`. Capital does not enter the threshold.
 
-## VI. The Scale Baseline
+## VI. The Economics of Time
 
-Every decision in Montana is calibrated for **at least one billion active users**. Mechanisms that do not scale to 10⁹ are discarded without discussion. AccountRecord is 2 059 bytes; state at 10⁹ accounts is approximately 2.06 TB, holdable on commodity disks. The pruning rule is canonical: state size is bounded by active population, not by chain age.
+Anti-abuse is done by time, not by money — three independent scarcities, each derived from time elapsed.
 
-## VII. Privacy as a Choice
+- **Per-identity rate per window.** One operation per account per window τ₁. An attacker with N Sybil identities gets at most N operations per window, but each identity has its own creation cost.
+- **`account_chain_length` thresholds.** Privileged operations require the operating account to have been active for at least `k` windows. The threshold cannot be purchased.
+- **Sequential entry barrier for node operators.** Node registration requires producing a sequential SHA-256 chain of length `vdf_chain_length × D` iterations — approximately fourteen days of wall-clock on a commodity x86_64 core. Sequential time is non-acquirable; an attacker with `M` parallel machines produces `M` identities at the same wall-clock cost, not faster.
 
-Balances, transfers and operator identities are public by default. Privacy is achieved through **Anchor** objects: a 32-byte hash is committed to the chain and the encrypted content is held off-chain by its owner. The protocol has no visibility into the contents. Privacy is what the user chooses to keep — not what the protocol imposes nor what the protocol forbids.
+Together these three close DoS without monetary barriers. Time as scarcity does not require a price feed, an oracle, or an exchange to measure. Its valuation is fixed by the protocol: one window is one window, regardless of `Ɉ` price.
 
-## VIII. What Montana Is Not
+## VII. The Ladder of Sovereignty
 
-Montana is not a faster Ethereum. Montana is not an L2. Montana is not a privacy mixer. Montana is not yield. Montana is not governance. Montana is not a brand.
+Two roles, one chain.
 
-Montana is the digital atomic clock for the internet. It is the standard of frequency from which money, presence and history derive.
+- **Account user.** A key in a smartphone or hardware wallet. Sends and receives Montana; commits 32-byte hashes via `Anchor`; runs applications on top of someone else's node. No protocol-layer earnings. Barrier: a first incoming Transfer (the AccountRecord is created atomically together with crediting the amount).
+- **Node operator.** Commodity hardware (one CPU core), 24/7 uptime, a network connection, and the sequential SHA-256 entry barrier at registration. Full participation in consensus. Earnings through the per-window node lottery.
+
+The seed phrase and the account chain belong to the user, not to the node. The user moves up the ladder when they choose to.
+
+## VIII. The Scale Baseline, Privacy, and Removal of the Author
+
+- **Scale.** Every decision is calibrated for at least one billion active users. Mechanisms that do not scale to 10⁹ are discarded without discussion. AccountRecord is 2 059 bytes; state at 10⁹ accounts is approximately 2.06 TB, holdable on commodity disks. Pruning is canonical: state size is bounded by active population, not by chain age.
+- **Privacy.** Balances and account graphs are public by default ([I-2]). Application-level privacy is achieved through `Anchor`: a 32-byte hash is committed to the chain; encrypted content is held off-chain by its owner. The protocol has no visibility into the contents. Privacy is what the user chooses to keep — not what the protocol imposes nor what the protocol forbids.
+- **No governance in state.** No DAO, no treasury, no founder veto. Advisory councils may exist outside the protocol; none of them have binding force inside it. The author is removed from the protocol by construction. Montana launches as a peer-to-peer network with no founder-controlled bootstrap quorum.
+
+## IX. What Montana Is
+
+Not a blockchain with a timestamping feature. Not a faster Ethereum. Not an L2. Not a privacy mixer. Not yield. Not governance. Not a brand. Not digital gold.
+
+Montana is **the peer-to-peer electronic cash system whose anti-abuse scarcity is time, not money** — the cash system Bitcoin's title promised and Bitcoin did not deliver, built on top of **the economics of time** the digital-money tradition has not yet built.
+
+A time frame of reference with a value-transfer feature. The standard of frequency from which money, presence and history derive.
 
 ---
 
-**Reference implementation:** Rust, Apache-2.0 / MIT. Twelve crates including `mt-timechain`, `mt-consensus`, `mt-lottery`, `mt-crypto`, `mt-net`, `mt-noise-pq`. Specification: [Whitepaper Montana.md](../Whitepaper%20Montana.md).
+**Reference implementation:** Rust, Apache-2.0 / MIT. Twenty-three crates including `mt-timechain`, `mt-consensus`, `mt-lottery`, `mt-crypto`, `mt-net`, `mt-noise-pq`. Specification: [Whitepaper Montana.md](../Whitepaper%20Montana.md) and [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
 
-**Symbol:** **Ɉ** — one second of Montana time.
+**Symbol:** **Ɉ** — Montana. `moneta` — the smallest unit (`1 Ɉ = 10⁹ moneta`). **Ticker:** `MONT`.
 
 Alejandro Montana
 *Ничто_Nothing_无_金元Ɉ*
