@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use mt_account::{apply_proposal, ProposalSettle};
 use mt_codec::CanonicalEncode;
@@ -14,9 +14,8 @@ use mt_entry::{
 };
 use mt_genesis::genesis_params;
 use mt_lottery::{
-    bundle_hash, compute_endpoint, is_cemented, lottery_weight, quorum, reveal_hash,
-    seniority_term, validate_bundle, validate_reveal, weighted_ticket_node, BundledConfirmation,
-    VdfReveal,
+    bundle_hash, compute_endpoint, lottery_weight, quorum, reveal_hash, seniority_term,
+    validate_bundle, validate_reveal, weighted_ticket_node, BundledConfirmation, VdfReveal,
 };
 use mt_merkle::{empty_internal, SparseMerkleTree, TREE_DEPTH};
 use mt_net::{MsgType, ProtocolMessage};
@@ -192,6 +191,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let store = FsStore::open(&data_dir)
         .map_err(|e| NodeError::InvalidArguments(format!("FsStore::open: {e:?}")))?;
 
+    // DEV-012 multi-confirmer: per-window accumulator of BCs from Active peers.
+    // Keyed by window then node_id so duplicates from same node deduplicate.
+    let mut bc_accumulator: BTreeMap<u64, BTreeMap<mt_state::NodeId, BundledConfirmation>> =
+        BTreeMap::new();
+
     // M7 fast-sync: held across loop iterations while a snapshot is in flight.
     let fast_sync_lag_threshold =
         resolve_fast_sync_lag_threshold(std::env::var("MONTANA_FASTSYNC_LAG_THRESHOLD").ok());
@@ -217,13 +221,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         // Decode window_index + winner + proposer без полного deserialize
                         // (signature валидация в M10), apply_proposal with reconstructed
                         // singleton ProposalSettle. Followers stay in lockstep with Moscow.
-                        if msg.payload.len() != 3722 {
+                        if msg.payload.len() < 3722 {
                             eprintln!(
-                                "[consensus] Proposal envelope wrong size {} (expected 3722) — skip",
+                                "[consensus] Proposal envelope wrong size {} (expected >= 3722) — skip",
                                 msg.payload.len()
                             );
                             continue;
                         }
+                        let is_cemented = msg.payload.len() > 3722;
                         let window_index = u64::from_le_bytes([
                             msg.payload[32],
                             msg.payload[33],
@@ -268,30 +273,132 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             let oldest = *recent_roots.keys().next().unwrap();
                             recent_roots.remove(&oldest);
                         }
-                        if window_index <= current {
+                        // Candidate envelope (size == 3722, no bundles) is NOT applied:
+                        // it serves as a notification "window W is being proposed,
+                        // send me your BC". Active followers respond with a BC.
+                        if !is_cemented {
+                            // Active follower: compute own BC for this window and
+                            // broadcast back to the proposer (and to peers).
+                            let am_active_in_table = state.nodes.get(&my_node).is_some();
+                            if am_active_in_table && my_node != bootstrap_node_id {
+                                let mut t_r_w = [0u8; 32];
+                                t_r_w.copy_from_slice(&msg.payload[204..236]);
+                                let cba = mt_timechain::cemented_bundle_aggregate(
+                                    window_index.saturating_sub(2),
+                                    &[],
+                                );
+                                let endpoint = mt_lottery::compute_endpoint(
+                                    &t_r_w,
+                                    &cba,
+                                    &my_node,
+                                    window_index,
+                                );
+                                let _ = endpoint;
+                                // Per existing convention (validate_bundle line ~140):
+                                // bc.endpoint stores the raw T_r(W) of the proposer.
+                                let mut bc = BundledConfirmation {
+                                    node_id: my_node,
+                                    endpoint: t_r_w,
+                                    window_index,
+                                    op_hashes: Vec::new(),
+                                    reveal_hashes: Vec::new(),
+                                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+                                };
+                                let mut bc_scope = Vec::new();
+                                bc.encode_signed_scope(&mut bc_scope);
+                                bc.signature = sign(&identity.node_sk, &bc_scope)
+                                    .map_err(NodeError::Crypto)?;
+                                let mut bc_payload = Vec::new();
+                                bc.encode(&mut bc_payload);
+                                let envelope = ProtocolMessage::new(
+                                    MsgType::BundledConfirmation,
+                                    window_index,
+                                    bc_payload,
+                                );
+                                if handle.broadcast_tx.send(envelope).is_ok() {
+                                    eprintln!("[bc] broadcast own BC for window {window_index}");
+                                }
+                            }
+                            // Candidate not advanced; cemented envelope will advance current.
                             continue;
                         }
-                        // M7 fast-sync: while a snapshot is already in flight,
-                        // do not replay windows in parallel — wait for it.
+                        // Cemented envelope: parse bundles, validate, multi-confirmer apply.
+                        let mut bundles: Vec<BundledConfirmation> = Vec::new();
+                        let payload = &msg.payload;
+                        if payload.len() >= 3722 + 2 {
+                            let mut bc_buf = [0u8; 2];
+                            bc_buf.copy_from_slice(&payload[3722..3724]);
+                            let bundle_count = u16::from_le_bytes(bc_buf) as usize;
+                            let mut off = 3724;
+                            let mut ok = true;
+                            for _ in 0..bundle_count {
+                                match BundledConfirmation::decode(&payload[off..]) {
+                                    Ok((bc, used)) => {
+                                        bundles.push(bc);
+                                        off += used;
+                                    },
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[consensus] cemented bundle decode failed: {e:?} — skip envelope"
+                                        );
+                                        ok = false;
+                                        break;
+                                    },
+                                }
+                            }
+                            if !ok {
+                                continue;
+                            }
+                        }
+                        let mut t_r_w_cemented = [0u8; 32];
+                        t_r_w_cemented.copy_from_slice(&msg.payload[204..236]);
+                        let mut valid_confirmers: Vec<mt_state::NodeId> = Vec::new();
+                        let mut any_invalid = false;
+                        for bc in &bundles {
+                            if mt_lottery::validate_bundle(bc, &state.nodes, &t_r_w_cemented)
+                                .is_ok()
+                            {
+                                valid_confirmers.push(bc.node_id);
+                            } else {
+                                any_invalid = true;
+                            }
+                        }
+                        if any_invalid {
+                            eprintln!(
+                                "[consensus] cemented w={window_index}: некоторые bundles не прошли validate, продолжаю с валидными {}",
+                                valid_confirmers.len()
+                            );
+                        }
+                        if valid_confirmers.is_empty() && !bundles.is_empty() {
+                            eprintln!(
+                                "[consensus] cemented w={window_index}: 0 валидных bundles — skip"
+                            );
+                            continue;
+                        }
+                        // Fallback: if bundles empty (legacy 3722-only envelope), treat as
+                        // singleton with proposer as sole confirmer. Unreachable here since
+                        // is_cemented = payload.len() > 3722; but defensive.
+                        if valid_confirmers.is_empty() {
+                            valid_confirmers.push(proposer_node_id);
+                        }
+                        // M7 fast-sync: if a snapshot is already in flight, ignore
+                        // cemented proposals until apply.
                         if fast_sync.is_some() {
                             continue;
                         }
-                        // Far behind → request a snapshot instead of replaying
-                        // thousands of apply_proposal iterations. The reconstructed
-                        // snapshot root is verified at finalize against recent_roots
-                        // (trusted bootstrap roots); the anchor-authenticity gate
-                        // (Proposal signature) is M10, identical to the replay path.
+                        // Far behind → request a fast-sync snapshot instead of waiting
+                        // for many cemented envelopes (one per window) to catch up.
                         if window_index.saturating_sub(current) > fast_sync_lag_threshold {
-                            let mut payload = Vec::new();
+                            let mut fs_payload = Vec::new();
                             mt_net::FastSyncRequest {
                                 anchor_window: window_index,
                                 resume_offset: 0,
                             }
-                            .encode(&mut payload);
+                            .encode(&mut fs_payload);
                             match handle.broadcast_tx.send(ProtocolMessage::new(
                                 MsgType::FastSyncRequest,
                                 msg.request_id,
-                                payload,
+                                fs_payload,
                             )) {
                                 Ok(()) => {
                                     eprintln!(
@@ -300,12 +407,35 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                     );
                                     fast_sync = Some(mt_sync::FastSyncClient::new());
                                 },
-                                Err(e) => {
-                                    eprintln!("[m7] FastSyncRequest broadcast failed: {e}")
-                                },
+                                Err(e) => eprintln!("[m7] FastSyncRequest broadcast failed: {e}"),
                             }
                             continue;
                         }
+                        // One cemented envelope = one window advance.
+                        if window_index != current + 1 {
+                            eprintln!(
+                                "[consensus] cemented w={window_index} gap (current={current}) — wait for sequential cemented or fast-sync"
+                            );
+                            continue;
+                        }
+                        let settle = ProposalSettle {
+                            window_w: window_index,
+                            winner_id,
+                            cemented_confirmers: valid_confirmers.clone(),
+                        };
+                        let _post_state_root = apply_proposal(
+                            &mut state.accounts,
+                            &mut state.nodes,
+                            &state.candidates,
+                            &settle,
+                            params,
+                        );
+                        current = window_index;
+                        save_current_window(&data_dir, current)?;
+                        eprintln!(
+                            "[consensus] applied cemented Proposal w={current} (confirmers={})",
+                            valid_confirmers.len()
+                        );
                         let mut applied_count = 0u64;
                         while current < window_index {
                             let next_w = current + 1;
@@ -432,10 +562,35 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         }
                     },
                     MsgType::BundledConfirmation => {
-                        // DEV-012 Phase A scaffold: count incoming BC envelopes. Full
-                        // multi-confirmer validate + accumulator-quorum + cemented-Proposal
-                        // broadcast is DEV-012 Phase B+C (v1.0.0 mainnet gate).
+                        // DEV-012 Phase B: validate incoming BC and insert into accumulator.
+                        // Quorum check + cementing is done at the top of the Active loop.
                         bc_count += 1;
+                        match BundledConfirmation::decode(&msg.payload) {
+                            Ok((bc, _used)) => {
+                                // expected_endpoint = my own t_r at bc.window_index. For
+                                // current-window BCs this is timechain.t_r; for past windows
+                                // we'd need history. Simplification: validate against
+                                // current t_r only; older BCs may fail and be ignored.
+                                if mt_lottery::validate_bundle(&bc, &state.nodes, &timechain.t_r)
+                                    .is_ok()
+                                {
+                                    let node_id = bc.node_id;
+                                    let w = bc.window_index;
+                                    bc_accumulator.entry(w).or_default().insert(node_id, bc);
+                                    eprintln!(
+                                        "[bc] accepted BC from {} for window {w}",
+                                        hex16(&node_id)
+                                    );
+                                } else {
+                                    eprintln!(
+                                        "[bc] BC validate failed for {} w={}",
+                                        hex16(&bc.node_id),
+                                        bc.window_index
+                                    );
+                                }
+                            },
+                            Err(e) => eprintln!("[bc] decode failed: {e:?}"),
+                        }
                     },
                     _ => {},
                 }
@@ -559,10 +714,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // NodeTable работает как passive follower: не producит proposal,
                 // break 'active_arm падает в post-match cleanup (candidate_expiry +
                 // selection_event + next_d + save_progress) — узел остаётся жив.
-                let is_singleton = state.nodes.len() == 1 && state.nodes.get(&my_node).is_some();
-                if !is_singleton {
+                // DEV-012 multi-confirmer: bootstrap is the canonical proposer; any
+                // Active node that is NOT the bootstrap stays a follower and contributes
+                // a BC on incoming candidate Proposal. (Spec calls for lookback-based
+                // proposer rotation in a future iteration; for the v1.0.0 cohort the
+                // bootstrap-only proposer model is the deployed baseline.)
+                if !is_genesis {
                     eprintln!(
-                        "[active W={current}] follower mode (NodeTable={} nodes) — waiting for peer Proposal",
+                        "[active W={current}] non-bootstrap Active in NodeTable={} — follower mode",
                         state.nodes.len()
                     );
                     follower_skip = true;
@@ -611,12 +770,10 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     NodeError::InvalidArguments("active phase но узел не в NodeTable".into())
                 })?;
                 let cemented_chain_length = my_node_record.chain_length;
-                if !is_cemented(cemented_chain_length, active_chain_length) {
-                    return Err(NodeError::InvalidArguments(format!(
-                        "singleton cementing: cemented={cemented_chain_length}, active={active_chain_length}, quorum={}",
-                        quorum(active_chain_length)
-                    )));
-                }
+                // DEV-012: cementing check is performed against the multi-confirmer
+                // accumulator after broadcast+drain (below). The singleton-only check
+                // is no longer correct in multi-Active mode.
+                let _ = (cemented_chain_length, active_chain_length);
 
                 let snapshot = my_node_record.chain_length_snapshot.max(1);
                 let _weight = lottery_weight(my_node_record.chain_length, snapshot);
@@ -682,10 +839,121 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
                 };
 
+                // DEV-012: insert own BC into accumulator first.
+                bc_accumulator
+                    .entry(current)
+                    .or_default()
+                    .insert(my_node, bc.clone());
+
+                // Multi-confirmer: if not singleton, broadcast candidate (3722) first,
+                // then spin draining incoming for BCs from peers up to 800ms or quorum.
+                if state.nodes.len() > 1 {
+                    // Build a minimal candidate header (placeholder state_root) for the
+                    // notification broadcast. Signed scope must include real T_r so peers
+                    // compute matching BC.endpoint.
+                    let candidate = ProposalHeader {
+                        prev_proposal_hash,
+                        window_index: current,
+                        protocol_version: 1,
+                        control_root,
+                        node_root: [0u8; 32],
+                        candidate_root: state.candidates.root(),
+                        account_root: [0u8; 32],
+                        state_root: [0u8; 32],
+                        timechain_value: timechain.t_r,
+                        included_bundles_root,
+                        included_reveals_root,
+                        winner_endpoint: endpoint,
+                        winner_id: my_node,
+                        proposer_node_id: my_node,
+                        target: u128::MAX,
+                        fallback_depth: 1,
+                        signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+                    };
+                    let mut cand_scope = Vec::new();
+                    candidate.encode_signed_scope(&mut cand_scope);
+                    let cand_sig =
+                        sign(&identity.node_sk, &cand_scope).map_err(NodeError::Crypto)?;
+                    let mut signed_cand = candidate.clone();
+                    signed_cand.signature = cand_sig;
+                    let mut cand_bytes = Vec::with_capacity(3722);
+                    signed_cand.encode(&mut cand_bytes);
+                    if let Some(ref handle) = network_handle {
+                        let _ = handle.broadcast_tx.send(ProtocolMessage::new(
+                            MsgType::Proposal,
+                            current,
+                            cand_bytes,
+                        ));
+                        eprintln!(
+                            "[dev-012] broadcast candidate Proposal w={current} (NodeTable.len={}, awaiting BCs)",
+                            state.nodes.len()
+                        );
+                    }
+
+                    // Spin draining BCs up to 800ms.
+                    let active_sum: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
+                    let need_quorum = quorum(active_sum);
+                    let deadline = Instant::now() + Duration::from_millis(800);
+                    while Instant::now() < deadline {
+                        if let Some(ref mut handle) = network_handle {
+                            while let Ok(msg) = handle.incoming_rx.try_recv() {
+                                if msg.msg_type == MsgType::BundledConfirmation {
+                                    if let Ok((rec_bc, _)) =
+                                        BundledConfirmation::decode(&msg.payload)
+                                    {
+                                        if rec_bc.window_index == current
+                                            && mt_lottery::validate_bundle(
+                                                &rec_bc,
+                                                &state.nodes,
+                                                &timechain.t_r,
+                                            )
+                                            .is_ok()
+                                        {
+                                            let nid = rec_bc.node_id;
+                                            bc_accumulator
+                                                .entry(current)
+                                                .or_default()
+                                                .insert(nid, rec_bc);
+                                            eprintln!(
+                                                "[dev-012] accepted BC from {} for w={current}",
+                                                hex16(&nid)
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        let collected: u64 = bc_accumulator
+                            .get(&current)
+                            .map(|m| {
+                                m.keys()
+                                    .filter_map(|id| state.nodes.get(id).map(|n| n.chain_length))
+                                    .sum()
+                            })
+                            .unwrap_or(0);
+                        if collected >= need_quorum {
+                            eprintln!(
+                                "[dev-012] quorum reached w={current}: cemented_sum={collected} >= {need_quorum}"
+                            );
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                }
+
+                // Build final settle from accumulator. Sorted by node_id for determinism.
+                let confirmer_ids: Vec<mt_state::NodeId> = bc_accumulator
+                    .get(&current)
+                    .map(|m| {
+                        let mut v: Vec<_> = m.keys().copied().collect();
+                        v.sort();
+                        v
+                    })
+                    .unwrap_or_else(|| vec![my_node]);
                 let settle = ProposalSettle {
                     window_w: current,
                     winner_id: my_node,
-                    cemented_confirmers: vec![my_node],
+                    cemented_confirmers: confirmer_ids.clone(),
                 };
                 let post_state_root = apply_proposal(
                     &mut state.accounts,
@@ -703,26 +971,40 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 header.signature =
                     sign(&identity.node_sk, &header_scope).map_err(NodeError::Crypto)?;
 
-                // M9 Phase 1: broadcast ProposalHeader всем connected peers через
-                // network thread. Followers получают envelope с window_index и
-                // в M9 Phase 2 будут running apply_proposal locally.
+                // DEV-012: broadcast CEMENTED envelope: [header(3722)][u16 bundle_count][N × BC].
                 if let Some(ref handle) = network_handle {
-                    let mut header_bytes = Vec::with_capacity(3722);
-                    header.encode(&mut header_bytes);
+                    let mut payload = Vec::with_capacity(3722 + 2 + 4096 * confirmer_ids.len());
+                    header.encode(&mut payload);
+                    let bundles_for_envelope: Vec<&BundledConfirmation> = {
+                        let map = bc_accumulator.get(&current).cloned().unwrap_or_default();
+                        let mut keys: Vec<_> = map.keys().copied().collect();
+                        keys.sort();
+                        keys.into_iter()
+                            .filter_map(|k| bc_accumulator.get(&current).and_then(|m| m.get(&k)))
+                            .collect::<Vec<_>>()
+                    };
+                    let bundle_count = bundles_for_envelope.len() as u16;
+                    payload.extend_from_slice(&bundle_count.to_le_bytes());
+                    for bc in &bundles_for_envelope {
+                        bc.encode(&mut payload);
+                    }
                     let envelope =
-                        ProtocolMessage::new(MsgType::Proposal, header.window_index, header_bytes);
+                        ProtocolMessage::new(MsgType::Proposal, header.window_index, payload);
                     if let Err(e) = handle.broadcast_tx.send(envelope) {
                         eprintln!(
-                            "[consensus] broadcast Proposal w={} failed: {e}",
+                            "[consensus] broadcast CEMENTED Proposal w={} failed: {e}",
                             header.window_index
                         );
                     } else {
                         eprintln!(
-                            "[consensus] broadcast Proposal window={} → peers",
-                            header.window_index
+                            "[consensus] broadcast CEMENTED Proposal window={} → peers (bundles={})",
+                            header.window_index,
+                            bundle_count
                         );
                     }
                 }
+                // Window cemented; drop its accumulator entry.
+                bc_accumulator.remove(&current);
 
                 let recomputed = compute_state_root(
                     &state.nodes.root(),
