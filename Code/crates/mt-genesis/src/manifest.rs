@@ -35,6 +35,23 @@ pub struct GenesisPeer {
     /// Среди peers в manifest-е может быть **ровно один** bootstrap.
     #[serde(default)]
     pub bootstrap: bool,
+    /// Test-cohort only: pre-seed this peer as an Active operator in the
+    /// genesis NodeTable / AccountTable, bypassing the τ₂ candidate VDF wait.
+    /// Production manifest leaves this `false` for all non-bootstrap peers;
+    /// admission is consensus-driven through selection events.
+    #[serde(default)]
+    pub force_active: bool,
+    /// ML-DSA-65 node public key in lowercase hex (3904 chars = 1952 bytes).
+    /// Required when `force_active = true` (the pre-seed needs the full
+    /// pubkey, not just the node_id hash). `None` for production peers
+    /// whose identity is finalized only via `ProtocolParams.bootstrap_node_pubkey`.
+    #[serde(default)]
+    pub node_pubkey_hex: Option<String>,
+    /// ML-DSA-65 account public key in lowercase hex (3904 chars = 1952 bytes).
+    /// Required when `force_active = true` for the same reason as
+    /// `node_pubkey_hex` — pre-seeding an AccountRecord needs the full pubkey.
+    #[serde(default)]
+    pub account_pubkey_hex: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -57,6 +74,10 @@ pub enum ManifestError {
         expected: usize,
         actual: usize,
     },
+    ForceActiveMissingPubkey {
+        peer: String,
+        field: &'static str,
+    },
 }
 
 impl std::fmt::Display for ManifestError {
@@ -77,6 +98,10 @@ impl std::fmt::Display for ManifestError {
             } => write!(
                 f,
                 "поле {field}: ожидалось {expected} hex-символов, получили {actual}"
+            ),
+            Self::ForceActiveMissingPubkey { peer, field } => write!(
+                f,
+                "peer '{peer}' имеет force_active=true, но поле {field} отсутствует"
             ),
         }
     }
@@ -125,8 +150,51 @@ impl GenesisManifest {
                     actual: peer.node_id_hex.len(),
                 });
             }
+            if peer.force_active {
+                match &peer.node_pubkey_hex {
+                    None => {
+                        return Err(ManifestError::ForceActiveMissingPubkey {
+                            peer: peer.label.clone(),
+                            field: "node_pubkey_hex",
+                        })
+                    },
+                    Some(h) if h.len() != 3904 => {
+                        return Err(ManifestError::InvalidHexLength {
+                            field: "node_pubkey_hex",
+                            expected: 3904,
+                            actual: h.len(),
+                        })
+                    },
+                    _ => (),
+                }
+                match &peer.account_pubkey_hex {
+                    None => {
+                        return Err(ManifestError::ForceActiveMissingPubkey {
+                            peer: peer.label.clone(),
+                            field: "account_pubkey_hex",
+                        })
+                    },
+                    Some(h) if h.len() != 3904 => {
+                        return Err(ManifestError::InvalidHexLength {
+                            field: "account_pubkey_hex",
+                            expected: 3904,
+                            actual: h.len(),
+                        })
+                    },
+                    _ => (),
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Test-cohort accessor: peers explicitly marked `force_active = true`,
+    /// excluding the bootstrap (which is already seeded from `ProtocolParams`).
+    pub fn extra_actives(&self) -> Vec<&GenesisPeer> {
+        self.peers
+            .iter()
+            .filter(|p| p.force_active && !p.bootstrap)
+            .collect()
     }
 
     pub fn bootstrap_peer(&self) -> Option<&GenesisPeer> {
@@ -242,5 +310,81 @@ mod tests {
         let mut m: GenesisManifest = serde_json::from_str(&three_peer_manifest_json()).unwrap();
         m.peers[0].bootstrap = false;
         assert!(m.bootstrap_peer().is_none());
+    }
+
+    fn force_active_peer_json() -> String {
+        format!(
+            r#"{{
+              "network_name": "test",
+              "peers": [
+                {{
+                  "label": "armenia",
+                  "multiaddr": "/ip4/<exit-am>/tcp/8444",
+                  "peer_id": "QmTestBootstrap",
+                  "account_id_hex": "{a}",
+                  "node_id_hex": "{n}",
+                  "bootstrap": true
+                }},
+                {{
+                  "label": "vilnius",
+                  "multiaddr": "/ip4/45.45.45.45/tcp/8444",
+                  "peer_id": "QmTestVilnius",
+                  "account_id_hex": "{b}",
+                  "node_id_hex": "{m}",
+                  "force_active": true,
+                  "node_pubkey_hex": "{npk}",
+                  "account_pubkey_hex": "{apk}"
+                }}
+              ]
+            }}"#,
+            a = "1".repeat(64),
+            b = "2".repeat(64),
+            n = "a".repeat(64),
+            m = "b".repeat(64),
+            npk = "c".repeat(3904),
+            apk = "d".repeat(3904),
+        )
+    }
+
+    #[test]
+    fn parse_force_active_with_pubkeys() {
+        let m = GenesisManifest::parse(&force_active_peer_json()).expect("valid");
+        let extras = m.extra_actives();
+        assert_eq!(extras.len(), 1);
+        assert_eq!(extras[0].label, "vilnius");
+        assert!(extras[0].force_active);
+        assert!(!extras[0].bootstrap);
+        assert_eq!(extras[0].node_pubkey_hex.as_ref().unwrap().len(), 3904);
+    }
+
+    #[test]
+    fn force_active_without_pubkey_rejected() {
+        let mut json: serde_json::Value = serde_json::from_str(&force_active_peer_json()).unwrap();
+        json["peers"][1]
+            .as_object_mut()
+            .unwrap()
+            .remove("node_pubkey_hex");
+        let err = GenesisManifest::parse(&json.to_string()).unwrap_err();
+        assert!(matches!(
+            err,
+            ManifestError::ForceActiveMissingPubkey { field, .. } if field == "node_pubkey_hex"
+        ));
+    }
+
+    #[test]
+    fn force_active_wrong_pubkey_length_rejected() {
+        let mut json: serde_json::Value = serde_json::from_str(&force_active_peer_json()).unwrap();
+        json["peers"][1]
+            .as_object_mut()
+            .unwrap()
+            .insert("node_pubkey_hex".into(), "abc".into());
+        let err = GenesisManifest::parse(&json.to_string()).unwrap_err();
+        assert!(matches!(
+            err,
+            ManifestError::InvalidHexLength {
+                field: "node_pubkey_hex",
+                ..
+            }
+        ));
     }
 }
