@@ -1,16 +1,16 @@
 # The Montana Manifesto
 
-**Version:** 1.2.0
-**Date:** 2026-05-28
+**Version:** 1.3.0
+**Date:** 2026-05-29
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
 
 > *"Who controls the past controls the future. Who controls the present controls the past."*
 > — Orwell, *1984*
 
-**The neutral rail Bitcoin's title conflated with the currency. The economics of time the digital-money tradition has not yet built.**
+**The neutral rail Bitcoin's title conflated with the currency. The substrate Ethereum's name claimed and did not build. The economics of time the digital-money tradition has not yet written.**
 
-## I. Two Jobs Bitcoin Conflated
+## I. Two Jobs Conflated, and Two Names That Did Not Deliver
 
 Bitcoin's title was *A Peer-to-Peer Electronic Cash System*. The phrase put two distinct jobs under one name.
 
@@ -19,14 +19,18 @@ Bitcoin's title was *A Peer-to-Peer Electronic Cash System*. The phrase put two 
 
 Bitcoin tried to do both at once. Its anti-spam mechanism, denominated in its own asset, tied the rail's reliability to the price of that asset; the asset's volatility put unit-of-account stability out of reach; the two jobs interfered. The title promised electronic cash; what Bitcoin became was *digital gold* — neither a stable usable currency nor a fee-free rail.
 
+Ethereum took the second job under a different name. *Ether* in its title is the medium that fills space — the substrate on which everything moves. The proposition was correct: what the world needed was a settlement layer, not another currency. But the implementation charges fees denominated in its own asset, runs on classical elliptic-curve signatures that Shor's algorithm breaks, and exposes an extractive ordering layer (MEV) that turns neutrality into a marketing claim rather than a property. The name promised the ether. The implementation did not deliver it.
+
+Two famous names, two missed roles. Bitcoin missed *cash*; Ethereum missed *ether*. Both missed for the same underlying reason: the rail's reliability was coupled to the price of its native asset, the rail's neutrality was contingent on whoever produced the next block, and the rail's primitive set was the one Shor breaks. The two jobs could not be done at once, and the rail half was not done at all.
+
 Montana picks **one** of the two jobs on purpose: the neutral, fee-free, post-quantum settlement and ordering rail. The stable usable currency that consumers see in daily life lives one floor up — issued by accountable parties with their own reserves and buy-back logic, denominated in whatever units those issuers choose. Montana provides the substrate on which any such currency can run.
 
 The rail does not need to know the unit of account it carries. The currency does not have to be the rail.
 
-What is needed for a real neutral rail, and what Bitcoin's rail layer did not deliver, is the following:
+What is needed for a real neutral rail — and what neither Bitcoin's rail layer nor Ethereum's implementation delivered — is the following:
 
 - A non-monetary anti-abuse scarcity, so the rail's reliability is not coupled to the price of its native asset.
-- Asynchronous finality fast enough that the rail behaves like a settlement layer, not a queue of blocks.
+- Asynchronous finality fast enough that the rail behaves like a settlement layer, not a queue of blocks, and without an extractable position over the order of operations.
 - A post-quantum primitive set, because long-lived rails carrying value across decades cannot rest on assumptions Shor's algorithm breaks.
 
 Montana takes all three.
@@ -75,7 +79,7 @@ No ECDSA. No EdDSA. No classical Diffie-Hellman. No assumption that Shor's algor
 What makes Montana a neutral settlement and ordering rail are not features layered on a chain — they are the chain.
 
 - **Zero fees.** The protocol contains no `fee` field on any operation. A seven-cent transfer settles. A high-volume settlement application is not priced out by a congestion auction.
-- **Asynchronous finality.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration; the wall-clock duration is emergent, not part of consensus state).
+- **Asynchronous finality without extractable ordering.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration; the wall-clock duration is emergent, not part of consensus state). The proposer's discretion over which operations to include or omit is zero — only cemented BundledConfirmations enter the chain, and operation ordering inside a window is fixed by τ₁-rate canonical rules, not by the proposer's local mempool view. There is no extractable position over the order of operations.
 - **Constant monotonic emission as bookkeeping.** `13 Ɉ` per window, fixed by the Genesis Decree, closed-form. No halving, no supply cap, no discretionary issuance. `Ɉ` is what the rail pays its operators — bookkeeping for the work of sealing a window, not a stable unit of account. Currencies that need to be stable live one floor up, where parties with balance sheets can issue them.
 - **No plutocracy by construction.** Whoever holds a billion `Ɉ` has no more power in consensus than the operator of a Mac Mini. A node's weight is its chain length — its history of cemented presence. The lottery seed incorporates `cemented_bundle_aggregate(W-2)`, signatures from honest operators two windows back, which closes the grinding attack class under hardware asymmetry without depending on rational-cost arguments.
 - **Two-thirds honest chain length.** Safety holds while honest operators control more than two-thirds of `active_chain_length`. Capital does not enter the threshold.
@@ -107,13 +111,15 @@ The seed phrase and the account chain belong to the user, not to the node. The u
 
 ## IX. What Montana Is
 
-Not the currency Bitcoin's title promised. Not digital gold. Not yield. Not governance. Not a brand. Not a privacy mixer. Not a faster Ethereum. Not an L2. Not a blockchain with a timestamping feature.
+Not the currency Bitcoin's title promised. Not the substrate Ethereum's name claimed and did not build. Not digital gold. Not yield. Not governance. Not a brand. Not a privacy mixer. Not an L2. Not a blockchain with a timestamping feature.
 
 Montana is **the neutral, fee-free, post-quantum settlement and ordering rail on which a usable currency can run** — not the currency itself.
 
 The economics of time is what makes that rail possible: a non-monetary scarcity that decouples the rail's reliability from the price of its asset, so the rail does not have to do the currency's job in order to function.
 
-A time frame of reference with a value-transfer feature. The standard of frequency from which the parties capable of doing the currency job — governments, central banks, accountable institutions, autonomous agents with reserve logic — can build the currencies people actually use.
+A time frame of reference with a value-transfer feature. The standard of frequency from which the parties capable of doing the currency job — governments, central banks, accountable institutions, autonomous agents with reserve logic — can build the currencies people actually use. The medium that fills the space between participants, with no charge for being present and no extractable position over the order of operations.
+
+The ether the name promised.
 
 ---
 
@@ -123,4 +129,4 @@ A time frame of reference with a value-transfer feature. The standard of frequen
 
 Alejandro Montana
 *Ничто_Nothing_无_金元Ɉ*
-2026-05-28
+2026-05-29
