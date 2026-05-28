@@ -106,6 +106,9 @@ async fn three_peers_establish_full_mesh_and_ping_pong() {
                 account_id_hex: hex64(&identities[0].account_id()),
                 node_id_hex: hex64(&identities[0].node_id()),
                 bootstrap: true,
+                force_active: false,
+                node_pubkey_hex: None,
+                account_pubkey_hex: None,
             },
             GenesisPeer {
                 label: "n1".into(),
@@ -114,6 +117,9 @@ async fn three_peers_establish_full_mesh_and_ping_pong() {
                 account_id_hex: hex64(&identities[1].account_id()),
                 node_id_hex: hex64(&identities[1].node_id()),
                 bootstrap: false,
+                force_active: false,
+                node_pubkey_hex: None,
+                account_pubkey_hex: None,
             },
             GenesisPeer {
                 label: "n2".into(),
@@ -122,6 +128,9 @@ async fn three_peers_establish_full_mesh_and_ping_pong() {
                 account_id_hex: hex64(&identities[2].account_id()),
                 node_id_hex: hex64(&identities[2].node_id()),
                 bootstrap: false,
+                force_active: false,
+                node_pubkey_hex: None,
+                account_pubkey_hex: None,
             },
         ],
     };

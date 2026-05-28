@@ -1,8 +1,9 @@
 use std::path::Path;
 
-use mt_genesis::ProtocolParams;
+use mt_crypto::PUBLIC_KEY_SIZE;
+use mt_genesis::{GenesisPeer, ProtocolParams};
 use mt_state::{
-    AccountRecord, AccountTable, CandidatePool, NodeTable, ACCOUNT_RECORD_SIZE,
+    AccountRecord, AccountTable, CandidatePool, NodeRecord, NodeTable, ACCOUNT_RECORD_SIZE,
     CANDIDATE_RECORD_SIZE, NODE_RECORD_SIZE,
 };
 use mt_store::FsStore;
@@ -25,7 +26,11 @@ impl LocalState {
     //   apply_selection_event на ближайшем W % selection_interval == 0.
     //   Operator account создаётся в обоих случаях (нужен для подписания
     //   будущей NodeRegistration).
-    pub fn bootstrap(operator: &Identity, params: &ProtocolParams) -> Self {
+    pub fn bootstrap(
+        operator: &Identity,
+        params: &ProtocolParams,
+        extra_actives: &[&GenesisPeer],
+    ) -> Self {
         let is_genesis = NodeLifecycle::is_bootstrap_node(operator, params);
         let mut accounts = AccountTable::new();
 
@@ -85,6 +90,51 @@ impl LocalState {
             last_confirmation_window: 0,
         });
 
+        // Test-cohort pre-seed: each peer with `force_active = true` becomes an
+        // Active operator at genesis (NodeTable + AccountRecord), bypassing τ₂
+        // candidate VDF wait. Production manifest has no such peers — this
+        // branch is a no-op in mainnet runs.
+        for peer in extra_actives {
+            let npk_bytes = hex_to_pubkey(
+                peer.node_pubkey_hex
+                    .as_deref()
+                    .expect("manifest validation guarantees node_pubkey_hex for force_active"),
+            );
+            let apk_bytes = hex_to_pubkey(
+                peer.account_pubkey_hex
+                    .as_deref()
+                    .expect("manifest validation guarantees account_pubkey_hex for force_active"),
+            );
+            let suite = operator.suite_id as u16;
+            let extra_node_id = mt_state::derive_node_id(&npk_bytes);
+            let extra_account_id = mt_state::derive_account_id(suite, &apk_bytes);
+            accounts.insert(AccountRecord {
+                account_id: extra_account_id,
+                balance: 0,
+                suite_id: suite,
+                is_node_operator: true,
+                frontier_hash: [0u8; 32],
+                op_height: 0,
+                account_chain_length: 0,
+                account_chain_length_snapshot: 0,
+                current_pubkey: apk_bytes,
+                creation_window: 0,
+                last_op_window: 0,
+                last_activation_window: 0,
+            });
+            nodes.insert(NodeRecord {
+                node_id: extra_node_id,
+                node_pubkey: npk_bytes,
+                suite_id: suite,
+                operator_account_id: extra_account_id,
+                start_window: 0,
+                chain_length: 1,
+                chain_length_snapshot: 1,
+                chain_length_checkpoints: [0; 6],
+                last_confirmation_window: 0,
+            });
+        }
+
         Self {
             accounts,
             nodes,
@@ -96,13 +146,14 @@ impl LocalState {
         data_dir: &Path,
         operator: &Identity,
         params: &ProtocolParams,
+        extra_actives: &[&GenesisPeer],
     ) -> Result<Self, NodeError> {
         let store = FsStore::open(data_dir).map_err(|e| {
             NodeError::InvalidArguments(format!("открытие хранилища {}: {e:?}", data_dir.display()))
         })?;
         let accounts_path = data_dir.join("accounts.bin");
         if !accounts_path.exists() {
-            return Ok(Self::bootstrap(operator, params));
+            return Ok(Self::bootstrap(operator, params, extra_actives));
         }
         let accounts = store.load_account_table().map_err(|e| {
             NodeError::InvalidArguments(format!(
@@ -171,6 +222,16 @@ impl LocalState {
 // узлами cohort-а — необходимо для apply_proposal validation на receivers.
 // Inline в LocalState::bootstrap(); helper удалён.
 
+fn hex_to_pubkey(h: &str) -> [u8; PUBLIC_KEY_SIZE] {
+    let mut out = [0u8; PUBLIC_KEY_SIZE];
+    for (i, byte) in out.iter_mut().enumerate() {
+        let hi = (h.as_bytes()[2 * i] as char).to_digit(16).expect("hex");
+        let lo = (h.as_bytes()[2 * i + 1] as char).to_digit(16).expect("hex");
+        *byte = ((hi << 4) | lo) as u8;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,6 +296,44 @@ mod tests {
         assert_eq!(store.load_account_table().unwrap().len(), 2);
         assert!(store.load_node_table().unwrap().is_empty());
 
+        fs::remove_dir_all(&dir).ok();
+    }
+    #[test]
+    fn bootstrap_pre_seeds_force_active_extras() {
+        use mt_genesis::{genesis_params, GenesisPeer};
+        let params = genesis_params();
+        let dir = tempdir();
+        // build an Identity by writing one fresh
+        let id = crate::identity::Identity::from_entropy_ephemeral(&[0x77; 32]).unwrap();
+        let mut npk_hex = String::with_capacity(3904);
+        for b in [0xAAu8; PUBLIC_KEY_SIZE] {
+            npk_hex.push_str(&format!("{b:02x}"));
+        }
+        let mut apk_hex = String::with_capacity(3904);
+        for b in [0xBBu8; PUBLIC_KEY_SIZE] {
+            apk_hex.push_str(&format!("{b:02x}"));
+        }
+        let extra = GenesisPeer {
+            label: "vilnius-test".into(),
+            multiaddr: "/ip4/0.0.0.0/tcp/8444".into(),
+            peer_id: "QmTest".into(),
+            account_id_hex: "0".repeat(64),
+            node_id_hex: "1".repeat(64),
+            bootstrap: false,
+            force_active: true,
+            node_pubkey_hex: Some(npk_hex),
+            account_pubkey_hex: Some(apk_hex),
+        };
+        let state = LocalState::bootstrap(&id, params, &[&extra]);
+        // bootstrap node + extra Active = 2 nodes
+        assert_eq!(state.nodes.len(), 2);
+        let extra_node_id = mt_state::derive_node_id(&[0xAA; PUBLIC_KEY_SIZE]);
+        assert!(state.nodes.contains(&extra_node_id));
+        // extra account present, is_node_operator=true
+        let extra_account_id = mt_state::derive_account_id(1, &[0xBB; PUBLIC_KEY_SIZE]);
+        let rec = state.accounts.get(&extra_account_id).unwrap();
+        assert!(rec.is_node_operator);
+        assert_eq!(rec.current_pubkey, [0xBB; PUBLIC_KEY_SIZE]);
         fs::remove_dir_all(&dir).ok();
     }
 }

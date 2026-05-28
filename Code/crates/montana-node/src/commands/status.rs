@@ -17,7 +17,7 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
     let data_dir = args.data_dir.unwrap_or_else(default_data_dir);
     let identity = load_identity(&data_dir)?;
     let params = genesis_params();
-    let state = LocalState::load_or_bootstrap(&data_dir, &identity, params)?;
+    let state = LocalState::load_or_bootstrap(&data_dir, &identity, params, &[])?;
     let current_window = load_current_window(&data_dir)?;
     let lifecycle = load_or_init_lifecycle(&data_dir, &identity, params)?;
     let timechain = load_or_init_timechain(&data_dir)?;
