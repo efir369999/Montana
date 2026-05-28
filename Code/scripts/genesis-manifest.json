@@ -3,7 +3,7 @@
   "peers": [
     {
       "label": "moscow",
-      "multiaddr": "/ip4/<front>/tcp/8444",
+      "multiaddr": "/ip4/<front>/tcp/8445",
       "peer_id": "QmSDUqLkLcenkkNw6PUKYXjesEmaDksnrEaCzbs3a5nVzj",
       "account_id_hex": "4c290c3d5d63e84b99c30c83fb4d172e04102af4492b4d56d0642711b09e2072",
       "node_id_hex": "75bfaf9026405c12ef36437f08cc63c040cfe1924773dedcba0abadf8c6928a1",
