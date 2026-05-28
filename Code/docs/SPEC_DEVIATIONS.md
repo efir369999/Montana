@@ -336,3 +336,14 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
   5. On verify failure, increment an attempt counter and retry against a different peer.
 
 **Status:** open for v1.0.1.
+
+## DEV-016: N_SEED multi-Active genesis cohort
+
+**Crate:** `mt-genesis`, `montana-node`
+**File:line:** `crates/mt-genesis/src/manifest.rs:32-67` (GenesisPeer.force_active / node_pubkey_hex / account_pubkey_hex), `crates/montana-node/src/state.rs::LocalState::bootstrap` (pre-seed extra_actives)
+**Spec section:** «Genesis Decree» / «N_SEED как consensus-binding параметр Genesis Decree» (Montana Protocol v35.26.0)
+**What the code does:** GenesisManifest расширен опциональными полями `force_active`, `node_pubkey_hex`, `account_pubkey_hex` для pre-seed дополнительных Active operators в NodeTable / AccountTable от genesis (window=0). LocalState::bootstrap итерирует extras и добавляет NodeRecord (chain_length=1, start_window=0) + AccountRecord (is_node_operator=true, balance=0) для каждого force_active peer. Singleton bootstrap proposer model сохранён; post-genesis admission через selection_event для не-genesis nodes без изменений.
+**Severity:** none (spec-compliant per v35.26.0).
+**Closure path:** перенести N_SEED из operational manifest в Genesis Decree `protocol_params.genesis_active_operators` (consensus-binding, hardcoded в genesis_params()); current manifest-based pre-seed остаётся для тест-cohort flexibility, mainnet — через hardcoded params.
+**Closure cost:** ~3-5 часов код + KAT vector update.
+**Status:** acknowledged (spec formalized в v35.26.0; production hardcoding genesis_active_operators в Genesis Decree protocol_params — следующая итерация mt-genesis).

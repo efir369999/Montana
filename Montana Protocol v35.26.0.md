@@ -1,6 +1,6 @@
 # Montana — Protocol Layer Specification
 
-**Version:** 35.25.1 (2026-05-20)
+**Version:** 35.26.0 (2026-05-29) — N_SEED multi-Active genesis cohort formalized
 
 
 ---
@@ -2368,7 +2368,18 @@ Quantify rollout в окнах:
 - 1 000 000 accounts: `⌈log₂(10⁶)⌉ = 20 τ₂`
 - 1 000 000 000 accounts: `⌈log₂(10⁹)⌉ = 30 τ₂`
 
-Альтернатива: Genesis может содержать **N_SEED** bootstrap operator accounts как операционный параметр запуска — не consensus-critical, не меняет протокольные правила. Для reference mainnet `N_SEED = 1` сохраняет архитектурную чистоту и не вводит центральных точек доверия beyond единого genesis operator. Тестовые сети / локальные devnets могут использовать `N_SEED > 1` через отдельную Genesis configuration для ускорения инициализации без изменения протокола.
+**N_SEED как consensus-binding параметр Genesis Decree (v35.26.0).**
+
+`N_SEED` formalized как поле Genesis Decree `genesis_active_operators` — упорядоченный список (account_pubkey, node_pubkey) пар, представляющих additional Active operators, инициализированных в Node Table / Account Table вместе с bootstrap. Reference mainnet может декларировать `N_SEED ≥ 1` для co-validator launch (multi-organization genesis cohort), сохраняя следующие инварианты:
+
+- **Singleton proposer model сохранён.** Bootstrap (`bootstrap_node_pubkey`) — единственный canonical proposer; N_SEED operators участвуют как Active confirmers через `BundledConfirmation`, не как альтернативные proposers. Lookback proposer rotation активируется только при дальнейшем admission через standard `selection_event` path; bootstrap-instance остаётся canonical pre-rotation.
+- **Quorum определён.** Initial `Σ chain_length = 1 + N_SEED` (каждый Active имеет chain_length=1 при window=0); `quorum = ⌈67 × Σ / 100⌉`. Для N_SEED=4 (5-Active cohort): Σ=5, quorum=4 (требует ≥3 confirmers помимо self).
+- **Genesis State Hash включает N_SEED.** `genesis_account_root` строится как sparse Merkle root над {bootstrap_account} ∪ {account_i для каждого i ∈ N_SEED}; `genesis_node_root` аналогично. Cross-implementation: byte-exact идентичные protocol_params (включая `genesis_active_operators`) обязательны на всех узлах cohort; mismatch — fail-stop reject.
+- **Canonical ordering.** Записи в `genesis_active_operators` упорядочены по `derive_node_id(node_pubkey)` лексикографически; sparse-Merkle root order-independent, но строгий порядок упрощает audit и обеспечивает byte-exact canonical_encode(protocol_params).
+- **Атрибуты N_SEED operator records** идентичны bootstrap-records: `chain_length=1`, `chain_length_snapshot=1`, `start_window=0`, `last_confirmation_window=0`, `is_node_operator=true`, `balance=0`, `frontier_hash = SHA-256("mt-genesis" || account_id)`, `op_height=0`, `account_chain_length=0`.
+- **Post-genesis admission flow без bypass.** N_SEED определяет ТОЛЬКО initial cohort window=0; все узлы, регистрирующиеся после genesis (`NodeRegistration` operation в окне >0), проходят полный `CandidateVdf → Registered → Active` путь через standard `selection_event` без исключений.
+
+Для devnet / тест-cohort N_SEED конфигурация может варьироваться через alternate Genesis Decree сборку (separate binary build с другим `genesis_params()`); production reference mainnet фиксирует Genesis Decree в коде, immutable runtime.
 
 Growth начинается с первого cemented τ₁ окна и не требует дополнительных specialized механизмов — существующее правило `Transfer` Mode B + cooldown [I-15] покрывает весь жизненный цикл roll-out.
 
@@ -2446,6 +2457,8 @@ Genesis State (до первого окна, supply = 0):
     max_sf_ciphertext_bytes        (4B)   65 536 (64 KiB) — wire-format upper bound SF envelope ciphertext
     bootstrap_account_pubkey      (1952B)
     bootstrap_node_pubkey         (1952B)
+    n_seed                          (2B)   u16 LE — число additional Active operators в genesis cohort (0 для reference singleton)
+    genesis_active_operators       (n_seed × 3904B)  список (account_pubkey 1952B + node_pubkey 1952B), упорядочен лексикографически по node_id_hex
     genesis_content_app_id         (32B)  = SHA-256("mt-app" || "montana")
     genesis_content_data_hash      (32B)  хэш манифеста книги Монтана v1.0
 
@@ -2461,6 +2474,9 @@ Bootstrap keypair (account + node) публикуется в Genesis Decree вм
 - Все поля `protocol_params` имеют фиксированные значения согласно layout выше; implementer хардкодит их в коде, runtime mutation **запрещена**
 - Reserved поле `(reserved) = 0x00 × 8` строго; любое другое значение — **reject** (изменяет Genesis State Hash и создаёт несовместимую сеть)
 - `bootstrap_account_pubkey` и `bootstrap_node_pubkey` соответствуют эталонным значениям закреплённым в коде
+- `n_seed ≥ 0` (u16 LE), значение фиксировано в коде; runtime override запрещён
+- При `n_seed > 0`: `genesis_active_operators` содержит ровно `n_seed` записей, каждая `(account_pubkey 1952B + node_pubkey 1952B)`; список упорядочен лексикографически по `derive_node_id(node_pubkey)`; дубликаты pubkey запрещены — reject (изменяет Genesis State Hash)
+- Каждый N_SEED operator получает initial NodeRecord (chain_length=1, start_window=0) + AccountRecord (balance=0, is_node_operator=true); pre-seed входит в `genesis_node_root` и `genesis_account_root` через sparse Merkle root over canonical-encoded records
 - Consensus-binding сетевые параметры protocol_params: `bootstrap_pow_difficulty == 65 536`,
   `max_protocol_payload_bytes == 1 048 576`, `max_sf_ciphertext_bytes == 65 536`;
   любое отклонение — **reject** (изменяет Genesis State Hash); все три
