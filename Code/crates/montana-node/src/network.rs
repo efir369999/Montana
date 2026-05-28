@@ -133,6 +133,7 @@ pub async fn run_network_loop(
                             ..
                         },
                     )) => {
+                        eprintln!("[network] RR Request msg_type={:?} request_id={} payload_len={}", request.msg_type, request.request_id, request.payload.len());
                         if request.msg_type == MsgType::Ping {
                             let pong = ProtocolMessage::new(MsgType::Pong, request.request_id, Vec::new());
                             if let Err(e) = swarm
@@ -161,6 +162,9 @@ pub async fn run_network_loop(
                         eprintln!(
                             "[network] heartbeat OK peer={peer} request_id={request_id}"
                         );
+                    }
+                    SwarmEvent::Behaviour(MontanaBehaviourEvent::RequestResponse(rr_other)) => {
+                        eprintln!("[network] RR other event: {rr_other:?}");
                     }
                     _ => {}
                 }
