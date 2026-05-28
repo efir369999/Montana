@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -176,6 +177,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         resolve_fast_sync_lag_threshold(std::env::var("MONTANA_FASTSYNC_LAG_THRESHOLD").ok());
     println!("fast-sync lag    : порог {fast_sync_lag_threshold} окон");
     let mut fast_sync: Option<mt_sync::FastSyncClient> = None;
+    // M7 fast-sync: recent cemented bootstrap state_roots (window -> root),
+    // the trusted set a reconstructed snapshot root must match.
+    let mut recent_roots: BTreeMap<u64, Hash32> = BTreeMap::new();
 
     loop {
         // M9 Phase 2: drain incoming Proposal envelopes от bootstrap. Decode window_index
@@ -219,6 +223,15 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             eprintln!("[consensus] Proposal от не-bootstrap proposer, skip");
                             continue;
                         }
+                        // Record this bootstrap Proposal's state_root as a trusted
+                        // fast-sync anchor (offset 172..204), bounded to recent windows.
+                        let mut sr = [0u8; 32];
+                        sr.copy_from_slice(&msg.payload[172..204]);
+                        recent_roots.insert(window_index, sr);
+                        while recent_roots.len() > 64 {
+                            let oldest = *recent_roots.keys().next().unwrap();
+                            recent_roots.remove(&oldest);
+                        }
                         if window_index <= current {
                             continue;
                         }
@@ -228,14 +241,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             continue;
                         }
                         // Far behind → request a snapshot instead of replaying
-                        // thousands of apply_proposal iterations. Trusted anchor
-                        // = state_root from THIS Proposal header (offset 172..204);
-                        // proposer already confirmed as bootstrap above. The
-                        // anchor-authenticity gate (Proposal signature) is M10 —
-                        // identical to the window-by-window replay path.
+                        // thousands of apply_proposal iterations. The reconstructed
+                        // snapshot root is verified at finalize against recent_roots
+                        // (trusted bootstrap roots); the anchor-authenticity gate
+                        // (Proposal signature) is M10, identical to the replay path.
                         if window_index.saturating_sub(current) > fast_sync_lag_threshold {
-                            let mut anchor_root = [0u8; 32];
-                            anchor_root.copy_from_slice(&msg.payload[172..204]);
                             let mut payload = Vec::new();
                             mt_net::FastSyncRequest {
                                 anchor_window: window_index,
@@ -252,10 +262,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                         "[m7] {} windows behind (> {fast_sync_lag_threshold}) \u{2192} fast-sync anchored at window {window_index}",
                                         window_index.saturating_sub(current)
                                     );
-                                    fast_sync = Some(mt_sync::FastSyncClient::new(
-                                        window_index,
-                                        anchor_root,
-                                    ));
+                                    fast_sync = Some(mt_sync::FastSyncClient::new());
                                 },
                                 Err(e) => {
                                     eprintln!("[m7] FastSyncRequest broadcast failed: {e}")
@@ -359,13 +366,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             match parsed {
                                 Ok(chunk) => match client.accept_chunk(chunk) {
                                     Ok(mt_sync::AcceptOutcome::Complete) => {
-                                        let anchor = client.anchor_window();
-                                        match client.finalize() {
-                                            Ok(tables) => {
+                                        match client.finalize(&recent_roots) {
+                                            Ok((window, tables)) => {
                                                 state.apply_fast_sync(
-                                                    tables, &data_dir, anchor,
+                                                    tables, &data_dir, window,
                                                 )?;
-                                                current = anchor;
+                                                current = window;
                                                 save_current_window(&data_dir, current)?;
                                                 eprintln!("[m7] fast-sync complete \u{2192} state replaced, current_window={current}");
                                             },
