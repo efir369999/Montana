@@ -1,6 +1,6 @@
 # The Montana Manifesto
 
-**Version:** 2.0.2
+**Version:** 2.0.3
 **Date:** 2026-05-29
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
@@ -42,7 +42,7 @@ Montana is a peer-to-peer rail for moving and recording value, owned by no one, 
 
 - **You hold the seed phrase. You hold the money.** Twenty-four words derive your keys. No bank, no government, no chain operator can freeze, seize or revoke your balance. A balance, once credited, belongs to its key forever. Dormant non-zero accounts are never touched, no matter how long they sit.
 - **You can run a node and be paid.** Commodity hardware (one CPU core), 24/7 uptime, a network connection. The reward is `13 Ɉ` for sealing each window — closed-form, predictable, paid by the protocol to whoever does the work. No premine, no presale, no founder allocation, no halving, no supply cap.
-- **You can use the rail without running anything.** A key on a phone. Send and receive Montana; commit hashes for documents and messages via `Anchor`. No fees. No gas. Settlement in approximately one minute of canonical-order time.
+- **You can use the rail without running anything.** A key on a phone. Send and receive Montana; commit hashes for documents and messages via `Anchor`. No fees. No gas. Settlement within one window of the canonical order.
 - **No founder, no DAO, no governance, no veto.** The author is removed from the protocol by construction. Advisory councils may exist outside; none have binding force inside. No state, no corporation, no individual — including the author — can stop the network from running or rewrite a finalized event.
 - **Autonomous agents are first-class participants.** Software acting on behalf of a human is a first-class operator and user of the rail, by construction. The same key, the same account chain, the same protocol — no separate plumbing for agents.
 - **Post-quantum from the first day.** Signatures, key encapsulation, transport — all built on primitives that survive a sufficiently large quantum computer (FIPS 203, FIPS 204), at NIST security level 3 (≈ 192-bit quantum-equivalent strength).
@@ -70,9 +70,9 @@ Montana occupies that space. Every layer that touches money, communication, data
 
 ## V. Canonical Order, Not Wall-Clock Time
 
-Each Montana node performs a **sequential delay computation** — an iterated SHA-256 hash chain `T_W = SHA-256^D (T_{W-1})` with `D = 325 000 000` iterations per window. `D` is fixed in the Genesis Decree from a single quartz measurement on the genesis hardware (Apple iMac M1 2021, idle, single-thread); after Genesis the protocol consults no clock ([I-18]). The wall-clock duration of a window is an emergent property of each node's hardware and is not part of consensus state.
+Each Montana node performs a **sequential delay computation** — an iterated SHA-256 hash chain `T_W = SHA-256^D (T_{W-1})` with `D = 325 000 000` iterations per window. `D` is fixed in the Genesis Decree from a single quartz measurement on the genesis hardware (Apple iMac M1 2021, idle, single-thread, 5.097 MH/s SHA-256 single-thread); after Genesis the protocol consults no clock ([I-18]). At the genesis-hardware rate, `D / 5.097 × 10⁶ ≈ 63.8 seconds` per window — the wall-clock duration of a window is therefore an emergent property of each node's hardware and is not part of consensus state.
 
-This is **not** a verifiable delay function in the sense of Boneh-Bonneau-Bünz-Fisch [CRYPTO 2018], Pietrzak [ITCS 2019] or Wesolowski [EUROCRYPT 2019]. Those constructions provide succinct verification of order `O(log T)` or `O(1)`, but they operate over RSA groups or class groups of imaginary quadratic fields — assumptions broken by Shor's algorithm. A production-grade post-quantum succinct VDF does not yet exist. Montana takes the simpler primitive: an iterated SHA-256 chain. Verification cost equals computation cost; a verifier re-runs the same iterations the prover ran. SHA-256 is already required for addressing, hashing and Merkle commitments — no new assumption is added. The cryptographic surface is minimized to one primitive ([I-7]).
+This is **not** a verifiable delay function in the sense of Boneh-Bonneau-Bünz-Fisch [CRYPTO 2018], Pietrzak [ITCS 2019] or Wesolowski [EUROCRYPT 2019]. Those constructions provide succinct verification of order `O(log T)` or `O(1)`, but they operate over RSA groups or class groups of imaginary quadratic fields — assumptions broken by Shor's algorithm. Post-quantum succinct VDF constructions remain at research-grade status; none has published security audits or standardization at the level of FIPS 203 / FIPS 204. Montana takes the simpler primitive: an iterated SHA-256 chain. Verification cost equals computation cost; a verifier re-runs the same iterations the prover ran. SHA-256 is already required for addressing, hashing and Merkle commitments — no new assumption is added. The cryptographic surface is minimized to one primitive ([I-7]).
 
 The output is the **TimeChain**: a canonical, monotonic, unambiguous, independently verifiable sequence of windows. Montana does not measure physical duration. Mapping a window number to a calendar is the observer's task, not the protocol's.
 
@@ -102,7 +102,7 @@ No ECDSA. No EdDSA. No classical Diffie-Hellman. No assumption that Shor's algor
 What makes Montana a neutral settlement and ordering rail are not features layered on a chain — they are the chain.
 
 - **Zero fees.** The protocol contains no `fee` field on any operation. A seven-cent transfer settles.
-- **Asynchronous finality without extractable ordering.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration). Proposer discretion over inclusion is zero; operation ordering inside a window is fixed by canonical τ₁-rate rules, not by the proposer's local mempool view. There is no extractable position over the order of operations.
+- **Asynchronous finality without extractable ordering.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators within a single window of the canonical order (one window of `D` sequential SHA-256 iterations, ≈ 64 s on the genesis hardware per §V). Proposer discretion over inclusion is zero; operation ordering inside a window is fixed by canonical τ₁-rate rules, not by the proposer's local mempool view. There is no extractable position over the order of operations.
 - **Constant monotonic emission as bookkeeping.** `13 Ɉ` per window, fixed by the Genesis Decree, closed-form. `Ɉ` is what the rail pays its operators — bookkeeping for the work of sealing a window, not a stable unit of account.
 - **No plutocracy by construction.** Whoever holds a billion `Ɉ` has no more power in consensus than the operator of a Mac Mini. A node's weight is its chain length. The lottery seed incorporates `cemented_bundle_aggregate(W-2)`, signatures from honest operators two windows back, which closes the grinding attack class under hardware asymmetry without depending on rational-cost arguments.
 - **Two-thirds honest chain length.** Safety holds while honest operators control more than two-thirds of `active_chain_length`. Capital does not enter the threshold.
@@ -113,7 +113,7 @@ Anti-abuse is done by time, not by money — three independent scarcities, each 
 
 - **Per-identity rate per window.** One operation per account per window τ₁. An attacker with N Sybil identities gets at most N operations per window, but each identity has its own creation cost.
 - **`account_chain_length` thresholds.** Privileged operations require the operating account to have been active for at least `k` windows. The threshold cannot be purchased.
-- **Sequential entry barrier for node operators.** Node registration requires producing a sequential SHA-256 chain of length `vdf_chain_length × D` iterations. The protocol parameter `vdf_entry_windows = 20 160 windows` (one τ₂ epoch) sets the threshold; at `D = 325 000 000` iterations per window, the total cost is `vdf_entry_windows × D = 6.552 × 10¹² SHA-256 hashes`, which is fourteen days of wall-clock at the genesis-hardware calibration (one window ≈ 60 seconds emergent on a commodity x86_64 core). An attacker with `M` parallel machines produces `M` identities at the same wall-clock cost, not faster.
+- **Sequential entry barrier for node operators.** Node registration requires producing a sequential SHA-256 chain of length `vdf_chain_length × D` iterations. The protocol parameter `vdf_entry_windows = 20 160 windows` (one τ₂ epoch) sets the threshold; at `D = 325 000 000` iterations per window, the total cost is `vdf_entry_windows × D = 6.552 × 10¹² SHA-256 hashes`, which is fourteen days of wall-clock at the genesis-hardware calibration (one window ≈ 64 s emergent per §V). An attacker with `M` parallel machines produces `M` identities at the same wall-clock cost, not faster.
 
 Together these three close DoS without monetary barriers. Time as scarcity does not require a price feed, an oracle or an exchange to measure.
 
