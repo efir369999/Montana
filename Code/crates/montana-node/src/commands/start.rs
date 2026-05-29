@@ -1071,6 +1071,52 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             })
                             .unwrap_or(0);
                         if collected >= need_quorum {
+                            // DEV-019: when self-quorum trivially met (proposer's own
+                            // chain_length dominates Σ), still wait additional 500ms
+                            // to collect peer BCs. Without this, peer operators with
+                            // small chain_length never get their BC included in
+                            // cemented_confirmers → their chain_length never grows →
+                            // dominance compounds forever. Fairness mechanism: every
+                            // active peer that delivers a valid BC within the grace
+                            // window gets credit.
+                            let grace_deadline = Instant::now() + Duration::from_millis(500);
+                            while Instant::now() < grace_deadline {
+                                if let Some(ref mut handle) = network_handle {
+                                    while let Ok(grace_msg) = handle.incoming_rx.try_recv() {
+                                        if grace_msg.msg_type == MsgType::BundledConfirmation {
+                                            if let Ok((rec_bc, _)) =
+                                                BundledConfirmation::decode(&grace_msg.payload)
+                                            {
+                                                let exp_t_r = t_r_history
+                                                    .get(&rec_bc.window_index)
+                                                    .copied()
+                                                    .unwrap_or(timechain.t_r);
+                                                if mt_lottery::validate_bundle(
+                                                    &rec_bc,
+                                                    &state.nodes,
+                                                    &exp_t_r,
+                                                )
+                                                .is_ok()
+                                                {
+                                                    let nid = rec_bc.node_id;
+                                                    let w = rec_bc.window_index;
+                                                    bc_accumulator
+                                                        .entry(w)
+                                                        .or_default()
+                                                        .insert(nid, rec_bc);
+                                                    eprintln!(
+                                                        "[dev-019] grace BC from {} for w={w}",
+                                                        hex16(&nid)
+                                                    );
+                                                }
+                                            }
+                                        } else {
+                                            deferred.push(grace_msg);
+                                        }
+                                    }
+                                }
+                                std::thread::sleep(Duration::from_millis(20));
+                            }
                             eprintln!(
                                 "[dev-012] quorum reached w={current}: cemented_sum={collected} >= {need_quorum}"
                             );

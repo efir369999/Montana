@@ -416,3 +416,18 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure cost:** ~70 lines of Rust.
 **Status:** closed (Build 13, this session).
 
+
+---
+
+## DEV-019: post-quorum grace period for peer BC fairness
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs:1007-1075` (active arm spin-drain post-quorum)
+**Spec section:** «BundledConfirmation cementing» / «Fairness across cohort»
+**What the code does (before fix):** when proposer's own chain_length dominates Σ active_chain_length (e.g. bootstrap operator with chain_length=2500+ vs co-validators at chain_length=1), self-quorum is trivially met on the first spin-iteration after inserting own BC. The spin loop breaks immediately (within 20ms), never giving peer BCs time to land (typical RTT 50–150ms). Cemented_confirmers contains only proposer → peer chain_length stays at 1 forever → dominance compounds. Multi-confirmer was structurally impossible after the first cohort.
+**What the code does (after fix):** when `collected >= need_quorum` triggers, instead of `break;` the loop enters a 500 ms grace window that keeps draining `BundledConfirmation` envelopes from `incoming_rx`. Any peer BC arriving within grace and validating against `t_r_history[bc.window_index]` is inserted into the accumulator at the bc's window slot. After grace, the cement settle includes ALL accumulated confirmers for `current`. Non-BC messages collected during grace go to the same `deferred` queue as DEV-018d.
+**Severity:** mainnet blocker for fairness — without this fix the dominant operator's chain_length grows monotonically while all peers stay at 1 forever.
+**Closure path:** ↑ implemented in this commit. Open: spec extension to formalize the grace-window value (500 ms) as a protocol parameter.
+**Closure cost:** ~40 lines of Rust.
+**Status:** closed (Build 14, this session).
+
