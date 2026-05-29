@@ -1,6 +1,6 @@
 # The Montana Manifesto
 
-**Version:** 2.0.0
+**Version:** 2.0.1
 **Date:** 2026-05-29
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
@@ -8,7 +8,7 @@
 > *"Who controls the past controls the future. Who controls the present controls the past."*
 > — Orwell, *1984*
 
-**The last nail in the coffin of two worlds that failed: fiat and crypto. The first money system actually built for the people they failed.**
+**An architecture that closes the failures of both fiat and cryptocurrency on a single foundation.**
 
 ## I. Two Worlds That Failed
 
@@ -22,7 +22,7 @@ Bitcoin missed *cash*. Ethereum missed *ether*. The rest never tried to solve th
 
 Two worlds, the same people, the same failure: the institutions that issue money will not solve this, the institutions that move it will not solve this, the crypto industry that promised to solve this turned into a casino.
 
-**Montana is the last nail in the coffin of both.**
+Montana proposes a foundation that addresses both failures at their shared cause.
 
 ## II. The Insight: Time, Not Money
 
@@ -49,7 +49,7 @@ Montana is a peer-to-peer rail for moving and recording value, owned by no one, 
 
 Montana does not ask permission, does not ask to be regulated, does not ask to be adopted by a bank. It runs on the time of the people who run it, and they are paid for the time they spend running it.
 
-## IV. The Ecosystem: A Blue Ocean
+## IV. The Ecosystem
 
 Montana is more than a protocol. The protocol is the foundation; on top of it lives a full system of applications that no existing player can build, because every existing player is trapped in either fiat or crypto.
 
@@ -64,9 +64,9 @@ Montana is more than a protocol. The protocol is the foundation; on top of it li
 - **The Insurance Layer** (Vera Montana). Sovereign-grade insurance and reserve infrastructure on top of the protocol, denominated in the user's choice of unit, settling on the Montana rail.
 - **The Hub** (`hub.montana.quest`). The network's own code-hosting infrastructure — public for the public network, not rented from a hyperscaler.
 
-This is the blue ocean. Banks cannot build it: their business model is extraction; sovereignty is the opposite. Crypto companies cannot build it: every fee they collect and every governance token they issue ties them to the broken architecture they would have to abandon. Governments cannot build it: their incentive is to surveil and control, not to provide neutral substrate. Hyperscalers cannot build it: they would have to give up the rental model that funds them.
+This is a substrate no incumbent can occupy. Banks are bound to extraction; cryptocurrency firms are bound to fees and governance tokens; states are bound to surveillance and control; hyperscalers are bound to rental. Each existing actor has a structural incentive against the substrate Montana provides. The substrate exists only where no actor can build it from inside the model that funds them.
 
-The blue ocean is the uncontested space where every layer that touches money, communication, data, identity and agency for one billion people is built on a single sovereign substrate — with no rent, no founder, no veto, no master switch. Montana fills it.
+Montana occupies that space. Every layer that touches money, communication, data, identity and agency at the scale of one billion participants is built on a single sovereign substrate, with no rent, no founder, no veto, no master switch.
 
 ## V. Canonical Order, Not Wall-Clock Time
 
@@ -128,11 +128,11 @@ Together these three close DoS without monetary barriers. Time as scarcity does 
 
 Not the currency Bitcoin's title promised — that is a stable unit of account, and it lives one floor up. Not digital gold. Not yield. Not governance. Not a brand. Not a privacy mixer. Not an L2. Not a blockchain with a timestamping feature. Not the next crypto project. Not a faster version of what failed.
 
-Montana is **the last nail in the coffin of two worlds that failed — fiat and crypto — and the first money system actually built for the people they failed.**
+Montana is an architecture that closes the failures of both fiat and cryptocurrency on a single foundation: a settlement and ordering rail whose anti-abuse scarcity is time rather than money, whose consensus weight is presence rather than capital, whose primitive set survives quantum adversaries, and whose author is removed from the protocol by construction.
 
-A rail you cannot be removed from. A money no one can freeze. A unit that pays you for being present. A settlement layer with no extractable position over the order of your operations. A communication layer that does not rent your messages back to you. A data layer that does not sell your contents. A protocol with no founder, no DAO, no veto, no central control. A network whose security comes from the time of the people who run it.
+A rail no actor can remove a user from. A money no institution can freeze. A unit that compensates the operator for the work of sealing a window. A settlement layer with no extractable position over the order of operations. A communication layer that does not rent messages back to their sender. A data layer that does not sell its contents. A protocol with no founder, no DAO, no veto, no central control. A network whose security derives from the time of its operators.
 
-The medium that fills the space between participants, with no charge for being present and no extractable position over the order of operations. The ether the name promised. The substrate the world was waiting for.
+The medium that fills the space between participants, with no charge for being present and no extractable position over the order of operations. The ether the name promised.
 
 ---
 
