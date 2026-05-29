@@ -1,6 +1,6 @@
 # Montana Manifesto
 
-**Version:** 1.3.0
+**Version:** 2.0.0
 **Date:** 2026-05-29
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
@@ -13,23 +13,22 @@ A single declaration of what Montana is and refuses to be, published in three la
 
 The English version is canonical for cryptographic claims; the Russian version is canonical for the author's voice. For the academic specification of the protocol, see [Whitepaper Montana.md](../Whitepaper%20Montana.md) and [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
 
-**v1.3.0 (2026-05-29):**
+**v2.0.0 (2026-05-29) — major reframe.**
 
-- *Ethereum recognized and critiqued* alongside Bitcoin in §I. *Ether* in Ethereum's title is the medium that fills space — the substrate on which everything moves; the proposition was correct, but the implementation charges fees denominated in its own asset, runs on classical elliptic-curve signatures Shor breaks, and exposes an extractive ordering layer (MEV) that turns neutrality into a marketing claim rather than a property. The name promised the ether; the implementation did not deliver it. Bitcoin missed *cash*; Ethereum missed *ether*; both for the same underlying reason — rail reliability coupled to the price of the native asset, neutrality contingent on whoever produced the next block, primitive set Shor breaks.
-- *No extractable ordering* is added to §V as a property of the rail. Proposer discretion over which operations to include is zero; only cemented BundledConfirmations enter the chain; operation ordering inside a window is fixed by canonical τ₁-rate rules, not by the proposer's local mempool view. There is no MEV-equivalent position over the order of operations.
-- *§IX closes with* «the ether the name promised» / «эфир, как его обещало имя» / «那个名字所承诺的「以太」». The author's domain is `efir.org`. The Ɉ is the rail's reward unit. The name precedes the implementation.
+The thesis: *Montana is the last nail in the coffin of two worlds that failed — fiat and crypto — and the first money system actually built for the people they failed.*
 
-**v1.2.0 (2026-05-28):**
+- *§I — Two Worlds That Failed.* The pain is named on both sides. Fiat fails ordinary people through inflation, debanking, censorship, surveillance, 30% remittance corridors, uneconomic small payments, cross-border friction, asset-price-driven housing exclusion, sanction targeting, and CBDC-as-programmable-surveillance. Crypto fails ordinary people through Bitcoin-as-digital-gold (not cash), Ethereum-as-MEV-land (not ether), stablecoins-on-broken-banks, DeFi-as-Ponzi, exchanges-that-fail on top. The same underlying cause: rail reliability coupled to native-asset price, rail neutrality contingent on next-block producer, rail primitives that Shor breaks. Both worlds failed the same people. Montana is the last nail in the coffin of both.
+- *§II — The Insight: Time, Not Money.* The scarcity that defends money from abuse must come from outside money itself.
+- *§III — Montana in Plain Terms.* What an ordinary user gets: 24 words = money forever; run a node = paid in Ɉ per window; use the rail with a phone = zero fees; nobody can freeze you; first-class autonomous agents; post-quantum from day one.
+- *§IV — The Ecosystem: A Blue Ocean.* New. Names the full Montana ecosystem as the uncontested market space no existing player can build because each is trapped in extraction: the protocol (rail), Ɉ (money), wallet (24 words), Montana Messenger (federated communication), Montana VPN (federated mesh = the Montana internet), Anchor (data layer), Junona (autonomous agent infrastructure), Pluton (sovereign data centers), Vera Montana (insurance and reserves), Hub (network's own code-hosting). Banks/crypto-co/governments/hyperscalers each cannot build it for a stated reason. Montana fills the blue ocean.
+- *§V–§X.* Architectural sections — canonical order (TimeChain), hierarchy of truth, post-quantum primitives, rail properties (incl. no extractable ordering), economics of time, ladder of sovereignty + scale + no founder. The technical foundation of the above claims.
+- *§XI — What Montana Is.* The closing names the «last nail» frame and «first money system actually built for the people they failed». A rail you cannot be removed from. A money no one can freeze. A unit that pays you for being present. A protocol with no founder, no DAO, no veto, no central control. The ether the name promised. The substrate the world was waiting for.
 
-- *Positioning refined* in response to the Metzdowd cryptography list thread. Bitcoin's title conflated two distinct jobs: being a stable unit of account (which needs an accountable issuer with reserve and buy-back) and being a neutral settlement and ordering rail (which cannot be that issuer). Montana picks the second on purpose. The stable usable currency lives one floor up, issued by parties with balance sheets. Montana provides the substrate any such currency can run on.
-- *§I rewritten* as "Two Jobs Bitcoin Conflated". §V renamed "Properties of the Rail" (was "Cash-System Tokenomics"). §IX rewritten as "What Montana Is" with the rail-not-currency closing. `Ɉ` is named as the rail's protocol-level reward unit, not a promise of stable purchasing power.
-- *Dormant non-zero accounts are never touched* — added to §III.
+**v1.3.0 (2026-05-29):** Ethereum recognized and critiqued alongside Bitcoin in §I; no extractable ordering added to §V as a rail property; §IX closes with «the ether the name promised».
 
-**v1.1.0 (2026-05-28):**
+**v1.2.0 (2026-05-28):** Rail-not-currency positioning from the Metzdowd thread. Bitcoin's title conflated two distinct jobs (stable unit of account vs. neutral settlement and ordering rail). Montana picks the second on purpose. `Ɉ` is the rail's reward unit, not a stable unit of account. Dormant non-zero accounts are never touched.
 
-- *Terminology* aligned with Montana Protocol v35.25.1. The primitive is named «sequential delay computation» / «iterated SHA-256 hash chain», not VDF. Montana's chain is deliberately not a verifiable delay function in the Boneh-Pietrzak-Wesolowski sense (see §II for the rationale). The smallest unit is `moneta`; `1 Ɉ = 10⁹ moneta`; the international ticker is `MONT`.
-- *Finality claim corrected*: asynchronous finality is at window cementing — within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration), not the obsolete «~300 ms».
-- *Reference-implementation count corrected* to 23 crates (from 12).
+**v1.1.0 (2026-05-28):** Terminology aligned with Montana Protocol v35.25.1: sequential delay computation / iterated SHA-256 hash chain, not VDF. Finality at window cementing (~one minute on commodity x86_64), not «300 ms». Twenty-three crates, not twelve.
 
 ---
 

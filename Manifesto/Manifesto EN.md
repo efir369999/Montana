@@ -1,6 +1,6 @@
 # The Montana Manifesto
 
-**Version:** 1.3.0
+**Version:** 2.0.0
 **Date:** 2026-05-29
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
@@ -8,42 +8,67 @@
 > *"Who controls the past controls the future. Who controls the present controls the past."*
 > — Orwell, *1984*
 
-**The neutral rail Bitcoin's title conflated with the currency. The substrate Ethereum's name claimed and did not build. The economics of time the digital-money tradition has not yet written.**
+**The last nail in the coffin of two worlds that failed: fiat and crypto. The first money system actually built for the people they failed.**
 
-## I. Two Jobs Conflated, and Two Names That Did Not Deliver
+## I. Two Worlds That Failed
 
-Bitcoin's title was *A Peer-to-Peer Electronic Cash System*. The phrase put two distinct jobs under one name.
+Money is supposed to be three things at once: a way to save, a way to pay, and a way to settle accounts between strangers without trusting either side. For most people on Earth, money is none of these three. Two worlds have tried to provide it. Both have failed.
 
-- **Being a stable unit of account.** A currency that does not lose purchasing power as a function of speculative demand. This needs an accountable issuer with a reserve and a buy-back capability — the kind of accountability a government, a central bank or a major institution provides with a balance sheet.
-- **Being a neutral settlement and ordering layer.** A rail that clears payments, orders events and provides the substrate on which units of account move. It cannot be the accountable issuer, and it should not pretend to be.
+**The fiat world.** Savings are erased by inflation faster than they can be earned. Accounts are frozen by banks, censored by governments, surveilled by payment processors. A migrant sending wages home pays thirty percent to a remittance corridor. A transfer of seven cents is uneconomical because the fee consumes it. A transfer across borders takes days and costs more than the contents of an average wallet. Wages are paid in a currency people did not choose, on a rail they cannot leave, and the rail extracts at every step. Generations are priced out of housing because monetary expansion went into asset prices, not into wages. Sanctions hit ordinary people first and hardest. Central-bank digital currencies arrive as programmable surveillance with smarter-than-cash backends. The 20th-century financial system was built for an industrial economy with a small number of large institutions; it was never re-designed for the billions of people, the trillions of small payments, the autonomous software agents, and the speed at which value moves now.
 
-Bitcoin tried to do both at once. Its anti-spam mechanism, denominated in its own asset, tied the rail's reliability to the price of that asset; the asset's volatility put unit-of-account stability out of reach; the two jobs interfered. The title promised electronic cash; what Bitcoin became was *digital gold* — neither a stable usable currency nor a fee-free rail.
+**The crypto world.** Bitcoin's whitepaper was titled *A Peer-to-Peer Electronic Cash System*. The cryptographic answer is famous. But Bitcoin became digital gold, not cash: a seven-cent payment is uneconomical because the fee consumes it, settlement is ten minutes at best and unbounded under congestion, the merchant cannot let the customer leave, the anti-spam mechanism is denominated in the very money the system creates and oscillates with demand. Ethereum took the substrate role under a name that literally means *ether* — the medium that fills space, the substrate on which everything moves — but the implementation charges fees denominated in its own asset, runs on classical elliptic-curve signatures that Shor's algorithm breaks, and exposes an extractive ordering layer (MEV) that turns neutrality into a marketing claim. Stablecoins moved billions in volume by tying their value to the very banking system they were supposed to escape. DeFi yields were built on Ponzi-like recycling of one chain's emission through another. Exchanges keep failing on top of the chains they were built to obviate.
 
-Ethereum took the second job under a different name. *Ether* in its title is the medium that fills space — the substrate on which everything moves. The proposition was correct: what the world needed was a settlement layer, not another currency. But the implementation charges fees denominated in its own asset, runs on classical elliptic-curve signatures that Shor's algorithm breaks, and exposes an extractive ordering layer (MEV) that turns neutrality into a marketing claim rather than a property. The name promised the ether. The implementation did not deliver it.
+Bitcoin missed *cash*. Ethereum missed *ether*. The rest never tried to solve the problem for the people who needed it solved. Every existing system fails on the same underlying ground: the rail's reliability was coupled to the price of its native asset, the rail's neutrality was contingent on whoever produced the next block, and the rail's primitive set was the one Shor's algorithm breaks.
 
-Two famous names, two missed roles. Bitcoin missed *cash*; Ethereum missed *ether*. Both missed for the same underlying reason: the rail's reliability was coupled to the price of its native asset, the rail's neutrality was contingent on whoever produced the next block, and the rail's primitive set was the one Shor breaks. The two jobs could not be done at once, and the rail half was not done at all.
+Two worlds, the same people, the same failure: the institutions that issue money will not solve this, the institutions that move it will not solve this, the crypto industry that promised to solve this turned into a casino.
 
-Montana picks **one** of the two jobs on purpose: the neutral, fee-free, post-quantum settlement and ordering rail. The stable usable currency that consumers see in daily life lives one floor up — issued by accountable parties with their own reserves and buy-back logic, denominated in whatever units those issuers choose. Montana provides the substrate on which any such currency can run.
+**Montana is the last nail in the coffin of both.**
 
-The rail does not need to know the unit of account it carries. The currency does not have to be the rail.
+## II. The Insight: Time, Not Money
 
-What is needed for a real neutral rail — and what neither Bitcoin's rail layer nor Ethereum's implementation delivered — is the following:
+The scarcity that money is supposed to defend against — abuse, spam, inflation, extraction — must come from somewhere outside money itself. Bitcoin denominated it in money and the mechanism oscillated. Ethereum denominated it in money and got priced out under congestion. Every fee-based chain has the same problem: when the rail's reliability is denominated in the rail's own currency, the currency's volatility is the rail's failure mode.
 
-- A non-monetary anti-abuse scarcity, so the rail's reliability is not coupled to the price of its native asset.
-- Asynchronous finality fast enough that the rail behaves like a settlement layer, not a queue of blocks, and without an extractable position over the order of operations.
-- A post-quantum primitive set, because long-lived rails carrying value across decades cannot rest on assumptions Shor's algorithm breaks.
+The only scarcity available to all participants on equal terms, that no party can buy or sell, is **time**.
 
-Montana takes all three.
+An attacker with one hundred times the resources of an honest operator does not get one hundred times more time per chain. A Sybil identity does not produce more time per identity. Capital cannot retroactively purchase past participation. Time as scarcity does not require a price feed, an oracle, or an exchange to measure: one window is one window, regardless of any currency's value.
 
-Montana addresses, at the same level, three places where trust must be removed from the rail itself:
+Build a rail whose anti-abuse scarcity is time, and the rail's reliability is decoupled from the price of any asset. Build a money on top of that rail whose emission is a closed-form function of time, and the money is predictable for decades. Build presence-weighted consensus on the rail, and no one can be debanked, frozen, censored, or eclipsed by capital. The pain that 20th-century money systems caused — and that 21st-century crypto did not relieve — is closed by replacing the monetary scarcity at the foundation with a temporal one.
 
-- **Trust in time.** The protocol produces a canonical order of events with no external source.
-- **Trust in storage.** A user's data lives on the user's node, not in a corporation's database.
-- **Trust in communication.** Messages flow between users through their nodes, with no intermediary.
+This is the economics of time. Montana is what it looks like in production.
 
-The solution to the first problem is the foundation of the other two — and the carrier of the time-economics that makes the rail fee-free.
+## III. Montana in Plain Terms
 
-## II. Canonical Order, Not Wall-Clock Time
+Montana is a peer-to-peer rail for moving and recording value, owned by no one, freezable by no one, censorable by no one.
+
+- **You hold the seed phrase. You hold the money.** Twenty-four words derive your keys. No bank, no government, no chain operator can freeze, seize or revoke your balance. A balance, once credited, belongs to its key forever. Dormant non-zero accounts are never touched, no matter how long they sit.
+- **You can run a node and be paid.** Commodity hardware (one CPU core), 24/7 uptime, a network connection. The reward is `13 Ɉ` for sealing each window — closed-form, predictable, paid by the protocol to whoever does the work. No premine, no presale, no founder allocation, no halving, no supply cap.
+- **You can use the rail without running anything.** A key on a phone. Send and receive Montana; commit hashes for documents and messages via `Anchor`. No fees. No gas. Settlement in approximately one minute of canonical-order time.
+- **No founder, no DAO, no governance, no veto.** The author is removed from the protocol by construction. Advisory councils may exist outside; none have binding force inside. No state, no corporation, no individual — including the author — can stop the network from running or rewrite a finalized event.
+- **Autonomous agents are first-class participants.** Software acting on behalf of a human is a first-class operator and user of the rail, by construction. The same key, the same account chain, the same protocol — no separate plumbing for agents.
+- **Post-quantum from the first day.** Signatures, key encapsulation, transport — all built on primitives that survive a sufficiently large quantum computer (FIPS 203, FIPS 204). Designed to be safe for your children's children.
+
+Montana does not ask permission, does not ask to be regulated, does not ask to be adopted by a bank. It runs on the time of the people who run it, and they are paid for the time they spend running it.
+
+## IV. The Ecosystem: A Blue Ocean
+
+Montana is more than a protocol. The protocol is the foundation; on top of it lives a full system of applications that no existing player can build, because every existing player is trapped in either fiat or crypto.
+
+- **The Rail.** The Montana protocol — canonical order, post-quantum signatures, presence-weighted consensus, no fees, no founder. The substrate everything else stands on.
+- **The Money** (`Ɉ`). Paid by the protocol to whoever runs a node and seals a window. Closed-form linear emission. Owned by you the moment you earn it or receive it.
+- **The Wallet.** Twenty-four words on any device — phone, hardware, paper. The seed phrase is the account; the account is the user; the user owns their money. iOS, Android, desktop, web, CLI — every client uses the same primitives.
+- **The Messenger** (Montana Messenger). End-to-end encrypted, federated through Montana nodes, no central server, no Telegram-style operator who can read or block your messages. The same 24-word identity that holds your money receives your messages.
+- **The Communication Layer** (Montana VPN). A federated mesh of nodes, each opening its own connection to the world. The cities of the network insure each other against the failure of any one. The VPN network and the Montana internet are one and the same.
+- **The Data Layer** (`Anchor`). Any document, message or fact committed to the canonical order forever as a 32-byte hash. The contents stay with you, encrypted under your key. The protocol records existence; you control content.
+- **The Agent Infrastructure** (Junona). Autonomous AI agents are first-class participants — they hold accounts, run nodes, transact, build chains of presence. Junona, the reference agent, acts on the user's behalf with delegated keys and a bounded permission model.
+- **The Sovereign Infrastructure** (Pluton). Montana data centers — sovereign physical infrastructure that runs nodes, hosts applications, and provides the hardware layer the network rests on. Owned by the operators that build them, not rented from hyperscalers.
+- **The Insurance Layer** (Vera Montana). Sovereign-grade insurance and reserve infrastructure on top of the protocol, denominated in the user's choice of unit, settling on the Montana rail.
+- **The Hub** (`hub.montana.quest`). The network's own code-hosting infrastructure — public for the public network, not rented from a hyperscaler.
+
+This is the blue ocean. Banks cannot build it: their business model is extraction; sovereignty is the opposite. Crypto companies cannot build it: every fee they collect and every governance token they issue ties them to the broken architecture they would have to abandon. Governments cannot build it: their incentive is to surveil and control, not to provide neutral substrate. Hyperscalers cannot build it: they would have to give up the rental model that funds them.
+
+The blue ocean is the uncontested space where every layer that touches money, communication, data, identity and agency for one billion people is built on a single sovereign substrate — with no rent, no founder, no veto, no master switch. Montana fills it.
+
+## V. Canonical Order, Not Wall-Clock Time
 
 Each Montana node performs a **sequential delay computation** — an iterated SHA-256 hash chain `T_W = SHA-256^D (T_{W-1})` with `D = 325 000 000` iterations per window. `D` is fixed in the Genesis Decree from a single quartz measurement on the genesis hardware (Apple iMac M1 2021, idle, single-thread); after Genesis the protocol consults no clock ([I-18]). The wall-clock duration of a window is an emergent property of each node's hardware and is not part of consensus state.
 
@@ -51,20 +76,18 @@ This is **not** a verifiable delay function in the sense of Boneh-Bonneau-Bünz-
 
 The output is the **TimeChain**: a canonical, monotonic, unambiguous, independently verifiable sequence of windows. Montana does not measure physical duration. Mapping a window number to a calendar is the observer's task, not the protocol's.
 
-## III. The Hierarchy of Truth
+## VI. The Hierarchy of Truth
 
 Every layer is impossible without the one below.
 
 1. **Canonical order** (`TimeChain`) — irreversible sequential computation. The base layer.
 2. **Presence** (`NodeChain`) — a node's chain length, accumulated one window at a time as the node is canonically cemented into the order. Weight in consensus is presence, not capital. Capital cannot retroactively purchase past participation.
-3. **The rail's reward unit** (`Account`, `Ɉ`) — the protocol-level emission paid to the operator that seals a window: `EMISSION_moneta = 13 × 10⁹ moneta = 13 Ɉ`. Supply is closed-form: `supply_moneta(W) = EMISSION_moneta × (W + 1)`. No premine, no presale, no founder allocation, no halving, no supply cap, no discretionary issuance. `Ɉ` is the rail's bookkeeping; it is not a promise of stable purchasing power and not the unit of account a stable currency would use.
+3. **The rail's reward unit** (`Account`, `Ɉ`) — the protocol-level emission paid to the operator that seals a window: `EMISSION_moneta = 13 × 10⁹ moneta = 13 Ɉ`. Supply is closed-form: `supply_moneta(W) = EMISSION_moneta × (W + 1)`. `Ɉ` is the rail's bookkeeping; it is not a promise of stable purchasing power, and not the unit of account a stable currency would use.
 4. **History** (`Anchor`) — a 32-byte hash bound to a window for the lifetime of the network. Rewriting it requires recomputing every iteration of the chain from the Genesis Decree. Mathematically impossible.
-
-Dormant accounts with a non-zero balance are never touched, no matter how long they sit. The only state cleanup the protocol performs is the removal of empty `AccountRecord` entries (`balance == 0`) idle for more than `4 × τ₂` — garbage collection of records that hold nothing. A balance, once credited, belongs to its key forever.
 
 `1 Ɉ = 10⁹ moneta`. The international ticker is `MONT`.
 
-## IV. Post-Quantum from the First Day
+## VII. Post-Quantum from the First Day
 
 - **Consensus signatures:** ML-DSA-65 (FIPS 204).
 - **Transport key encapsulation:** ML-KEM-768 (FIPS 203).
@@ -74,52 +97,42 @@ Dormant accounts with a non-zero balance are never touched, no matter how long t
 
 No ECDSA. No EdDSA. No classical Diffie-Hellman. No assumption that Shor's algorithm will be late.
 
-## V. Properties of the Rail
+## VIII. Properties of the Rail
 
 What makes Montana a neutral settlement and ordering rail are not features layered on a chain — they are the chain.
 
-- **Zero fees.** The protocol contains no `fee` field on any operation. A seven-cent transfer settles. A high-volume settlement application is not priced out by a congestion auction.
-- **Asynchronous finality without extractable ordering.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration; the wall-clock duration is emergent, not part of consensus state). The proposer's discretion over which operations to include or omit is zero — only cemented BundledConfirmations enter the chain, and operation ordering inside a window is fixed by τ₁-rate canonical rules, not by the proposer's local mempool view. There is no extractable position over the order of operations.
-- **Constant monotonic emission as bookkeeping.** `13 Ɉ` per window, fixed by the Genesis Decree, closed-form. No halving, no supply cap, no discretionary issuance. `Ɉ` is what the rail pays its operators — bookkeeping for the work of sealing a window, not a stable unit of account. Currencies that need to be stable live one floor up, where parties with balance sheets can issue them.
-- **No plutocracy by construction.** Whoever holds a billion `Ɉ` has no more power in consensus than the operator of a Mac Mini. A node's weight is its chain length — its history of cemented presence. The lottery seed incorporates `cemented_bundle_aggregate(W-2)`, signatures from honest operators two windows back, which closes the grinding attack class under hardware asymmetry without depending on rational-cost arguments.
+- **Zero fees.** The protocol contains no `fee` field on any operation. A seven-cent transfer settles.
+- **Asynchronous finality without extractable ordering.** Transfers do not wait for blocks. They are cemented through a P2P quorum of signatures from active operators within a single window of the canonical order (approximately one minute of wall-clock at the genesis-hardware calibration). Proposer discretion over inclusion is zero; operation ordering inside a window is fixed by canonical τ₁-rate rules, not by the proposer's local mempool view. There is no extractable position over the order of operations.
+- **Constant monotonic emission as bookkeeping.** `13 Ɉ` per window, fixed by the Genesis Decree, closed-form. `Ɉ` is what the rail pays its operators — bookkeeping for the work of sealing a window, not a stable unit of account.
+- **No plutocracy by construction.** Whoever holds a billion `Ɉ` has no more power in consensus than the operator of a Mac Mini. A node's weight is its chain length. The lottery seed incorporates `cemented_bundle_aggregate(W-2)`, signatures from honest operators two windows back, which closes the grinding attack class under hardware asymmetry without depending on rational-cost arguments.
 - **Two-thirds honest chain length.** Safety holds while honest operators control more than two-thirds of `active_chain_length`. Capital does not enter the threshold.
 
-## VI. The Economics of Time
+## IX. The Economics of Time
 
-Anti-abuse is done by time, not by money — three independent scarcities, each derived from time elapsed. This is what decouples the rail's reliability from the price of its asset.
+Anti-abuse is done by time, not by money — three independent scarcities, each derived from time elapsed.
 
 - **Per-identity rate per window.** One operation per account per window τ₁. An attacker with N Sybil identities gets at most N operations per window, but each identity has its own creation cost.
 - **`account_chain_length` thresholds.** Privileged operations require the operating account to have been active for at least `k` windows. The threshold cannot be purchased.
-- **Sequential entry barrier for node operators.** Node registration requires producing a sequential SHA-256 chain of length `vdf_chain_length × D` iterations — approximately fourteen days of wall-clock on a commodity x86_64 core. Sequential time is non-acquirable; an attacker with `M` parallel machines produces `M` identities at the same wall-clock cost, not faster.
+- **Sequential entry barrier for node operators.** Node registration requires producing a sequential SHA-256 chain of length `vdf_chain_length × D` iterations — approximately fourteen days of wall-clock on a commodity x86_64 core. An attacker with `M` parallel machines produces `M` identities at the same wall-clock cost, not faster.
 
-Together these three close DoS without monetary barriers. Time as scarcity does not require a price feed, an oracle or an exchange to measure. Its valuation is fixed by the protocol: one window is one window, regardless of `Ɉ` price, regardless of the prices of any currency riding on top.
+Together these three close DoS without monetary barriers. Time as scarcity does not require a price feed, an oracle or an exchange to measure.
 
-## VII. The Ladder of Sovereignty
+## X. The Ladder of Sovereignty, Scale, and Removal of the Author
 
-Two roles, one chain.
+- **Two roles, one chain.** *Account user*: a key on a phone or hardware wallet, no protocol-layer earnings, barrier is a first incoming Transfer (the AccountRecord is created atomically with crediting the amount). *Node operator*: commodity hardware, 24/7 uptime, sequential SHA-256 entry barrier at registration, earnings through the per-window node lottery. The seed phrase and the account chain belong to the user, not to the node; the user moves up the ladder when they choose to.
+- **Calibrated for one billion users.** AccountRecord is 2 059 bytes; state at 10⁹ accounts is approximately 2.06 TB, holdable on commodity disks. Pruning is canonical: state size is bounded by active population, not by chain age. Mechanisms that do not scale to 10⁹ are discarded without discussion.
+- **Privacy as a choice.** Balances and account graphs are public by default ([I-2]). Application-level privacy is achieved through `Anchor`: a 32-byte hash is committed to the chain; encrypted content is held off-chain by its owner. The protocol has no visibility into the contents.
+- **No governance in state.** No DAO, no treasury, no founder veto. Advisory councils may exist outside; none have binding force inside. The author is removed from the protocol by construction. Montana launches as a peer-to-peer network with no founder-controlled bootstrap quorum.
 
-- **Account user.** A key in a smartphone or hardware wallet. Sends and receives Montana; commits 32-byte hashes via `Anchor`; runs applications on top of someone else's node. No protocol-layer earnings. Barrier: a first incoming Transfer (the AccountRecord is created atomically together with crediting the amount).
-- **Node operator.** Commodity hardware (one CPU core), 24/7 uptime, a network connection, and the sequential SHA-256 entry barrier at registration. Full participation in consensus. Earnings through the per-window node lottery.
+## XI. What Montana Is
 
-The seed phrase and the account chain belong to the user, not to the node. The user moves up the ladder when they choose to.
+Not the currency Bitcoin's title promised — that is a stable unit of account, and it lives one floor up. Not digital gold. Not yield. Not governance. Not a brand. Not a privacy mixer. Not an L2. Not a blockchain with a timestamping feature. Not the next crypto project. Not a faster version of what failed.
 
-## VIII. The Scale Baseline, Privacy, and Removal of the Author
+Montana is **the last nail in the coffin of two worlds that failed — fiat and crypto — and the first money system actually built for the people they failed.**
 
-- **Scale.** Every decision is calibrated for at least one billion active users. Mechanisms that do not scale to 10⁹ are discarded without discussion. AccountRecord is 2 059 bytes; state at 10⁹ accounts is approximately 2.06 TB, holdable on commodity disks. Pruning is canonical: state size is bounded by active population, not by chain age.
-- **Privacy.** Balances and account graphs are public by default ([I-2]). Application-level privacy is achieved through `Anchor`: a 32-byte hash is committed to the chain; encrypted content is held off-chain by its owner. The protocol has no visibility into the contents. Privacy is what the user chooses to keep — not what the protocol imposes nor what the protocol forbids.
-- **No governance in state.** No DAO, no treasury, no founder veto. Advisory councils may exist outside the protocol; none of them have binding force inside it. The author is removed from the protocol by construction. Montana launches as a peer-to-peer network with no founder-controlled bootstrap quorum.
+A rail you cannot be removed from. A money no one can freeze. A unit that pays you for being present. A settlement layer with no extractable position over the order of your operations. A communication layer that does not rent your messages back to you. A data layer that does not sell your contents. A protocol with no founder, no DAO, no veto, no central control. A network whose security comes from the time of the people who run it.
 
-## IX. What Montana Is
-
-Not the currency Bitcoin's title promised. Not the substrate Ethereum's name claimed and did not build. Not digital gold. Not yield. Not governance. Not a brand. Not a privacy mixer. Not an L2. Not a blockchain with a timestamping feature.
-
-Montana is **the neutral, fee-free, post-quantum settlement and ordering rail on which a usable currency can run** — not the currency itself.
-
-The economics of time is what makes that rail possible: a non-monetary scarcity that decouples the rail's reliability from the price of its asset, so the rail does not have to do the currency's job in order to function.
-
-A time frame of reference with a value-transfer feature. The standard of frequency from which the parties capable of doing the currency job — governments, central banks, accountable institutions, autonomous agents with reserve logic — can build the currencies people actually use. The medium that fills the space between participants, with no charge for being present and no extractable position over the order of operations.
-
-The ether the name promised.
+The medium that fills the space between participants, with no charge for being present and no extractable position over the order of operations. The ether the name promised. The substrate the world was waiting for.
 
 ---
 
