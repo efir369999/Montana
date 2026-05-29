@@ -908,7 +908,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     // Spin draining BCs up to 800ms.
                     let active_sum: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
                     let need_quorum = quorum(active_sum);
-                    let deadline = Instant::now() + Duration::from_millis(800);
+                    let deadline = Instant::now() + Duration::from_millis(5000);
                     while Instant::now() < deadline {
                         if let Some(ref mut handle) = network_handle {
                             while let Ok(msg) = handle.incoming_rx.try_recv() {
