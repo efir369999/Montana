@@ -1079,7 +1079,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             // dominance compounds forever. Fairness mechanism: every
                             // active peer that delivers a valid BC within the grace
                             // window gets credit.
-                            let grace_deadline = Instant::now() + Duration::from_millis(500);
+                            let grace_deadline = Instant::now() + Duration::from_millis(2000);
                             while Instant::now() < grace_deadline {
                                 if let Some(ref mut handle) = network_handle {
                                     while let Ok(grace_msg) = handle.incoming_rx.try_recv() {
