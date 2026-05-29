@@ -236,6 +236,7 @@ fn vector_c_0x41_fastsync_response_chunk() {
     assert_eq!(&buf[4..8], &1u32.to_le_bytes());
     assert_eq!(buf[8], 0x01);
     assert_eq!(&buf[9..13], &1u32.to_le_bytes());
-    assert_eq!(&buf[13..], &vec![0x55; 64][..]);
+    assert_eq!(&buf[13..21], &0u64.to_le_bytes());
+    assert_eq!(&buf[21..], &vec![0x55; 64][..]);
     assert_eq!(FastSyncResponseChunk::decode(&buf).unwrap(), chunk);
 }
