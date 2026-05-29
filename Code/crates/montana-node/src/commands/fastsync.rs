@@ -90,6 +90,7 @@ mod tests {
             total_chunks: 5,
             table_id: TableId::Account,
             record_count: 3,
+            anchor_window: 0,
             records: flat(&recs),
         };
         let out = wire_chunk_to_sync(wire).expect("convert");
@@ -112,7 +113,8 @@ mod tests {
                 total_chunks: 1,
                 table_id: net,
                 record_count: 1,
-                records: vec![0u8; 8],
+            anchor_window: 0,
+            records: vec![0u8; 8],
             };
             assert_eq!(wire_chunk_to_sync(wire).unwrap().table_id, sync);
         }
@@ -125,6 +127,7 @@ mod tests {
             total_chunks: 1,
             table_id: TableId::Account,
             record_count: 0,
+            anchor_window: 0,
             records: vec![0u8; 10],
         };
         assert_eq!(
@@ -140,6 +143,7 @@ mod tests {
             total_chunks: 1,
             table_id: TableId::Account,
             record_count: 2,
+            anchor_window: 0,
             records: Vec::new(),
         };
         assert_eq!(wire_chunk_to_sync(wire), Err(WireChunkError::EmptyRecords));
@@ -152,6 +156,7 @@ mod tests {
             total_chunks: 1,
             table_id: TableId::Account,
             record_count: 3,
+            anchor_window: 0,
             records: vec![0u8; 10],
         };
         assert_eq!(

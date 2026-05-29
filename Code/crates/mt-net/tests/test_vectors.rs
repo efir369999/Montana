@@ -227,7 +227,8 @@ fn vector_c_0x41_fastsync_response_chunk() {
         total_chunks: 1,
         table_id: TableId::Account,
         record_count: 1,
-        records: vec![0x55; 64],
+            anchor_window: 0,
+            records: vec![0x55; 64],
     };
     let mut buf = Vec::new();
     chunk.encode(&mut buf);

@@ -363,3 +363,21 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure cost:** 6 lines of Rust + redeploy.
 **Status:** closed (Build 9, this session).
 
+
+---
+
+## DEV-018: fast-sync chunk anchor_window + stale-peer filter
+
+**Crate:** `mt-net`, `montana-node`
+**File:line:** `crates/mt-net/src/payloads.rs:62-110` (FastSyncResponseChunk wire format), `crates/montana-node/src/commands/start.rs:486-545` (sender stamp), `crates/montana-node/src/commands/start.rs:540-560` (receiver filter)
+**Spec section:** «Sync protocols → fast-sync» / «State root verification»
+**What the code does (before fix):** FastSyncResponseChunk wire format had no anchor_window field; sender broadcast chunks built from sender's current cemented head, but the receiver could not tell which anchor a given chunk belonged to. When the receiver hit `lag_threshold` and requested fast-sync, it accepted FIRST-RESPONSE chunks regardless of sender's actual head. In a mixed-window mesh (Moscow at W=2146, others at W=2003), receiver typically got chunks from the closest peer (a fellow follower at W=2003), not from Moscow. Reconstructed state_root matched the sender's stale state, but not any recent_roots entry for a window the receiver had already advanced past → `StateRootUnmatched` reject → retry cascade on every cemented Proposal arrival → infinite no-progress loop.
+**What the code does (after fix):**
+  1. **Wire format bump:** `FastSyncResponseChunk` gains `anchor_window: u64` (LE). Minimum chunk size 13 B → 21 B. All construction sites updated (montana-node fastsync.rs, mt-net test_vectors).
+  2. **Sender side:** stamps `anchor_window = current` (sender's last cemented) on every chunk.
+  3. **Receiver side:** decodes anchor_window from the first chunk payload; if `chunk_anchor <= current` the chunk is discarded with a log line — peer cannot help us catch up. Only chunks from peers strictly ahead of us are accepted.
+**Severity:** mainnet blocker for mixed-window mesh (every multi-node deployment where any peer lags >1 windows behind the proposer). Without this fix, fast-sync converges only when ALL peers happen to be at the same window — a vanishingly rare condition.
+**Closure path:** ↑ implemented in this commit. Possible follow-up: targeted FastSyncRequest (send to a specific peer_id, not broadcast) to avoid wasting bandwidth on lagging peers' responses.
+**Closure cost:** ~50 lines of Rust across 4 files (wire format + sender + receiver + 1 test fix).
+**Status:** closed (Build 10, this session).
+

@@ -513,6 +513,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                         total_chunks: chunk.total_chunks,
                                         table_id: table_id_byte,
                                         record_count: chunk.records.len() as u32,
+                                        // DEV-018: stamp current cemented head into every chunk
+                                        // so receiver can: (a) discard chunks from peers at/below
+                                        // its own current, (b) verify against the correct
+                                        // recent_roots[anchor_window] entry, not any matching root.
+                                        anchor_window: current,
                                         records: flat,
                                     };
                                     let mut payload = Vec::new();
@@ -539,6 +544,22 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     },
                     MsgType::FastSyncResponse => {
                         if let Some(mut client) = fast_sync.take() {
+                            // DEV-018: peek chunk anchor_window before accepting. Drop
+                            // chunks from peers at <= our current (they cannot help us
+                            // catch up). This avoids the StateRootUnmatched cascade where
+                            // we'd otherwise import a peer's stale snapshot, fail finalize,
+                            // and retry on every cemented Proposal.
+                            let chunk_anchor = mt_net::FastSyncResponseChunk::decode(&msg.payload)
+                                .ok()
+                                .map(|c| c.anchor_window)
+                                .unwrap_or(0);
+                            if chunk_anchor <= current {
+                                eprintln!(
+                                    "[m7] discard FastSyncResponse anchor={chunk_anchor} <= current={current} (peer not ahead)"
+                                );
+                                fast_sync = Some(client);
+                                continue;
+                            }
                             let parsed = mt_net::FastSyncResponseChunk::decode(&msg.payload)
                                 .map_err(|e| format!("decode: {e:?}"))
                                 .and_then(|w| {

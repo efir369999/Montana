@@ -65,6 +65,12 @@ pub struct FastSyncResponseChunk {
     pub total_chunks: u32,
     pub table_id: TableId,
     pub record_count: u32,
+    // DEV-018: snapshot anchor window. Receiver checks anchor_window > local current
+    // before accepting (drop chunks from peers at the same or older window — they
+    // cannot help us catch up). Finalize uses this to look up the correct
+    // recent_roots[anchor_window] for state_root verification, instead of scanning
+    // all known roots and accepting any match.
+    pub anchor_window: u64,
     pub records: Vec<u8>,
 }
 
@@ -74,11 +80,13 @@ impl FastSyncResponseChunk {
         write_u32(buf, self.total_chunks);
         write_u8(buf, self.table_id.clone() as u8);
         write_u32(buf, self.record_count);
+        let aw = self.anchor_window.to_le_bytes();
+        buf.extend_from_slice(&aw);
         write_bytes(buf, &self.records);
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, NetError> {
-        if input.len() < 13 {
+        if input.len() < 21 {
             return Err(NetError::TruncatedPayload);
         }
         let mut a = [0u8; 4];
@@ -94,12 +102,16 @@ impl FastSyncResponseChunk {
         let mut c = [0u8; 4];
         c.copy_from_slice(&input[9..13]);
         let record_count = u32::from_le_bytes(c);
-        let records = input[13..].to_vec();
+        let mut aw = [0u8; 8];
+        aw.copy_from_slice(&input[13..21]);
+        let anchor_window = u64::from_le_bytes(aw);
+        let records = input[21..].to_vec();
         Ok(FastSyncResponseChunk {
             chunk_index,
             total_chunks,
             table_id,
             record_count,
+            anchor_window,
             records,
         })
     }
@@ -442,6 +454,7 @@ mod tests {
             total_chunks: 1,
             table_id: TableId::Account,
             record_count: 1,
+            anchor_window: 0,
             records: vec![0x55; 64],
         };
         let mut buf = Vec::new();
@@ -456,6 +469,7 @@ mod tests {
         write_u32(&mut buf, 0);
         write_u8(&mut buf, 0x01);
         write_u32(&mut buf, 0);
+        buf.extend_from_slice(&0u64.to_le_bytes());
         assert_eq!(
             FastSyncResponseChunk::decode(&buf),
             Err(NetError::InvalidPayloadField)
