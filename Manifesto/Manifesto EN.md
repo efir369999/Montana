@@ -1,6 +1,6 @@
 # The Montana Manifesto
 
-**Version:** 2.0.1
+**Version:** 2.0.2
 **Date:** 2026-05-29
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
@@ -45,7 +45,7 @@ Montana is a peer-to-peer rail for moving and recording value, owned by no one, 
 - **You can use the rail without running anything.** A key on a phone. Send and receive Montana; commit hashes for documents and messages via `Anchor`. No fees. No gas. Settlement in approximately one minute of canonical-order time.
 - **No founder, no DAO, no governance, no veto.** The author is removed from the protocol by construction. Advisory councils may exist outside; none have binding force inside. No state, no corporation, no individual — including the author — can stop the network from running or rewrite a finalized event.
 - **Autonomous agents are first-class participants.** Software acting on behalf of a human is a first-class operator and user of the rail, by construction. The same key, the same account chain, the same protocol — no separate plumbing for agents.
-- **Post-quantum from the first day.** Signatures, key encapsulation, transport — all built on primitives that survive a sufficiently large quantum computer (FIPS 203, FIPS 204). Designed to be safe for your children's children.
+- **Post-quantum from the first day.** Signatures, key encapsulation, transport — all built on primitives that survive a sufficiently large quantum computer (FIPS 203, FIPS 204), at NIST security level 3 (≈ 192-bit quantum-equivalent strength).
 
 Montana does not ask permission, does not ask to be regulated, does not ask to be adopted by a bank. It runs on the time of the people who run it, and they are paid for the time they spend running it.
 
@@ -56,12 +56,12 @@ Montana is more than a protocol. The protocol is the foundation; on top of it li
 - **The Rail.** The Montana protocol — canonical order, post-quantum signatures, presence-weighted consensus, no fees, no founder. The substrate everything else stands on.
 - **The Money** (`Ɉ`). Paid by the protocol to whoever runs a node and seals a window. Closed-form linear emission. Owned by you the moment you earn it or receive it.
 - **The Wallet.** Twenty-four words on any device — phone, hardware, paper. The seed phrase is the account; the account is the user; the user owns their money. iOS, Android, desktop, web, CLI — every client uses the same primitives.
-- **The Messenger** (Montana Messenger). End-to-end encrypted, federated through Montana nodes, no central server, no Telegram-style operator who can read or block your messages. The same 24-word identity that holds your money receives your messages.
+- **The Messenger** (Montana Messenger). A reference messenger client is in development as an end-to-end encrypted application federated through Montana nodes, with no central server and no Telegram-style operator able to read or block messages. The seed-derived identity that holds the user's balance is the identity that receives the messages.
 - **The Communication Layer** (Montana VPN). A federated mesh of nodes, each opening its own connection to the world. The cities of the network insure each other against the failure of any one. The VPN network and the Montana internet are one and the same.
 - **The Data Layer** (`Anchor`). Any document, message or fact committed to the canonical order forever as a 32-byte hash. The contents stay with you, encrypted under your key. The protocol records existence; you control content.
-- **The Agent Infrastructure** (Junona). Autonomous AI agents are first-class participants — they hold accounts, run nodes, transact, build chains of presence. Junona, the reference agent, acts on the user's behalf with delegated keys and a bounded permission model.
-- **The Sovereign Infrastructure** (Pluton). Montana data centers — sovereign physical infrastructure that runs nodes, hosts applications, and provides the hardware layer the network rests on. Owned by the operators that build them, not rented from hyperscalers.
-- **The Insurance Layer** (Vera Montana). Sovereign-grade insurance and reserve infrastructure on top of the protocol, denominated in the user's choice of unit, settling on the Montana rail.
+- **The Agent Infrastructure** (Junona). Autonomous AI agents are first-class participants of the protocol by construction — they hold accounts, run nodes, transact, build chains of presence. Junona is defined as the reference agent acting on the user's behalf through delegated keys and a bounded permission model; the reference implementation is in active development.
+- **The Sovereign Infrastructure** (Pluton). Sovereign physical infrastructure designed to run nodes, host applications, and provide the hardware layer under operator ownership rather than hyperscaler rental. First Pluton sites are at the design stage.
+- **The Insurance Layer** (Vera Montana). A sovereign-grade insurance and reserve layer designed to sit on top of the protocol, denominated in the user's choice of unit, settling on the Montana rail. Currently at the design stage.
 - **The Hub** (`hub.montana.quest`). The network's own code-hosting infrastructure — public for the public network, not rented from a hyperscaler.
 
 This is a substrate no incumbent can occupy. Banks are bound to extraction; cryptocurrency firms are bound to fees and governance tokens; states are bound to surveillance and control; hyperscalers are bound to rental. Each existing actor has a structural incentive against the substrate Montana provides. The substrate exists only where no actor can build it from inside the model that funds them.
@@ -113,7 +113,7 @@ Anti-abuse is done by time, not by money — three independent scarcities, each 
 
 - **Per-identity rate per window.** One operation per account per window τ₁. An attacker with N Sybil identities gets at most N operations per window, but each identity has its own creation cost.
 - **`account_chain_length` thresholds.** Privileged operations require the operating account to have been active for at least `k` windows. The threshold cannot be purchased.
-- **Sequential entry barrier for node operators.** Node registration requires producing a sequential SHA-256 chain of length `vdf_chain_length × D` iterations — approximately fourteen days of wall-clock on a commodity x86_64 core. An attacker with `M` parallel machines produces `M` identities at the same wall-clock cost, not faster.
+- **Sequential entry barrier for node operators.** Node registration requires producing a sequential SHA-256 chain of length `vdf_chain_length × D` iterations. The protocol parameter `vdf_entry_windows = 20 160 windows` (one τ₂ epoch) sets the threshold; at `D = 325 000 000` iterations per window, the total cost is `vdf_entry_windows × D = 6.552 × 10¹² SHA-256 hashes`, which is fourteen days of wall-clock at the genesis-hardware calibration (one window ≈ 60 seconds emergent on a commodity x86_64 core). An attacker with `M` parallel machines produces `M` identities at the same wall-clock cost, not faster.
 
 Together these three close DoS without monetary barriers. Time as scarcity does not require a price feed, an oracle or an exchange to measure.
 
