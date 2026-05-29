@@ -434,7 +434,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                         window_index.saturating_sub(current)
                                     );
                                     fast_sync = Some(mt_sync::FastSyncClient::new());
-                                    fast_sync_deadline = Some(Instant::now() + std::time::Duration::from_secs(10));
+                                    fast_sync_deadline =
+                                        Some(Instant::now() + std::time::Duration::from_secs(10));
                                 },
                                 Err(e) => eprintln!("[m7] FastSyncRequest broadcast failed: {e}"),
                             }

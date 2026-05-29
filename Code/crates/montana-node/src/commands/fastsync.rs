@@ -113,8 +113,8 @@ mod tests {
                 total_chunks: 1,
                 table_id: net,
                 record_count: 1,
-            anchor_window: 0,
-            records: vec![0u8; 8],
+                anchor_window: 0,
+                records: vec![0u8; 8],
             };
             assert_eq!(wire_chunk_to_sync(wire).unwrap().table_id, sync);
         }
