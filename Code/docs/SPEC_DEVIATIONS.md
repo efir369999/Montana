@@ -381,3 +381,20 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure cost:** ~50 lines of Rust across 4 files (wire format + sender + receiver + 1 test fix).
 **Status:** closed (Build 10, this session).
 
+
+---
+
+## DEV-018b/c: fast-sync client retry on discard + 10s deadline
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs:540-565` (discard drop), `crates/montana-node/src/commands/start.rs:393-401` (deadline check), `crates/montana-node/src/commands/start.rs:425-432` (trigger sets deadline)
+**Spec section:** «Sync protocols → fast-sync» / «Liveness under partial responses»
+**What the code does (before fix):** DEV-018 introduced anchor_window discard for stale-peer chunks but kept `fast_sync = Some(client)` on discard, so the `fast_sync.is_some()` guard at the next cemented arrival blocked re-trigger. Even worse, when the broadcast FastSyncRequest got NO response at all (peer unreachable, request lost in libp2p RR queue, peer too busy to serve), the client stayed Some forever and catch-up halted permanently.
+**What the code does (after fix):**
+  1. **Drop on discard (DEV-018b):** when anchor_window check rejects a chunk, immediately `drop(client)` and `fast_sync_deadline = None`. The next cemented Proposal arrival triggers a fresh FastSyncRequest.
+  2. **10-second deadline (DEV-018c):** when fast-sync triggers, `fast_sync_deadline = Some(Instant::now() + Duration::from_secs(10))`. Each cemented Proposal handler checks `if Instant::now() > deadline` and drops the stale client. Recovers from silently-lost requests.
+**Severity:** mainnet blocker for any cohort with intermittent peer availability or libp2p backpressure.
+**Closure path:** ↑ implemented in this commit.
+**Closure cost:** ~15 lines of Rust.
+**Status:** closed (Build 11 + Build 12, this session).
+

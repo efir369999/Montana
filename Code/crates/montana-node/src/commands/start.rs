@@ -205,6 +205,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         resolve_fast_sync_lag_threshold(std::env::var("MONTANA_FASTSYNC_LAG_THRESHOLD").ok());
     println!("fast-sync lag    : порог {fast_sync_lag_threshold} окон");
     let mut fast_sync: Option<mt_sync::FastSyncClient> = None;
+    let mut fast_sync_deadline: Option<Instant> = None;
     // M7 fast-sync: recent cemented bootstrap state_roots (window -> root),
     // the trusted set a reconstructed snapshot root must match.
     let mut recent_roots: BTreeMap<u64, Hash32> = BTreeMap::new();
@@ -399,6 +400,17 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         }
                         // M7 fast-sync: if a snapshot is already in flight, ignore
                         // cemented proposals until apply.
+                        // DEV-018c: drop stale in-flight client if no response within 10s.
+                        // Without this, a single unanswered FastSyncRequest stalls catch-up
+                        // forever — broadcast may be lost, peer may be unable to serve,
+                        // chunks may be partial and never complete.
+                        if let Some(deadline) = fast_sync_deadline {
+                            if Instant::now() > deadline {
+                                eprintln!("[m7] fast-sync deadline exceeded — drop client, retry");
+                                fast_sync = None;
+                                fast_sync_deadline = None;
+                            }
+                        }
                         if fast_sync.is_some() {
                             continue;
                         }
@@ -422,6 +434,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                         window_index.saturating_sub(current)
                                     );
                                     fast_sync = Some(mt_sync::FastSyncClient::new());
+                                    fast_sync_deadline = Some(Instant::now() + std::time::Duration::from_secs(10));
                                 },
                                 Err(e) => eprintln!("[m7] FastSyncRequest broadcast failed: {e}"),
                             }
@@ -555,9 +568,15 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                 .unwrap_or(0);
                             if chunk_anchor <= current {
                                 eprintln!(
-                                    "[m7] discard FastSyncResponse anchor={chunk_anchor} <= current={current} (peer not ahead)"
+                                    "[m7] discard FastSyncResponse anchor={chunk_anchor} <= current={current} (peer not ahead) — drop client, retry on next cemented"
                                 );
-                                fast_sync = Some(client);
+                                // Drop the client so the next cemented Proposal triggers
+                                // a fresh FastSyncRequest. Keeping client = Some would
+                                // block re-trigger via the `fast_sync.is_some()` guard
+                                // above and we'd stall forever if the first response
+                                // happens to come from a stale peer.
+                                drop(client);
+                                fast_sync_deadline = None;
                                 continue;
                             }
                             let parsed = mt_net::FastSyncResponseChunk::decode(&msg.payload)
@@ -576,6 +595,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                                 )?;
                                                 current = window;
                                                 save_current_window(&data_dir, current)?;
+                                                fast_sync_deadline = None;
                                                 eprintln!("[m7] fast-sync complete \u{2192} state replaced, current_window={current}");
                                             },
                                             Err(e) => eprintln!(
