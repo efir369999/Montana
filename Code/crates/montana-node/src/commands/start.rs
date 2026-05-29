@@ -1005,7 +1005,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                     // current-window snapshots; if we defer the request
                                     // they may have already retried with a different
                                     // anchor by the time we get back to the main drain.
-                                    if let Ok(_req) = mt_net::FastSyncRequest::decode(&msg.payload) {
+                                    if let Ok(_req) = mt_net::FastSyncRequest::decode(&msg.payload)
+                                    {
                                         let snap = mt_sync::Snapshot::from_tables(
                                             current,
                                             &state.accounts,
@@ -1016,10 +1017,18 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                         let total = chunks.len();
                                         for chunk in chunks {
                                             let table_id_byte = match chunk.table_id {
-                                                mt_sync::FastSyncTableId::Account => mt_net::TableId::Account,
-                                                mt_sync::FastSyncTableId::Node => mt_net::TableId::Node,
-                                                mt_sync::FastSyncTableId::Candidate => mt_net::TableId::Candidate,
-                                                mt_sync::FastSyncTableId::Proposals => mt_net::TableId::Proposals,
+                                                mt_sync::FastSyncTableId::Account => {
+                                                    mt_net::TableId::Account
+                                                },
+                                                mt_sync::FastSyncTableId::Node => {
+                                                    mt_net::TableId::Node
+                                                },
+                                                mt_sync::FastSyncTableId::Candidate => {
+                                                    mt_net::TableId::Candidate
+                                                },
+                                                mt_sync::FastSyncTableId::Proposals => {
+                                                    mt_net::TableId::Proposals
+                                                },
                                             };
                                             let mut flat: Vec<u8> = Vec::new();
                                             for r in &chunk.records {
