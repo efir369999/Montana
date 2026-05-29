@@ -347,3 +347,19 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure path:** перенести N_SEED из operational manifest в Genesis Decree `protocol_params.genesis_active_operators` (consensus-binding, hardcoded в genesis_params()); current manifest-based pre-seed остаётся для тест-cohort flexibility, mainnet — через hardcoded params.
 **Closure cost:** ~3-5 часов код + KAT vector update.
 **Status:** acknowledged (spec formalized в v35.26.0; production hardcoding genesis_active_operators в Genesis Decree protocol_params — следующая итерация mt-genesis).
+
+---
+
+## DEV-017: follower t_r_history population from Proposal envelopes
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs:275-285` (after recent_roots insert)
+**Spec section:** «BundledConfirmation» / «expected_endpoint» / «follower BC validation»
+**Spec quote:** «BC.endpoint = T_r(W) of the proposer; validator computes expected = T_r at window W and rejects if mismatch»
+**What the code does (before fix):** followers receive Proposal envelopes (candidate or cemented) containing `timechain_value` (T_r) at offset 204..236, but only `recent_roots` is populated; `t_r_history` remains empty for followers. When BCs from other followers arrive in the live drain (line 568-602), `expected_t_r = t_r_history.get(bc.window_index).unwrap_or(timechain.t_r)` falls back to follower's own out-of-sync `timechain.t_r`, which never matches the proposer's authoritative T_r → all peer BCs rejected as `WrongEndpoint`. Result: bc_accumulator at the proposer side gets at most `bundles=1` (own BC only); 6-Active genesis cohort cannot achieve quorum-based cementing.
+**What the code does (after fix):** in the Proposal envelope handler, alongside `recent_roots.insert(window_index, state_root)`, extract `t_r_w_extracted` from offset 204..236 and `t_r_history.insert(window_index, t_r_w_extracted)` (bounded to last 64 windows by identical eviction policy). Now every received Proposal seeds the follower's t_r_history; when subsequent BCs from peer followers arrive in the live drain, validation uses the authoritative T_r and BCs accumulate correctly.
+**Severity:** prerequisite for DEV-012 closure (multi-confirmer protocol non-functional without it). Mainnet blocker for any cohort with N_SEED ≥ 1.
+**Closure path:** ↑ implemented in this commit.
+**Closure cost:** 6 lines of Rust + redeploy.
+**Status:** closed (Build 9, this session).
+

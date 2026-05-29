@@ -277,6 +277,18 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             let oldest = *recent_roots.keys().next().unwrap();
                             recent_roots.remove(&oldest);
                         }
+                        // DEV-017 follower t_r history: extract proposer's T_r(W)
+                        // from Proposal envelope (offset 204..236 = timechain_value
+                        // field) so incoming BCs from other followers validate
+                        // against the authoritative T_r, not the follower's own
+                        // (out-of-sync) timechain.t_r.
+                        let mut t_r_w_extracted = [0u8; 32];
+                        t_r_w_extracted.copy_from_slice(&msg.payload[204..236]);
+                        t_r_history.insert(window_index, t_r_w_extracted);
+                        while t_r_history.len() > 64 {
+                            let oldest = *t_r_history.keys().next().unwrap();
+                            t_r_history.remove(&oldest);
+                        }
                         // Candidate envelope (size == 3722, no bundles) is NOT applied:
                         // it serves as a notification "window W is being proposed,
                         // send me your BC". Active followers respond with a BC.
