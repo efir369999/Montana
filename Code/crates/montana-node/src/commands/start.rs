@@ -963,6 +963,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     let active_sum: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
                     let need_quorum = quorum(active_sum);
                     let deadline = Instant::now() + Duration::from_millis(5000);
+                    // DEV-018d: drain non-BC messages into a deferred queue so
+                    // FastSyncRequest / FastSyncResponse / Proposal envelopes from
+                    // peers are not silently dropped while the proposer spins
+                    // waiting for BC quorum. Deferred messages are re-handled
+                    // after spin completes (top of next main-loop iteration).
+                    let mut deferred: Vec<ProtocolMessage> = Vec::new();
                     while Instant::now() < deadline {
                         if let Some(ref mut handle) = network_handle {
                             while let Ok(msg) = handle.incoming_rx.try_recv() {
@@ -993,6 +999,57 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                             );
                                         }
                                     }
+                                } else if msg.msg_type == MsgType::FastSyncRequest {
+                                    // DEV-018d: serve fast-sync inline during spin.
+                                    // Followers depend on the proposer to deliver
+                                    // current-window snapshots; if we defer the request
+                                    // they may have already retried with a different
+                                    // anchor by the time we get back to the main drain.
+                                    if let Ok(_req) = mt_net::FastSyncRequest::decode(&msg.payload) {
+                                        let snap = mt_sync::Snapshot::from_tables(
+                                            current,
+                                            &state.accounts,
+                                            &state.nodes,
+                                            &state.candidates,
+                                        );
+                                        let chunks = snap.to_wire_chunks(32);
+                                        let total = chunks.len();
+                                        for chunk in chunks {
+                                            let table_id_byte = match chunk.table_id {
+                                                mt_sync::FastSyncTableId::Account => mt_net::TableId::Account,
+                                                mt_sync::FastSyncTableId::Node => mt_net::TableId::Node,
+                                                mt_sync::FastSyncTableId::Candidate => mt_net::TableId::Candidate,
+                                                mt_sync::FastSyncTableId::Proposals => mt_net::TableId::Proposals,
+                                            };
+                                            let mut flat: Vec<u8> = Vec::new();
+                                            for r in &chunk.records {
+                                                flat.extend_from_slice(r);
+                                            }
+                                            let wire_chunk = mt_net::FastSyncResponseChunk {
+                                                chunk_index: chunk.chunk_index,
+                                                total_chunks: chunk.total_chunks,
+                                                table_id: table_id_byte,
+                                                record_count: chunk.records.len() as u32,
+                                                anchor_window: current,
+                                                records: flat,
+                                            };
+                                            let mut payload = Vec::new();
+                                            wire_chunk.encode(&mut payload);
+                                            let envelope = ProtocolMessage::new(
+                                                MsgType::FastSyncResponse,
+                                                msg.request_id,
+                                                payload,
+                                            );
+                                            if handle.broadcast_tx.send(envelope).is_err() {
+                                                break;
+                                            }
+                                        }
+                                        eprintln!(
+                                            "[m7] served FastSync snapshot (spin): anchor={current} chunks={total}"
+                                        );
+                                    }
+                                } else {
+                                    deferred.push(msg);
                                 }
                             }
                         }

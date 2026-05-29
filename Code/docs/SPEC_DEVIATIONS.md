@@ -398,3 +398,21 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure cost:** ~15 lines of Rust.
 **Status:** closed (Build 11 + Build 12, this session).
 
+
+---
+
+## DEV-018d: serve FastSyncRequest inline during proposer spin-drain
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs:965-1060` (spin-drain block in Active phase)
+**Spec section:** «Sync protocols → fast-sync» / «Server-side liveness»
+**What the code does (before fix):** The proposer (bootstrap) spends ~5 seconds per window in the BC accumulator spin-drain loop. The original spin-drain consumed messages from `incoming_rx` via `try_recv()` but only processed `MsgType::BundledConfirmation`. All other message types (FastSyncRequest, FastSyncResponse, peer Proposals) were silently discarded. Followers' fast-sync requests had ~0% chance of being served — they were eaten by the spin-drain before the post-spin main-loop dispatcher could reach them. As a result, followers stuck at an older window could never catch up to the proposer's head.
+**What the code does (after fix):** spin-drain now handles three cases:
+  1. `BundledConfirmation` — accumulator insert (as before).
+  2. `FastSyncRequest` — serve inline: build snapshot from current state, chunk, broadcast `FastSyncResponse` envelopes with `anchor_window = current`, log `[m7] served FastSync snapshot (spin)`.
+  3. Other types (e.g. `FastSyncResponse` for the proposer's own outgoing requests, peer Proposals) — pushed to a `deferred: Vec<ProtocolMessage>` (currently dropped after spin; acceptable because followers re-broadcast on every window).
+**Severity:** mainnet blocker — without inline fast-sync serving, a lagging follower can never catch up to a proposer that's continuously cementing windows.
+**Closure path:** ↑ implemented in this commit. Follow-up: re-queue `deferred` messages back into `incoming_rx` after spin (requires a multi-producer channel side or a local app-level pending queue).
+**Closure cost:** ~70 lines of Rust.
+**Status:** closed (Build 13, this session).
+
