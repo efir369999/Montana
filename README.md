@@ -110,17 +110,27 @@ This is a public invitation. Every primitive, every consensus rule, every byte o
 
 ## Quick start
 
-**One command — Montana node + Reality VPN + decoy, all from the published Docker image:**
+**One command — joins the Montana fleet (node + VPN endpoint + orchestrator registration) on a clean Ubuntu/Debian VPS:**
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/efir369999/Montana/main/install.sh | sudo bash
 ```
 
-Pulls `ghcr.io/efir369999/montana-node:latest`, generates Reality keys + UUID + SID, brings up the full stack (montana-node + xray + nginx decoy) via docker compose, prints the 24-word recovery mnemonic and the VLESS URL.
+The installer:
+- Wipes any prior native systemd install (idempotent re-runs supported)
+- Installs Docker
+- Brings up `montana-node` container (`ghcr.io/efir369999/montana-node:latest`) — joins the 5-node TimeChain mesh via embedded `genesis-manifest.json`, listens P2P on `:8444`
+- Brings up `xray` Reality endpoint on `:443` using the **shared universal `pbk` / `sid`** that all Montana VPN endpoints serve, with a per-host UUID
+- Brings up `nginx-decoy` on `:80` (camouflage landing page)
+- Auto-detects country / city / coords via `ip-api.com`
+- POSTs `/register` to the Moscow orchestrator (built-in admin token); orchestrator either registers the node directly, or auto-provisions a cascade front via Frankfurt if the IP is in a blocked CIDR
+- Prints the 24-word recovery mnemonic
+
+The new endpoint appears in **https://montana.quest/vpn/sub** within ~5 minutes (systemd timer on Moscow rebuilds the subscription from the registry).
 
 ---
 
-**Montana node only (no VPN), pre-built image:**
+**Montana node only (no VPN), pre-built image — for operators who only want consensus participation:**
 
 ```bash
 docker volume create montana-data
