@@ -200,6 +200,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // Build 31: hold raw bytes of last cemented envelope (header + bundle_count + bundles)
     // so proposer can archive the full envelope, not just the header (so explorer's
     // /api/window/<W> returns real bundles array, not just empty bundle_count from header).
+    #[allow(unused_assignments)]
     let mut last_cemented_envelope: Option<Vec<u8>> = None;
     // DEV-023: track per-proposer last cemented window so each node can decide
     // when an elected proposer has gone silent (≥ K_FALLBACK_WINDOWS windows
