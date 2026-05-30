@@ -1420,7 +1420,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // DEV-012: broadcast CEMENTED envelope: [header(3722)][u16 bundle_count][N × BC].
                 // Build 31: capture envelope bytes into last_cemented_envelope so archive
                 // can persist the full envelope, not just header.
-                let mut envelope_payload: Vec<u8> = Vec::with_capacity(3722 + 2 + 4096 * confirmer_ids.len());
+                let mut envelope_payload: Vec<u8> =
+                    Vec::with_capacity(3722 + 2 + 4096 * confirmer_ids.len());
                 header.encode(&mut envelope_payload);
                 let bundles_for_envelope: Vec<&BundledConfirmation> = {
                     let map = bc_accumulator.get(&current).cloned().unwrap_or_default();
@@ -1437,8 +1438,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 }
                 last_cemented_envelope = Some(envelope_payload.clone());
                 if let Some(ref handle) = network_handle {
-                    let envelope =
-                        ProtocolMessage::new(MsgType::Proposal, header.window_index, envelope_payload);
+                    let envelope = ProtocolMessage::new(
+                        MsgType::Proposal,
+                        header.window_index,
+                        envelope_payload,
+                    );
                     if let Err(e) = handle.broadcast_tx.send(envelope) {
                         eprintln!(
                             "[consensus] broadcast CEMENTED Proposal w={} failed: {e}",
@@ -1472,11 +1476,13 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 if let Some(ref env) = last_cemented_envelope {
                     store
                         .archive_proposal_envelope(header.window_index, env)
-                        .map_err(|e| NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}")))?;
+                        .map_err(|e| {
+                            NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}"))
+                        })?;
                 } else {
-                    store
-                        .archive_proposal(&header)
-                        .map_err(|e| NodeError::InvalidArguments(format!("archive_proposal: {e:?}")))?;
+                    store.archive_proposal(&header).map_err(|e| {
+                        NodeError::InvalidArguments(format!("archive_proposal: {e:?}"))
+                    })?;
                 }
                 store.save_meta_last_cemented(current).map_err(|e| {
                     NodeError::InvalidArguments(format!("save_meta_last_cemented: {e:?}"))

@@ -430,7 +430,11 @@ impl FsStore {
 
     /// Build 31: archive the FULL cemented envelope (header + bundle_count u16 + bundles).
     /// Explorer can then read bundles array from archive, not just header.
-    pub fn archive_proposal_envelope(&self, window: u64, envelope: &[u8]) -> Result<(), StoreError> {
+    pub fn archive_proposal_envelope(
+        &self,
+        window: u64,
+        envelope: &[u8],
+    ) -> Result<(), StoreError> {
         if envelope.len() < PROPOSAL_HEADER_SIZE {
             return Err(StoreError::CorruptedLength(format!(
                 "archive_proposal_envelope: too small {} < {}",
