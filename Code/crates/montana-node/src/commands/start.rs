@@ -349,9 +349,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                 // Build BC with reveal_hashes from pool (own + any peer reveals received earlier)
                                 let mut bc_reveal_hashes: Vec<Hash32> = reveal_pool
                                     .get(&window_index)
-                                    .map(|m| {
-                                        m.values().map(mt_lottery::reveal_hash).collect()
-                                    })
+                                    .map(|m| m.values().map(mt_lottery::reveal_hash).collect())
                                     .unwrap_or_default();
                                 bc_reveal_hashes.sort(); // canonical order
                                 let _ = own_reveal_hash;
