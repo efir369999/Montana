@@ -601,3 +601,25 @@ Live verification (window 4418..4422 explorer snapshot):
   bundles=3 (multi-confirmer cement) on majority of windows
   emission distributed per spec lottery; bootstrap is sole proposer pending DEV-022/023.
 
+
+---
+
+## DEV-023: bootstrap fallback after K=3 silent windows + DEV-022 re-enable
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs` — `last_proposer_cement` state, active arm cascade gate.
+**Spec section:** «Lookback Leadership / Fallback cascade»
+**Spec quote:** «Если < 67% подписали → proposal отклонён. Fallback: `fallback_proposer_W = second_min(weighted_ticket)` окна W-2. Fallback cascade.»
+**What the code does:**
+  1. `last_proposer_cement: BTreeMap<NodeId, u64>` records per-proposer last cemented window. Populated drain-side (from received cement.proposer_node_id) AND own-cement-side (active arm).
+  2. Active arm gate computes `primary_proposer = winner_{W-2}` per DEV-022 Lookback.
+  3. `primary_silent = current - last_proposer_cement[primary_proposer]`. If `primary_silent >= K_FALLBACK_WINDOWS (3)` AND primary != bootstrap → fallback to bootstrap.
+  4. Bootstrap is canonical fallback always-active (cannot itself be silent because if bootstrap silent, no one cements at all → all stuck).
+  5. Each node deterministically computes same active_proposer from canonical state; no coordination round needed.
+
+**Simplification vs spec:** Spec's full cascade («second_min, third_min, ...») requires sorted_candidates_for_fallback over reveals_{W-2}. Current implementation collapses cascade to bootstrap-only fallback. Spec-correct multi-level cascade deferred to v1.0.2 — requires further work on reveal-pool persistence across the W-2 lookback window plus a coordination protocol to break ties when multiple fallback candidates think they should propose.
+
+**Severity:** mainnet-critical for emission decentralization once DEV-022 rotation is re-enabled.
+**Closure cost:** ~30 lines of Rust (this commit).
+**Status:** closed (Build 23 sha ede6dffb, this session).
+

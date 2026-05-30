@@ -197,6 +197,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // DEV-022: bootstrap_node_id used both in main drain (Proposal verify) and
     // active arm (Lookback proposer selection); hoist to outer scope.
     let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
+    // DEV-023: track per-proposer last cemented window so each node can decide
+    // when an elected proposer has gone silent (≥ K_FALLBACK_WINDOWS windows
+    // without producing cement). Bootstrap is the canonical fallback.
+    let mut last_proposer_cement: BTreeMap<mt_state::NodeId, u64> = BTreeMap::new();
+    const K_FALLBACK_WINDOWS: u64 = 3;
     // DEV-022 Lookback Leadership: track winner_id per cemented window so any
     // Active node can compute proposer_W = winner_{W-2} for its own window decisions.
     // Genesis bootstrap rule: proposer_0 и proposer_1 = bootstrap-узел.
@@ -262,6 +267,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         proposer_node_id.copy_from_slice(&msg.payload[364..396]);
                         // DEV-022: record cemented winner_id for Lookback proposer selection
                         winner_history.insert(window_index, winner_id);
+                        // DEV-023: record proposer activity for fallback cascade decisions
+                        last_proposer_cement.insert(proposer_node_id, window_index);
                         while winner_history.len() > 64 {
                             let oldest = *winner_history.keys().next().unwrap();
                             winner_history.remove(&oldest);
@@ -870,18 +877,55 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // a BC on incoming candidate Proposal. (Spec calls for lookback-based
                 // proposer rotation in a future iteration; for the v1.0.0 cohort the
                 // bootstrap-only proposer model is the deployed baseline.)
-                // DEV-022 Lookback: rotation gate DISABLED pending DEV-023 fallback
-                // cascade. Live test on mainnet 2026-05-30 revealed dead-lock:
-                // both elected proposer и bootstrap become followers waiting for each
-                // other when winner_{W-2} ≠ bootstrap. Without a working «if elected
-                // proposer doesn't cement within K windows → second_min» fallback,
-                // the chain stalls. Keep winner_history population for future DEV-023
-                // logic; revert active gate to bootstrap-only.
-                if my_node != bootstrap_node_id {
+                // DEV-022 + DEV-023: Lookback rotation with bootstrap fallback.
+                //   primary_proposer = winner_{W-2} (или bootstrap для W<2)
+                //   если primary cemented within last K_FALLBACK_WINDOWS → primary propose
+                //   иначе bootstrap takes over (canonical fallback, нет dead-lock)
+                let primary_proposer: mt_state::NodeId = if current < 2 {
+                    bootstrap_node_id
+                } else {
+                    winner_history
+                        .get(&(current - 2))
+                        .copied()
+                        .unwrap_or(bootstrap_node_id)
+                };
+                let primary_last_cement = last_proposer_cement
+                    .get(&primary_proposer)
+                    .copied()
+                    .unwrap_or(0);
+                let primary_silent = current.saturating_sub(primary_last_cement);
+                let primary_active = primary_silent < K_FALLBACK_WINDOWS
+                    || primary_proposer == bootstrap_node_id;
+                let active_proposer = if primary_active {
+                    primary_proposer
+                } else {
+                    bootstrap_node_id
+                };
+                if my_node != active_proposer {
+                    eprintln!(
+                        "[lookback W={current}] primary={} silent={} active_proposer={} my_node={} — follower mode",
+                        hex16(&primary_proposer),
+                        primary_silent,
+                        hex16(&active_proposer),
+                        hex16(&my_node)
+                    );
                     follower_skip = true;
                     break 'active_arm;
                 }
-                let _ = winner_history.get(&current.saturating_sub(2));
+                if my_node != bootstrap_node_id {
+                    eprintln!(
+                        "[lookback W={current}] my_node={} elected proposer (primary={} active={})",
+                        hex16(&my_node),
+                        hex16(&primary_proposer),
+                        primary_active
+                    );
+                } else if !primary_active {
+                    eprintln!(
+                        "[fallback W={current}] bootstrap taking over (primary {} silent for {} windows)",
+                        hex16(&primary_proposer),
+                        primary_silent
+                    );
+                }
                 let active_chain_length: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
                 let cba_w_minus_2 = cemented_bundle_aggregate(current.saturating_sub(2), &[]);
                 let endpoint = compute_endpoint(&timechain.t_r, &cba_w_minus_2, &my_node, current);
@@ -1458,6 +1502,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // proposer rotation gate at W+2 sees the correct proposer (otherwise
                 // proposer keeps thinking it's always self via unwrap_or fallback).
                 winner_history.insert(current, header.winner_id);
+                // DEV-023: own cement also updates per-proposer activity tracker
+                last_proposer_cement.insert(my_node, current);
                 while winner_history.len() > 64 {
                     let oldest = *winner_history.keys().next().unwrap();
                     winner_history.remove(&oldest);
