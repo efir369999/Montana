@@ -229,7 +229,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         // с reconstructed singleton ProposalSettle (winner = bootstrap, confirmers = [bootstrap]).
         // Followers: current_window растёт в lockstep с Moscow.
         if let Some(ref mut handle) = network_handle {
-// DEV-022: bootstrap_node_id hoisted to outer scope above
+            // DEV-022: bootstrap_node_id hoisted to outer scope above
             let mut bc_count = 0usize;
             while let Ok(msg) = handle.incoming_rx.try_recv() {
                 match msg.msg_type {
