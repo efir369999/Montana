@@ -1215,7 +1215,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             // ⌈total/2⌉ confirmers including self in accumulator[current].
                             let total_active = state.nodes.len();
                             let peer_target = (total_active + 1) / 2; // ⌈total/2⌉
-                            let grace_deadline = Instant::now() + Duration::from_millis(5000);
+                            let grace_deadline = Instant::now() + Duration::from_millis(30000);
                             while Instant::now() < grace_deadline {
                                 let current_count =
                                     bc_accumulator.get(&current).map(|m| m.len()).unwrap_or(0);

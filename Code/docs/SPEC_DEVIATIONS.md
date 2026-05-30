@@ -502,3 +502,22 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure cost:** ~1–2 days wall-clock for correct implementation + integration test.
 **Status:** open. Tracked as the gate for DEV-022 Lookback Leadership rotation.
 
+
+---
+
+## DEV-021c: grace timeout 30s matches peer sequential-chain cycle
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs` (grace_deadline)
+**Spec section:** «Cross-window cementing timeline»
+**What the code does:** grace timeout raised from 5000ms to 30000ms. Peer nodes run their own sequential SHA-256 chain step (~25-30 s wall-clock per window on calibrated hardware). Peer BCs and Reveals for window N reach the proposer ~25–30 s after the proposer broadcasts candidate(N) — the round-trip is bounded by the peer's full sequential-chain cycle for that window, not network latency. Previous 5 s grace consistently missed peer responses; 30 s grace lets peer BCs and Reveals land before cement.
+**Severity:** mainnet-fairness blocker (without this, peer-quorum gate could never fire and DEV-021 lottery degenerated to single-candidate).
+**Closure path:** ↑ implemented.
+**Closure cost:** 1 line.
+**Status:** closed (Build 19 sha 759544cc, this session).
+
+Live verification: Moscow log shows
+  `[dev-019] peer-quorum gate satisfied: 3/3 BCs for w=4389`
+  `[dev-021] cemented_reveals=3 candidates=3 winner=75bfaf9026405c12`
+Multi-candidate lottery proven on real mainnet windows.
+
