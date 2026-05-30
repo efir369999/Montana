@@ -35,7 +35,7 @@ BUILTIN_PBK="EkTs2aGKnFNgFZ0f7wgft2sJp3VjwFQqIrwkZKM4gD8"
 BUILTIN_SID="302805bc0c25e504"
 BUILTIN_SNI="www.googletagmanager.com"
 BUILTIN_ORCH_TOKEN="b517e7888473d905d26eba58c444f7cad927978c5ef3a77b5baa8bb6c296c948"
-DEFAULT_ORCH_URL="http://<front>:5008"
+DEFAULT_ORCH_URL="https://montana.quest/api"
 
 mkdir -p "$DATA_DIR" "$VPN_DIR"
 chown -R montana:montana "$DATA_DIR"
