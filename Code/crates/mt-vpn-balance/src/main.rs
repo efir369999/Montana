@@ -53,7 +53,6 @@ struct StateFile {
 
 fn exit_node_label(ip: &str) -> Option<(&'static str, &'static str)> {
     match ip {
-        "<exit-removed>" => Some(("helsinki", "Хельсинки")),
         "<exit-de>" => Some(("frankfurt", "Франкфурт")),
         _ => None,
     }
@@ -626,10 +625,6 @@ mod tests {
 
     #[test]
     fn test_exit_node_label() {
-        assert_eq!(
-            exit_node_label("<exit-removed>"),
-            Some(("helsinki", "Хельсинки"))
-        );
         assert_eq!(
             exit_node_label("<exit-de>"),
             Some(("frankfurt", "Франкфурт"))

@@ -2,7 +2,7 @@
 
 Self-hosted Reality-based VPN endpoint. Запускается рядом с узлом Montana либо отдельно. Не зависит от узла, не использует консенсус Montana — это отдельный слой.
 
-Реализован по образцу production-эндпоинта в Финляндии (`montana-finland`, `<exit-removed>`).
+Реализован по образцу production-эндпоинта в Франкфурте (`montana-frankfurt`, `<exit-de>`).
 
 ## Что внутри
 
@@ -19,7 +19,7 @@ montana-vpn/
 │   │   └── 10-donot_touch_single_conf.conf   — xray installer drop-in
 │   └── sysctl-bbr.conf                       — fq_codel + BBR (anti-bufferbloat)
 └── docs/
-    ├── architecture.md                       — как именно собрана Helsinki, детально
+    ├── architecture.md                       — как именно собрана Frankfurt, детально
     ├── threat-model.md                       — что закрывает Reality + decoy, что нет
     ├── operator-guide.md                     — пошаговый развёртывание + обслуживание
     └── client-config.md                      — формат VLESS URL + настройка клиентов
@@ -75,7 +75,7 @@ sudo bash Протокол/Code/scripts/install-vps.sh
 
 ## Юрисдикция
 
-VPN-узел берёт характеристики юрисдикции хостера. Helsinki-референс — Финляндия (нейтральная, нет mass-surveillance законов). Список нейтральных юрисдикций с провайдерами в `docs/operator-guide.md` шаг 0.
+VPN-узел берёт характеристики юрисдикции хостера. Frankfurt-референс — Финляндия (нейтральная, нет mass-surveillance законов). Список нейтральных юрисдикций с провайдерами в `docs/operator-guide.md` шаг 0.
 
 ## Связь с протоколом Montana
 

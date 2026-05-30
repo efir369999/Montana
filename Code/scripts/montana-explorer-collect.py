@@ -23,7 +23,7 @@ DISCOVERY_WINDOW_SECONDS = 600  # consider a peer "live" if heartbeat OK within 
 PEER_PUBLIC_LABEL = {
     "QmSDUqLkLcenkkNw6PUKYXjesEmaDksnrEaCzbs3a5nVzj": "moscow",
     "QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP": "frankfurt",
-    "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL": "helsinki",
+    "QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP": "frankfurt",
     "QmYEFQZmBqWYV7SFreMK6h7N87fVasNv8ho5GU27La8Y9z": "macbook",
 }
 
@@ -41,7 +41,7 @@ def peer_label(peer_id):
 GENESIS_PEER_IDS = {
     "QmSDUqLkLcenkkNw6PUKYXjesEmaDksnrEaCzbs3a5nVzj",  # moscow
     "QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP",  # frankfurt
-    "QmNSrA82XExjEXUS5xTPhn9MV55bfhYofxfcm7dTFcQPjL",  # helsinki
+    "QmPFm5L3WiA47J66zVJvio23QBgBqr4nAqCP626vgEnHNP",  # frankfurt
 }
 
 # Single source of truth: the three bootstrap peers pinned in
@@ -51,7 +51,7 @@ GENESIS_PEER_IDS = {
 GENESIS_NODES = [
     ("Moscow",    "local"),
     ("Frankfurt", "<exit-de>"),
-    ("Helsinki",  "<exit-removed>"),
+    ("Frankfurt",  "<exit-de>"),
 ]
 
 

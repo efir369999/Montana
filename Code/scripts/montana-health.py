@@ -24,7 +24,6 @@ INTERVAL = 60
 PEERS = {
     "moscow":    ("<front>", 8445),
     "frankfurt": ("<exit-de>", 8444),
-    "helsinki":  ("<exit-removed>", 8444),
     "vilnius":   ("<exit-lt>", 8444),
     "armenia":   ("<exit-am>", 8444),
     "nicosia":   ("<exit-cy>", 8444),

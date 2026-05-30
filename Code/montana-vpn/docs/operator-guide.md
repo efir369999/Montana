@@ -14,7 +14,7 @@
 
 **Хорошие провайдеры (нейтральные юрисдикции):**
 
-- THE.Hosting (Финляндия) — текущий montana-finland
+- THE.Hosting (Финляндия) — текущий montana-frankfurt
 - Hetzner (Финляндия / Германия) — стабильный, недорогой, хорошая network policy
 - Mythic Beasts (UK) — privacy-friendly
 - 1984 Hosting (Исландия) — nation-level legal protection
@@ -79,7 +79,7 @@ sudo apt install -y crowdsec-firewall-bouncer-iptables
 В выводе `install.sh` строка вида:
 
 ```
-vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@<exit-removed>:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.googletagmanager.com&fp=chrome&pbk=AbCd...&sid=302805bc0c25e504&type=tcp#montana-vpn
+vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@<exit-de>:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.googletagmanager.com&fp=chrome&pbk=AbCd...&sid=302805bc0c25e504&type=tcp#montana-vpn
 ```
 
 Передать клиенту через **зашифрованный канал** (Signal, ProtonMail с PGP, Threema, не Telegram-чат-историю и не email plaintext).
@@ -215,7 +215,7 @@ DNS leak. В клиенте принудительно через VPN: `1.1.1.1`
 `sudo ufw status verbose`. Если правил нет — `sudo ufw allow 443/tcp && sudo ufw reload`.
 
 **RAM кончается.**
-Helsinki 961 MiB достаточно для xray-only. Если вместе с узлом Montana и swap нет — добавить swapfile:
+Frankfurt 961 MiB достаточно для xray-only. Если вместе с узлом Montana и swap нет — добавить swapfile:
 
 ```bash
 sudo fallocate -l 1G /swapfile
@@ -231,9 +231,9 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 ```bash
 # одной командой — на локальную машину
-ssh montana-finland 'sudo tar czf - /etc/montana-vpn /usr/local/etc/xray /var/lib/montana 2>/dev/null' \
-  > montana-finland-backup-$(date +%Y%m%d).tar.gz
-gpg -c montana-finland-backup-*.tar.gz   # зашифровать паролем
+ssh montana-frankfurt 'sudo tar czf - /etc/montana-vpn /usr/local/etc/xray /var/lib/montana 2>/dev/null' \
+  > montana-frankfurt-backup-$(date +%Y%m%d).tar.gz
+gpg -c montana-frankfurt-backup-*.tar.gz   # зашифровать паролем
 ```
 
 Хранить **отдельно** от мнемоники узла Montana. Backup VPN ≠ backup узла.

@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct GenesisPeer {
-    /// Человекочитаемая метка («moscow», «frankfurt», «helsinki»).
+    /// Человекочитаемая метка («moscow», «frankfurt», «vilnius»).
     pub label: String,
     /// libp2p multiaddr вида `/ip4/<addr>/tcp/<port>`. Без `/p2p/<peer_id>`
     /// suffix — peer_id хранится отдельно в поле `peer_id` для явности.
@@ -226,23 +226,13 @@ mod tests {
                   "account_id_hex": "{b}",
                   "node_id_hex": "{m}",
                   "bootstrap": false
-                }},
-                {{
-                  "label": "helsinki",
-                  "multiaddr": "/ip4/<exit-removed>/tcp/8444",
-                  "peer_id": "12D3KooWHelsinkiExamplePeerId",
-                  "account_id_hex": "{c}",
-                  "node_id_hex": "{l}",
-                  "bootstrap": false
                 }}
               ]
             }}"#,
             a = "1".repeat(64),
             b = "2".repeat(64),
-            c = "3".repeat(64),
             n = "a".repeat(64),
-            m = "b".repeat(64),
-            l = "c".repeat(64)
+            m = "b".repeat(64)
         )
     }
 

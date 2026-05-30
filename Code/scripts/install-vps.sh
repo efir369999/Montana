@@ -253,7 +253,7 @@ log "This is the spec-defined Sybil barrier — there is no shortcut."
 log "The node survives VPS restarts (Restart=on-failure) and resumes at the same window."
 log ""
 log "Within seconds of start, your node negotiates Noise_PQ XX with the three"
-log "Genesis peers (moscow / frankfurt / helsinki) listed in the manifest. To"
+log "Genesis peers (moscow / frankfurt / vilnius / armenia / nicosia) listed in the manifest. To"
 log "confirm the connection appears in the live mesh, ask one of the Genesis"
 log "operators to grep their journal for your local XX PeerId."
 

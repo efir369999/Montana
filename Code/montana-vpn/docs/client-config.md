@@ -11,7 +11,7 @@ vless://{UUID}@{HOST}:{PORT}?{params}#{label}
 Реальный пример с обезличенными значениями:
 
 ```
-vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@<exit-removed>:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.googletagmanager.com&fp=chrome&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890&sid=302805bc0c25e504&type=tcp#montana-vpn
+vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@<exit-de>:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.googletagmanager.com&fp=chrome&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890&sid=302805bc0c25e504&type=tcp#montana-vpn
 ```
 
 Разбор полей:
@@ -19,7 +19,7 @@ vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@<exit-removed>:443?encryption=none&
 | Поле | Значение | Что делает |
 |---|---|---|
 | `UUID` | `e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d` | Authentication-токен клиента. Совпадает с `clients[].id` в xray config |
-| `HOST` | `<exit-removed>` | Public IP сервера (либо domain если есть) |
+| `HOST` | `<exit-de>` | Public IP сервера (либо domain если есть) |
 | `PORT` | `443` | TCP порт сервера |
 | `encryption=none` | none | VLESS не имеет своей encryption — она в Reality (TLS 1.3) |
 | `flow=xtls-rprx-vision` | vision | Optimization после handshake — без TLS-in-TLS overhead |
@@ -47,7 +47,7 @@ vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@<exit-removed>:443?encryption=none&
 ### v2rayN (Windows)
 
 1. Servers → Add → VLESS
-2. Address: `<exit-removed>`, Port: `443`
+2. Address: `<exit-de>`, Port: `443`
 3. UUID: твой клиентский UUID
 4. Flow: `xtls-rprx-vision`
 5. Network: `tcp`
@@ -87,7 +87,7 @@ vless://e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d@<exit-removed>:443?encryption=none&
       "protocol": "vless",
       "settings": {
         "vnext": [{
-          "address": "<exit-removed>",
+          "address": "<exit-de>",
           "port": 443,
           "users": [{
             "id": "e6d355e2-2d79-4c96-a373-3b0e6b6f4b0d",
