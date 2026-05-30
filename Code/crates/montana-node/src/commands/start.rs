@@ -197,6 +197,10 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // DEV-022: bootstrap_node_id used both in main drain (Proposal verify) and
     // active arm (Lookback proposer selection); hoist to outer scope.
     let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
+    // Build 31: hold raw bytes of last cemented envelope (header + bundle_count + bundles)
+    // so proposer can archive the full envelope, not just the header (so explorer's
+    // /api/window/<W> returns real bundles array, not just empty bundle_count from header).
+    let mut last_cemented_envelope: Option<Vec<u8>> = None;
     // DEV-023: track per-proposer last cemented window so each node can decide
     // when an elected proposer has gone silent (≥ K_FALLBACK_WINDOWS windows
     // without producing cement). Bootstrap is the canonical fallback.
@@ -1414,24 +1418,27 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     sign(&identity.node_sk, &header_scope).map_err(NodeError::Crypto)?;
 
                 // DEV-012: broadcast CEMENTED envelope: [header(3722)][u16 bundle_count][N × BC].
+                // Build 31: capture envelope bytes into last_cemented_envelope so archive
+                // can persist the full envelope, not just header.
+                let mut envelope_payload: Vec<u8> = Vec::with_capacity(3722 + 2 + 4096 * confirmer_ids.len());
+                header.encode(&mut envelope_payload);
+                let bundles_for_envelope: Vec<&BundledConfirmation> = {
+                    let map = bc_accumulator.get(&current).cloned().unwrap_or_default();
+                    let mut keys: Vec<_> = map.keys().copied().collect();
+                    keys.sort();
+                    keys.into_iter()
+                        .filter_map(|k| bc_accumulator.get(&current).and_then(|m| m.get(&k)))
+                        .collect::<Vec<_>>()
+                };
+                let bundle_count = bundles_for_envelope.len() as u16;
+                envelope_payload.extend_from_slice(&bundle_count.to_le_bytes());
+                for bc in &bundles_for_envelope {
+                    bc.encode(&mut envelope_payload);
+                }
+                last_cemented_envelope = Some(envelope_payload.clone());
                 if let Some(ref handle) = network_handle {
-                    let mut payload = Vec::with_capacity(3722 + 2 + 4096 * confirmer_ids.len());
-                    header.encode(&mut payload);
-                    let bundles_for_envelope: Vec<&BundledConfirmation> = {
-                        let map = bc_accumulator.get(&current).cloned().unwrap_or_default();
-                        let mut keys: Vec<_> = map.keys().copied().collect();
-                        keys.sort();
-                        keys.into_iter()
-                            .filter_map(|k| bc_accumulator.get(&current).and_then(|m| m.get(&k)))
-                            .collect::<Vec<_>>()
-                    };
-                    let bundle_count = bundles_for_envelope.len() as u16;
-                    payload.extend_from_slice(&bundle_count.to_le_bytes());
-                    for bc in &bundles_for_envelope {
-                        bc.encode(&mut payload);
-                    }
                     let envelope =
-                        ProtocolMessage::new(MsgType::Proposal, header.window_index, payload);
+                        ProtocolMessage::new(MsgType::Proposal, header.window_index, envelope_payload);
                     if let Err(e) = handle.broadcast_tx.send(envelope) {
                         eprintln!(
                             "[consensus] broadcast CEMENTED Proposal w={} failed: {e}",
@@ -1460,9 +1467,17 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     );
                 }
 
-                store
-                    .archive_proposal(&header)
-                    .map_err(|e| NodeError::InvalidArguments(format!("archive_proposal: {e:?}")))?;
+                // Build 31: archive FULL cemented envelope so explorer can show
+                // bundles array, not just header.
+                if let Some(ref env) = last_cemented_envelope {
+                    store
+                        .archive_proposal_envelope(header.window_index, env)
+                        .map_err(|e| NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}")))?;
+                } else {
+                    store
+                        .archive_proposal(&header)
+                        .map_err(|e| NodeError::InvalidArguments(format!("archive_proposal: {e:?}")))?;
+                }
                 store.save_meta_last_cemented(current).map_err(|e| {
                     NodeError::InvalidArguments(format!("save_meta_last_cemented: {e:?}"))
                 })?;
