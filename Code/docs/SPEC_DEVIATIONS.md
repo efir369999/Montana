@@ -641,3 +641,26 @@ Live verification (window 4418..4422 explorer snapshot):
 
 **Operational note.** Frankfurt does not yet actually propose for W=4467 because of upstream DEV-021b (peer drain during sequential-SHA-chain tick) — Frankfurt's local current=4466 doesn't advance to 4467 before bootstrap takes over the cement via fallback K-window timeout. Full multi-proposer rotation gated on DEV-021b closure (drain refactor with periodic message processing inside vdf_step_chunked).
 
+
+---
+
+## DEV-023c: election grace tied to FIRST election, not every win (hotfix)
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs` active arm gate (`primary_active` computation)
+**Spec section:** «Lookback Leadership / Fallback cascade»
+**Bug:** DEV-023b grace check was `won_recently = any window in [W-K..W-2] where winner == primary`. If primary (e.g. Frankfurt with growing chain_length) kept winning lottery, every window had a fresh `won_recently=true` → grace re-triggered indefinitely → bootstrap fallback never fired → chain frozen.
+**Symptom (mainnet 2026-05-30 17:00):** cw=4469 unchanged for 30+ minutes despite Moscow active on Build 24b. Moscow log: `[lookback W=4470] primary=Frankfurt silent=4470 active_proposer=Frankfurt — follower mode` repeatedly; Frankfurt never cemented (gated on DEV-021b drain-during-sequential-chain-tick), Moscow stuck deferring.
+**Fix:** grace measured from FIRST election window (the smallest W where `winner_history[W-2] == primary`), not from the most recent win:
+```rust
+let first_election = winner_history.iter()
+    .filter_map(|(w, n)| if *n == primary { Some(w + 2) } else { None })
+    .min()
+    .unwrap_or(current);
+primary_active = current - first_election < K_FALLBACK_WINDOWS
+```
+After K windows since FIRST election, bootstrap fallback fires regardless of whether primary keeps winning. Each primary gets one grace term per genesis run.
+**Live verification:** chain resumed at cw=4475 within 5 minutes of Build 25 deploy. `bundles=2` cementing stable; Moscow winning lottery again (sufficient chain_length).
+**Severity:** mainnet liveness blocker — must close before re-enabling rotation; deployed as urgent hotfix.
+**Status:** closed (Build 25 sha 5a22bf8c53c6, this session).
+
