@@ -1071,16 +1071,27 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             })
                             .unwrap_or(0);
                         if collected >= need_quorum {
-                            // DEV-019: when self-quorum trivially met (proposer's own
-                            // chain_length dominates Σ), still wait additional 500ms
-                            // to collect peer BCs. Without this, peer operators with
-                            // small chain_length never get their BC included in
-                            // cemented_confirmers → their chain_length never grows →
-                            // dominance compounds forever. Fairness mechanism: every
-                            // active peer that delivers a valid BC within the grace
-                            // window gets credit.
-                            let grace_deadline = Instant::now() + Duration::from_millis(2000);
+                            // DEV-019b: when self-quorum trivially met (proposer's own
+                            // chain_length dominates Σ), wait until at least ⌈N/2⌉ peer
+                            // BCs land for current window OR 5000ms timeout. Without
+                            // a peer-quorum gate, every peer that's even slightly
+                            // late never gets credit → chain_length stays at 1 forever.
+                            // The total operator count includes self; we need
+                            // ⌈total/2⌉ confirmers including self in accumulator[current].
+                            let total_active = state.nodes.len();
+                            let peer_target = (total_active + 1) / 2;  // ⌈total/2⌉
+                            let grace_deadline = Instant::now() + Duration::from_millis(5000);
                             while Instant::now() < grace_deadline {
+                                let current_count = bc_accumulator
+                                    .get(&current)
+                                    .map(|m| m.len())
+                                    .unwrap_or(0);
+                                if current_count >= peer_target {
+                                    eprintln!(
+                                        "[dev-019] peer-quorum gate satisfied: {current_count}/{peer_target} BCs for w={current}"
+                                    );
+                                    break;
+                                }
                                 if let Some(ref mut handle) = network_handle {
                                     while let Ok(grace_msg) = handle.incoming_rx.try_recv() {
                                         if grace_msg.msg_type == MsgType::BundledConfirmation {

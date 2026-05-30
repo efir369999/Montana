@@ -431,3 +431,18 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure cost:** ~40 lines of Rust.
 **Status:** closed (Build 14, this session).
 
+
+---
+
+## DEV-019b: peer-quorum gate exit + 5s timeout
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs:1007-1075` (active arm spin-drain grace block)
+**Spec section:** «BundledConfirmation cementing» / «Fairness» / «Consensus close timing»
+**What the code does (before):** DEV-019 used fixed 2000ms grace after self-quorum. Worked but peer BCs that arrived later (every 1-2 windows late) consistently missed the grace window, producing bundles=1 cementing in steady state.
+**What the code does (after):** grace polls accumulator every 20ms. Exits early on `accumulator[current].len() >= ⌈total_active/2⌉` (peer-quorum gate) OR 5000ms timeout. Peers with consistent latency now stand a higher chance of inclusion; peers that are completely silent are not blocked indefinitely.
+**Severity:** fairness improvement; not a hard blocker.
+**Closure path:** ↑ implemented. Verified live: 33% of windows now cement with bundles=2 (vs ~1% with fixed grace). Peer chain_length growth observed: Frankfurt 5→91, Vilnius 3→27, Helsinki 2→18, Nicosia 1→5 over 1600 windows.
+**Closure cost:** ~10 lines of Rust.
+**Status:** closed (Build 16 sha f1030eb151c0, this session).
+
