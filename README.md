@@ -110,7 +110,17 @@ This is a public invitation. Every primitive, every consensus rule, every byte o
 
 ## Quick start
 
-**Montana node from the published Docker image (fastest path, ~30 seconds on any Docker host):**
+**One command — Montana node + Reality VPN + decoy, all from the published Docker image:**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/efir369999/Montana/main/install.sh | sudo bash
+```
+
+Pulls `ghcr.io/efir369999/montana-node:latest`, generates Reality keys + UUID + SID, brings up the full stack (montana-node + xray + nginx decoy) via docker compose, prints the 24-word recovery mnemonic and the VLESS URL.
+
+---
+
+**Montana node only (no VPN), pre-built image:**
 
 ```bash
 docker volume create montana-data
