@@ -349,9 +349,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                 // Build BC with reveal_hashes from pool (own + any peer reveals received earlier)
                                 let mut bc_reveal_hashes: Vec<Hash32> = reveal_pool
                                     .get(&window_index)
-                                    .map(|m| m.values().map(|r| mt_lottery::reveal_hash(r)).collect())
+                                    .map(|m| {
+                                        m.values().map(|r| mt_lottery::reveal_hash(r)).collect()
+                                    })
                                     .unwrap_or_default();
-                                bc_reveal_hashes.sort();  // canonical order
+                                bc_reveal_hashes.sort(); // canonical order
                                 let _ = own_reveal_hash;
                                 let mut bc = BundledConfirmation {
                                     node_id: my_node,
@@ -1255,7 +1257,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                                 }
                                             }
                                         } else if grace_msg.msg_type == MsgType::VdfReveal {
-                                            if let Ok((rec_reveal, _)) = VdfReveal::decode(&grace_msg.payload) {
+                                            if let Ok((rec_reveal, _)) =
+                                                VdfReveal::decode(&grace_msg.payload)
+                                            {
                                                 let exp_t_r = t_r_history
                                                     .get(&rec_reveal.window_index)
                                                     .copied()
@@ -1312,7 +1316,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     .unwrap_or_else(|| vec![my_node]);
                 // DEV-021: compute winner from cemented Reveal set.
                 // Cemented reveal_hashes = union of reveal_hashes across BCs in accumulator[current].
-                let mut cemented_hashes: std::collections::BTreeSet<Hash32> = std::collections::BTreeSet::new();
+                let mut cemented_hashes: std::collections::BTreeSet<Hash32> =
+                    std::collections::BTreeSet::new();
                 if let Some(bcs) = bc_accumulator.get(&current) {
                     for bc in bcs.values() {
                         for rh in &bc.reveal_hashes {
