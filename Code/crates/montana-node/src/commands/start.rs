@@ -893,9 +893,24 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     .get(&primary_proposer)
                     .copied()
                     .unwrap_or(0);
+                // DEV-023b election grace: if primary never cemented (last_cement=0)
+                // BUT won lottery in last K windows, treat as active — give the freshly
+                // elected proposer K windows to publish their first proposal. Without
+                // this grace, silent_count = current (huge) immediately overrides
+                // primary with bootstrap fallback and the elected node never gets a
+                // chance.
+                let primary_active = if primary_last_cement == 0
+                    && primary_proposer != bootstrap_node_id
+                {
+                    let grace_start = current.saturating_sub(K_FALLBACK_WINDOWS).max(2);
+                    let grace_end = current.saturating_sub(2);
+                    (grace_start..=grace_end)
+                        .any(|w| winner_history.get(&w).copied() == Some(primary_proposer))
+                } else {
+                    let primary_silent = current.saturating_sub(primary_last_cement);
+                    primary_silent < K_FALLBACK_WINDOWS || primary_proposer == bootstrap_node_id
+                };
                 let primary_silent = current.saturating_sub(primary_last_cement);
-                let primary_active =
-                    primary_silent < K_FALLBACK_WINDOWS || primary_proposer == bootstrap_node_id;
                 let active_proposer = if primary_active {
                     primary_proposer
                 } else {

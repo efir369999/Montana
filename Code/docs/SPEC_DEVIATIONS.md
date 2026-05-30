@@ -623,3 +623,21 @@ Live verification (window 4418..4422 explorer snapshot):
 **Closure cost:** ~30 lines of Rust (this commit).
 **Status:** closed (Build 23 sha ede6dffb, this session).
 
+
+---
+
+## DEV-023b: election grace for newly-elected primary
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs` active arm gate (primary_active computation)
+**Spec section:** «Lookback Leadership / Election grace»
+**What the code does:** when `primary_proposer != bootstrap` AND `last_proposer_cement[primary] == 0` (never cemented), check whether primary won lottery in last K_FALLBACK_WINDOWS via winner_history. If yes — treat as active (give grace), let primary attempt to propose. Without grace, silent_count = current (=4467) immediately exceeds K=3 and fallback to bootstrap fires before primary ever runs.
+**Severity:** required for DEV-022 rotation to be operationally meaningful (otherwise every newly-elected non-bootstrap proposer is preempted by bootstrap fallback in the first iteration).
+**Closure path:** ↑ implemented. Live verification:
+  - Moscow log: `[lookback W=4467] primary=5509211b179d6969 silent=4467 active_proposer=5509211b179d6969 my_node=75bfaf9026405c12 — follower mode`
+  - Moscow correctly defers to Frankfurt for W=4467 (Frankfurt is elected primary AND won 4465 within last K windows). Bootstrap fallback NOT triggered.
+**Closure cost:** ~15 lines.
+**Status:** closed (Build 24b sha ad27ae713758, this session).
+
+**Operational note.** Frankfurt does not yet actually propose for W=4467 because of upstream DEV-021b (peer drain during sequential-SHA-chain tick) — Frankfurt's local current=4466 doesn't advance to 4467 before bootstrap takes over the cement via fallback K-window timeout. Full multi-proposer rotation gated on DEV-021b closure (drain refactor with periodic message processing inside vdf_step_chunked).
+
