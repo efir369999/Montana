@@ -558,3 +558,46 @@ Multi-candidate lottery proven on real mainnet windows.
 **Closure cost:** revert: 5 lines; DEV-023: ~80 lines.
 **Status:** closed (Build 22 sha c8de927c, this session).
 
+
+---
+
+## DEV-023 (open): proposer fallback cascade
+
+**Crate:** `montana-node`
+**File:line:** active arm proposer gate
+**Spec section:** «Lookback Leadership / Fallback cascade»
+**Spec quote:** «Если < 67% подписали → proposal отклонён. Fallback: `fallback_proposer_W = second_min(weighted_ticket)` окна W-2. Fallback cascade: third_min, fourth_min, etc.»
+**Status:** open for v1.0.1.
+**Closure path:**
+  1. Each Active node tracks `proposer_silence_windows[W]` = how many windows have elapsed since `expected_proposer_W = winner_{W-2}` should have cemented W and hasn't.
+  2. If `proposer_silence_windows[W] >= K` (K = 3 per spec discussion), use `sorted_candidates_for_fallback(reveals_{W-2})` to compute `fallback_proposer_W`.
+  3. Cascade: if fallback_1 also silent for K more windows → fallback_2, etc.
+  4. Bootstrap operator is final guaranteed fallback (eliminates dead-lock).
+**Closure cost:** ~80 lines + integration test for `silence_counter` consistency across operators.
+**Operational note (current state).** Without DEV-023, DEV-022 rotation gate is disabled (see DEV-022b). Bootstrap remains sole canonical proposer. DEV-021 winner determination + lottery rotation work end-to-end at emission level: every cemented Proposal records a different winner across the active cohort, so emission is distributed even without proposer rotation. The chain remains live; only proposer-set diversity is deferred.
+
+---
+
+## v1.0.0 Mainnet Baseline (2026-05-30)
+
+Closed DEVs live on mainnet at sha c8de927c (Build 22):
+  - DEV-017 follower t_r_history populated from Proposal envelopes
+  - DEV-018  fast-sync chunk anchor_window + stale-peer filter
+  - DEV-018b/c/d fast-sync client retry on discard, 10s deadline, inline serve during proposer spin
+  - DEV-019  post-quorum 500ms grace for peer BC inclusion
+  - DEV-019b peer-quorum gate ⌈total/2⌉ + 30s grace
+  - DEV-020  per-window Reveal broadcast + reveal_pool on all nodes
+  - DEV-021  winner determination from cemented Reveal set (argmin weighted_ticket)
+  - DEV-021c grace = 30s = peer sequential-SHA-chain cycle
+
+Open for v1.0.1:
+  - DEV-021b peer drain during sequential-SHA-chain tick (latency floor)
+  - DEV-022  Lookback proposer rotation (requires DEV-023)
+  - DEV-023  proposer fallback cascade
+
+Live verification (window 4418..4422 explorer snapshot):
+  /api/winners → 5 distinct winners in 6 consecutive windows (vilnius, frankfurt×2, vilnius, moscow, armenia)
+  /api/consensus → chain_length distribution: moscow 958‰, frankfurt 27‰, vilnius 7‰, armenia 5‰, helsinki 1‰
+  bundles=3 (multi-confirmer cement) on majority of windows
+  emission distributed per spec lottery; bootstrap is sole proposer pending DEV-022/023.
+
