@@ -350,7 +350,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                 let mut bc_reveal_hashes: Vec<Hash32> = reveal_pool
                                     .get(&window_index)
                                     .map(|m| {
-                                        m.values().map(|r| mt_lottery::reveal_hash(r)).collect()
+                                        m.values().map(mt_lottery::reveal_hash).collect()
                                     })
                                     .unwrap_or_default();
                                 bc_reveal_hashes.sort(); // canonical order
