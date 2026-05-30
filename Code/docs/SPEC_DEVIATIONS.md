@@ -521,3 +521,25 @@ Live verification: Moscow log shows
   `[dev-021] cemented_reveals=3 candidates=3 winner=75bfaf9026405c12`
 Multi-candidate lottery proven on real mainnet windows.
 
+
+---
+
+## DEV-022: Lookback Leadership rotation
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs` — `winner_history` state, drain-side `winner_history.insert`, active arm gate, own-cement `winner_history.insert`.
+**Spec section:** «Lookback Leadership / proposer_W = winner_{W-2}»
+**Spec quote:** «proposer_0 и proposer_1 = bootstrap-узел. Начиная с proposer_2 = winner_0, стандартная lookback логика.»
+**What the code does (before):** active arm gated on `is_genesis` — only bootstrap proposed; non-bootstrap nodes were permanent followers; no proposer rotation; emission concentrated in bootstrap regardless of lottery.
+**What the code does (after):**
+  1. `winner_history: BTreeMap<u64, NodeId>` records per-window cemented winners (bounded to 64 entries).
+  2. Main drain populates `winner_history[W]` from cemented Proposal envelopes received from any peer.
+  3. Own cement also populates `winner_history[current]` so the proposer's own rotation gate sees its just-cemented winner two windows later.
+  4. Active arm computes `proposer_W = if W < 2 { bootstrap } else { winner_history[W-2].unwrap_or(bootstrap) }`.
+  5. If `my_node != proposer_W` → follower mode; if `my_node == proposer_W` → run full proposer pipeline (compute Reveal, broadcast candidate, spin-drain BCs, grace, determine winner, cement).
+  6. Genesis bootstrap rule preserved: proposer_0 = proposer_1 = bootstrap (no winner_history available yet).
+**Severity:** mainnet-critical for emission decentralization. Without Lookback, bootstrap permanently captures all emission regardless of lottery (DEV-021 outcome ignored).
+**Closure path:** ↑ implemented. Live verification on next deploy.
+**Closure cost:** ~50 lines of Rust.
+**Status:** closed (Build 21 sha 8936f063, this session).
+

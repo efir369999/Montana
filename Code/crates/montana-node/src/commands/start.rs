@@ -194,6 +194,13 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // DEV-012 T_r history: per-window T_r snapshot for BC endpoint validation
     // when BCs arrive after current has advanced.
     let mut t_r_history: BTreeMap<u64, Hash32> = BTreeMap::new();
+    // DEV-022: bootstrap_node_id used both in main drain (Proposal verify) and
+    // active arm (Lookback proposer selection); hoist to outer scope.
+    let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
+    // DEV-022 Lookback Leadership: track winner_id per cemented window so any
+    // Active node can compute proposer_W = winner_{W-2} for its own window decisions.
+    // Genesis bootstrap rule: proposer_0 и proposer_1 = bootstrap-узел.
+    let mut winner_history: BTreeMap<u64, mt_state::NodeId> = BTreeMap::new();
     // DEV-020: per-window reveal pool, keyed by (window_index → (node_id → VdfReveal)).
     // Все Active узлы публикуют собственный Reveal каждое окно через MsgType::VdfReveal.
     // Proposer на cement-time собирает cemented Reveal-ы (те, чей reveal_hash вошёл в
@@ -222,7 +229,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         // с reconstructed singleton ProposalSettle (winner = bootstrap, confirmers = [bootstrap]).
         // Followers: current_window растёт в lockstep с Moscow.
         if let Some(ref mut handle) = network_handle {
-            let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
+// DEV-022: bootstrap_node_id hoisted to outer scope above
             let mut bc_count = 0usize;
             while let Ok(msg) = handle.incoming_rx.try_recv() {
                 match msg.msg_type {
@@ -253,6 +260,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         winner_id.copy_from_slice(&msg.payload[332..364]);
                         let mut proposer_node_id = [0u8; 32];
                         proposer_node_id.copy_from_slice(&msg.payload[364..396]);
+                        // DEV-022: record cemented winner_id for Lookback proposer selection
+                        winner_history.insert(window_index, winner_id);
+                        while winner_history.len() > 64 {
+                            let oldest = *winner_history.keys().next().unwrap();
+                            winner_history.remove(&oldest);
+                        }
 
                         if proposer_node_id != bootstrap_node_id {
                             eprintln!("[consensus] Proposal от не-bootstrap proposer, skip");
@@ -857,13 +870,34 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // a BC on incoming candidate Proposal. (Spec calls for lookback-based
                 // proposer rotation in a future iteration; for the v1.0.0 cohort the
                 // bootstrap-only proposer model is the deployed baseline.)
-                if !is_genesis {
+                // DEV-022 Lookback Leadership:
+                //   proposer_0 = bootstrap (genesis rule)
+                //   proposer_1 = bootstrap (genesis rule)
+                //   proposer_W = winner_{W-2} для W ≥ 2 (lookback)
+                // Если winner_{W-2} ещё не известен (catch-up phase, no cemented W-2),
+                // fallback на bootstrap чтобы цепочка не застряла.
+                let proposer_w: mt_state::NodeId = if current < 2 {
+                    bootstrap_node_id
+                } else {
+                    winner_history
+                        .get(&(current - 2))
+                        .copied()
+                        .unwrap_or(bootstrap_node_id)
+                };
+                if my_node != proposer_w {
                     eprintln!(
-                        "[active W={current}] non-bootstrap Active in NodeTable={} — follower mode",
-                        state.nodes.len()
+                        "[lookback W={current}] proposer_W={} (winner_W-2) != my_node={} — follower mode",
+                        hex16(&proposer_w),
+                        hex16(&my_node)
                     );
                     follower_skip = true;
                     break 'active_arm;
+                }
+                if my_node != bootstrap_node_id {
+                    eprintln!(
+                        "[lookback W={current}] my_node={} elected proposer (winner_W-2)",
+                        hex16(&my_node)
+                    );
                 }
                 let active_chain_length: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
                 let cba_w_minus_2 = cemented_bundle_aggregate(current.saturating_sub(2), &[]);
@@ -1437,6 +1471,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 store.save_meta_last_cemented(current).map_err(|e| {
                     NodeError::InvalidArguments(format!("save_meta_last_cemented: {e:?}"))
                 })?;
+                // DEV-022: own cemented winner_id must populate winner_history so the
+                // proposer rotation gate at W+2 sees the correct proposer (otherwise
+                // proposer keeps thinking it's always self via unwrap_or fallback).
+                winner_history.insert(current, header.winner_id);
+                while winner_history.len() > 64 {
+                    let oldest = *winner_history.keys().next().unwrap();
+                    winner_history.remove(&oldest);
+                }
                 prev_proposal_hash = proposal_hash(&header);
 
                 session_emitted = session_emitted.saturating_add(params.emission_moneta);
