@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Montana Explorer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text x='50' y='75' font-size='80' text-anchor='middle' fill='%23d4af37'>Ɉ</text></svg>">
+<style>
+:root { --bg:#000; --fg:#e8e8e8; --acc:#d4af37; --dim:#666; --card:#0d0d0d; --hl:#1a1a1a; --ok:#3a3; --warn:#a83; --err:#a33; }
+* { box-sizing:border-box; }
+body { background:var(--bg); color:var(--fg); font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; margin:0; padding:0; }
+header { padding:20px 24px; border-bottom:1px solid var(--hl); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+h1 { margin:0; color:var(--acc); font-weight:300; font-size:22px; letter-spacing:2px; font-family:-apple-system,system-ui,sans-serif; }
+h1::before { content:'Ɉ'; margin-right:8px; }
+h2 { color:var(--acc); font-weight:400; font-size:13px; margin:24px 24px 8px; text-transform:uppercase; letter-spacing:1px; }
+.live { font-size:11px; color:var(--dim); display:flex; align-items:center; gap:6px; }
+.dot { width:8px; height:8px; border-radius:50%; background:var(--ok); display:inline-block; animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.dot.warn { background:var(--warn) }
+.dot.err { background:var(--err) }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; padding:24px; }
+.stat { background:var(--card); padding:14px 16px; border-radius:4px; border:1px solid var(--hl); }
+.stat .label { color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:1.5px; }
+.stat .value { color:var(--acc); font-size:26px; font-weight:300; margin-top:4px; font-variant-numeric:tabular-nums; }
+.stat .sub { color:var(--dim); font-size:11px; margin-top:2px; }
+.section { padding:0 24px 12px; }
+table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--hl); border-radius:4px; overflow:hidden; }
+th { text-align:left; padding:9px 12px; border-bottom:1px solid var(--hl); color:var(--dim); text-transform:uppercase; font-size:10px; letter-spacing:1px; font-weight:500; }
+td { padding:9px 12px; border-bottom:1px solid var(--hl); font-variant-numeric:tabular-nums; }
+tr:last-child td { border-bottom:none; }
+tr:hover { background:var(--hl); }
+.label-chip { display:inline-block; padding:1px 8px; border-radius:3px; background:var(--hl); color:var(--acc); font-size:11px; }
+.label-chip.muted { color:var(--dim); }
+.label-chip.warn { background:#3a2a0a; color:var(--warn); }
+.label-chip.ok { background:#0a3a0a; color:var(--ok); }
+.bar { display:inline-block; height:6px; background:var(--hl); border-radius:3px; overflow:hidden; vertical-align:middle; margin-left:6px; }
+.bar > span { display:block; height:100%; background:var(--acc); }
+.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--dim); font-size:11px; }
+.footer { padding:24px; color:var(--dim); font-size:11px; text-align:center; border-top:1px solid var(--hl); margin-top:24px; }
+.footer a { color:var(--acc); text-decoration:none; }
+.error { color:var(--err); padding:24px; text-align:center; }
+.cols-2 { display:grid; grid-template-columns:1fr 1fr; gap:24px; padding:0 24px 24px; }
+@media (max-width:900px) { .cols-2 { grid-template-columns:1fr } }
+</style>
+</head>
+<body>
+<header>
+  <h1>MONTANA EXPLORER</h1>
+  <div class="live"><span class="dot" id="live-dot"></span><span id="live-text">connecting…</span></div>
+</header>
+
+<div class="grid" id="stats"></div>
+
+<h2>Active Operators (NodeTable)</h2>
+<div class="section"><table id="nodes-table"><thead><tr>
+  <th>Label</th><th>Node ID</th><th>State</th><th>Chain Length</th><th>Share</th><th>Start Window</th><th>Last Confirmation</th>
+</tr></thead><tbody></tbody></table></div>
+
+<h2>Recent Winners (per window emission)</h2>
+<div class="section"><table id="winners-table"><thead><tr>
+  <th>Window</th><th>Winner</th><th>Proposer</th><th>Bundles</th>
+</tr></thead><tbody></tbody></table></div>
+
+<div class="cols-2">
+  <div>
+    <h2 style="margin-left:0">Genesis Manifest</h2>
+    <table id="genesis-table"><thead><tr>
+      <th>Label</th><th>Address</th><th>force_active</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+  <div>
+    <h2 style="margin-left:0">Live P2P Peers (last 120s)</h2>
+    <table id="peers-table"><thead><tr>
+      <th>Peer ID</th><th>Label</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+</div>
+
+<div class="footer">
+  Montana Explorer · auto-refresh 30s · 
+  <a href="/montana-api/status">/api/status</a> ·
+  <a href="/montana-api/network">/api/network</a> ·
+  <a href="/montana-api/winners?limit=20">/api/winners</a> ·
+  <a href="/montana-api/consensus">/api/consensus</a> ·
+  <a href="/montana-api/genesis">/api/genesis</a> ·
+  <a href="https://github.com/efir369999/Montana">source</a>
+</div>
+
+<script>
+const API = '/montana-api';
+
+async function fetchJSON(path) {
+  try {
+    const r = await fetch(API + path, {cache:'no-store'});
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function fmt(n) { if (n === null || n === undefined) return '—'; return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+function pct(p) { return (p/10).toFixed(1) + '%'; }
+function shortHex(s, n=12) { return s ? s.slice(0,n) + '…' : '—'; }
+function timeAgo(unix) {
+  if (!unix) return '—';
+  const d = Math.floor(Date.now()/1000) - unix;
+  if (d < 60) return d + 's ago';
+  if (d < 3600) return Math.floor(d/60) + 'm ago';
+  return Math.floor(d/3600) + 'h ago';
+}
+
+async function refresh() {
+  const [status, consensus, winners, genesis, peers, network] = await Promise.all([
+    fetchJSON('/status'), fetchJSON('/consensus'), fetchJSON('/winners?limit=20'),
+    fetchJSON('/genesis'), fetchJSON('/peers'), fetchJSON('/network')
+  ]);
+
+  const live = document.getElementById('live-dot');
+  const liveText = document.getElementById('live-text');
+  if (!status) {
+    live.className = 'dot err';
+    liveText.textContent = 'explorer offline';
+    return;
+  }
+  live.className = 'dot';
+  liveText.textContent = 'updated ' + new Date().toLocaleTimeString();
+
+  const topShare = consensus?.chain_length_distribution?.[0]?.share_permille || 0;
+  const topShareClass = topShare > 950 ? 'warn' : '';
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="label">Current Window</div><div class="value">${fmt(status.current_window)}</div><div class="sub">cemented</div></div>
+    <div class="stat"><div class="label">Active Operators</div><div class="value">${status.active_nodes ?? status.nodes ?? '—'}</div><div class="sub">in NodeTable</div></div>
+    <div class="stat"><div class="label">Candidates (sequential SHA)</div><div class="value">${status.candidates ?? '—'}</div><div class="sub">progressing to Active</div></div>
+    <div class="stat"><div class="label">Total Chain Length</div><div class="value">${fmt(consensus?.total_chain_length)}</div><div class="sub">Σ across cohort</div></div>
+    <div class="stat"><div class="label">Top Share</div><div class="value" style="color:${topShare>950?'var(--warn)':'var(--acc)'}">${(topShare/10).toFixed(1)}<small style="font-size:14px">%</small></div><div class="sub">${consensus?.chain_length_distribution?.[0]?.label || '—'}</div></div>
+    <div class="stat"><div class="label">Proposals Archived</div><div class="value">${fmt(status.proposals_archived)}</div><div class="sub">on disk</div></div>
+    <div class="stat"><div class="label">Accounts</div><div class="value">${fmt(status.accounts)}</div></div>
+    <div class="stat"><div class="label">Live P2P Peers</div><div class="value">${peers?.count ?? '—'}</div><div class="sub">last 120s</div></div>
+  `;
+
+  // Active operators
+  const nodesBody = document.querySelector('#nodes-table tbody');
+  if (network?.nodes) {
+    nodesBody.innerHTML = network.nodes
+      .sort((a,b) => (b.chain_length||0) - (a.chain_length||0))
+      .map(n => {
+        const total = consensus?.total_chain_length || 1;
+        const share = ((n.chain_length||0) * 1000 / total) / 10;
+        const labelCls = n.label === 'unknown' ? 'muted' : (n.state === 'Active' ? 'ok' : 'warn');
+        return `<tr>
+          <td><span class="label-chip ${labelCls}">${n.label || 'unknown'}</span></td>
+          <td class="mono">${shortHex(n.node_id, 16)}</td>
+          <td><span class="label-chip ${n.state === 'Active' ? 'ok' : 'warn'}">${n.state}</span></td>
+          <td>${fmt(n.chain_length || n.vdf_chain_length || 0)}</td>
+          <td>${share.toFixed(1)}% <span class="bar" style="width:80px"><span style="width:${Math.min(share,100)}%"></span></span></td>
+          <td>${n.start_window ?? n.w_start ?? '—'}</td>
+          <td>${n.last_confirmation_window ?? '—'}</td>
+        </tr>`;
+      }).join('');
+  }
+
+  // Winners
+  const winnersBody = document.querySelector('#winners-table tbody');
+  if (winners?.winners) {
+    winnersBody.innerHTML = winners.winners.map(w => `<tr>
+      <td>${w.window_index}</td>
+      <td><span class="label-chip ${w.winner_label==='unknown'?'muted':'ok'}">${w.winner_label}</span></td>
+      <td><span class="label-chip ${w.proposer_label==='unknown'?'muted':''}">${w.proposer_label}</span></td>
+      <td>${w.bundle_count}</td>
+    </tr>`).join('');
+  }
+
+  // Genesis manifest
+  const genesisBody = document.querySelector('#genesis-table tbody');
+  if (genesis?.peers) {
+    genesisBody.innerHTML = genesis.peers.map(p => `<tr>
+      <td><span class="label-chip ok">${p.label}</span></td>
+      <td class="mono">${p.multiaddr}</td>
+      <td>${p.force_active ? '<span class="label-chip ok">yes</span>' : '<span class="label-chip">bootstrap</span>'}</td>
+    </tr>`).join('');
+  }
+
+  // Live peers
+  const peersBody = document.querySelector('#peers-table tbody');
+  if (peers?.peers) {
+    peersBody.innerHTML = peers.peers.map(p => `<tr>
+      <td class="mono">${shortHex(p.peer_id, 24)}</td>
+      <td><span class="label-chip ${p.in_manifest?'ok':'muted'}">${p.label}</span></td>
+    </tr>`).join('');
+  }
+}
+
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>
