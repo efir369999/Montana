@@ -110,14 +110,34 @@ This is a public invitation. Every primitive, every consensus rule, every byte o
 
 ## Quick start
 
-**Montana node + VPN endpoint on a clean Linux VPS, one command:**
+**Montana node from the published Docker image (fastest path, ~30 seconds on any Docker host):**
+
+```bash
+docker volume create montana-data
+docker run -d \
+  --name montana-node \
+  --network host \
+  --restart unless-stopped \
+  -v montana-data:/var/lib/montana \
+  ghcr.io/efir369999/montana-node:latest
+```
+
+The container dials the 5-node bootstrap mesh, generates a 24-word mnemonic on first launch, and writes it to `/var/lib/montana/mnemonic.txt`. Retrieve it once and save it offline:
+
+```bash
+docker exec montana-node cat /var/lib/montana/mnemonic.txt
+```
+
+See **[`Code/docker/runtime/QUICKSTART.md`](Code/docker/runtime/QUICKSTART.md)** for verification, build-from-source fallback, and optional VPN exit-node bring-up.
+
+**Full VPS install (Montana node + Xray Reality VPN, one command):**
 
 ```bash
 git clone https://github.com/efir369999/Montana.git /opt/montana && \
 sudo bash /opt/montana/Code/scripts/install-vps-full.sh
 ```
 
-**Node only:**
+**Node only (build from source on the VPS):**
 
 ```bash
 sudo bash /opt/montana/Code/scripts/install-vps.sh

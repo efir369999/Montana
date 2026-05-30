@@ -1,13 +1,8 @@
 # Montana node — quickstart
 
-Поднять полноценный узел Montana mainnet за одну команду.
+Run a full Montana mainnet node with one command.
 
-## Вариант 1: pre-built docker image (быстрее, ~30 сек)
-
-> **Перед первым использованием:** владелец репозитория должен сделать GHCR
-> пакет публичным:
-> https://github.com/users/efir369999/packages/container/package/montana-node
-> → Package settings → Change visibility → Public.
+## Option 1: pre-built image (recommended, ~30 seconds)
 
 ```bash
 docker volume create montana-data
@@ -19,17 +14,15 @@ docker run -d \
   ghcr.io/efir369999/montana-node:latest
 ```
 
-Контейнер:
-- Слушает TCP :8444 (Noise_PQ XX → Yamux транспорт).
-- Подключается к bootstrap-peer (Moscow `<front>:8445`) + 4 force_active
-  узлам (frankfurt/vilnius/armenia/nicosia) из embedded `genesis-manifest.json`.
-- Первый запуск — генерирует 24-словную мнемонику и пишет её в
-  `/var/lib/montana/mnemonic.txt` (mode 0400). **Сохрани её сразу:**
+The container:
+- Listens on TCP :8444 (Noise_PQ XX → Yamux transport)
+- Dials the 5-node bootstrap mesh (moscow, frankfurt, vilnius, armenia, nicosia) from the embedded `genesis-manifest.json`
+- On first launch generates a 24-word mnemonic and writes it to `/var/lib/montana/mnemonic.txt` (mode 0400). **Save it immediately:**
   ```bash
   docker exec montana-node cat /var/lib/montana/mnemonic.txt
   ```
 
-## Вариант 2: build from source (универсальный, ~5 мин)
+## Option 2: build from source (~5 minutes)
 
 ```bash
 git clone https://github.com/efir369999/Montana.git /opt/montana
@@ -37,41 +30,40 @@ cd /opt/montana/Code/docker/runtime
 docker compose up -d --build
 ```
 
-Пересоберёт `montana-node:local` из current `main` branch.
+Rebuilds `montana-node:local` from the current `main` branch.
 
-## После запуска
-
-### Проверить, что узел в сети
+## Verify
 
 ```bash
-# Локально на VPS — current_window растёт каждые ~30 сек:
+# Local — current_window advances every ~30 seconds:
 docker exec montana-node /usr/local/bin/montana-node status --data-dir /var/lib/montana
 
-# В живой сети — узел появится в /api/peers одного из bootstrap-peer узлов:
+# Live mesh — your node should appear in /api/peers of any bootstrap peer:
 curl -sk https://efir.org:8443/montana-api/peers
 ```
 
-После 24 часов sync узел появится в `/api/nodes` как Candidate (фаза подтверждения).
-Через ~14 дней последовательной SHA-256 цепочки переходит в Active и начинает участвовать в лотерее.
+After ~24 hours of cemented Proposal sync the node appears in `/api/nodes` as `Candidate`.
+After ~14 days of sequential SHA-256 chain computation plus the next selection event it transitions to `Active` and starts participating in the lottery.
 
-### Опционально: VPN exit-нода
+## Optional: VPN exit-node
 
-Если хочешь чтобы узел ещё и работал как Reality VLESS endpoint:
+To also operate the node as a Reality VLESS endpoint on the same VPS:
 
 ```bash
 docker compose up -d xray nginx-decoy
 ```
 
-`xray` слушает :443 (TLS Reality, маскируется под googletagmanager.com), `nginx-decoy` на :80 — обманный landing.
+`xray` listens on :443 (TLS Reality, disguised as `googletagmanager.com`), `nginx-decoy` on :80 serves a decoy landing page.
 
-## Текущее состояние сети
+## Network state (current)
 
-- 5-node mainnet cohort: moscow + frankfurt + vilnius + armenia + nicosia
-- Build 26 (sha `b6e79bdc1e8b...`), v1.0.1-build26 tag
-- Bootstrap-only proposer (DEV-022/023 rotation disabled — см. `docs/SPEC_DEVIATIONS.md`)
-- Multi-confirmer cement (typically bundles=2-3) + multi-winner lottery (DEV-021) распределяет emission
-- Cемитированное окно ~`/api/status` грow rate: 1 окно / 30-60 сек
+- **Cohort:** 5 nodes — `moscow` (bootstrap) + `frankfurt` + `vilnius` + `armenia` + `nicosia`
+- **Build:** `26` (sha `b6e79bdc1e8b…`), image tag `v1.0.1-build26`
+- **Proposer model:** bootstrap-only (Lookback rotation deferred to v1.0.2 pending DEV-021b drain refactor — see `Code/docs/SPEC_DEVIATIONS.md`)
+- **Multi-confirmer cementing:** typically `bundles=2-3` per window
+- **Reveal lottery (DEV-021):** distributes per-window emission winner across the full active cohort
+- **Window time:** ~30–60 seconds per cemented Proposal
 
-## Поддержка
+## Support
 
-Открой issue: https://github.com/efir369999/Montana/issues
+Open an issue: https://github.com/efir369999/Montana/issues
