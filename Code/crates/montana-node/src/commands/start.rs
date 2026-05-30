@@ -201,6 +201,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // when an elected proposer has gone silent (≥ K_FALLBACK_WINDOWS windows
     // without producing cement). Bootstrap is the canonical fallback.
     let mut last_proposer_cement: BTreeMap<mt_state::NodeId, u64> = BTreeMap::new();
+    #[allow(dead_code)]
     const K_FALLBACK_WINDOWS: u64 = 3;
     // DEV-022 Lookback Leadership: track winner_id per cemented window so any
     // Active node can compute proposer_W = winner_{W-2} for its own window decisions.
