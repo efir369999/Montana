@@ -446,3 +446,59 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Closure cost:** ~10 lines of Rust.
 **Status:** closed (Build 16 sha f1030eb151c0, this session).
 
+
+---
+
+## DEV-020: per-window Reveal broadcast + reveal_pool
+
+**Crate:** `montana-node`, `mt-lottery`
+**File:line:** `crates/mt-lottery/src/lib.rs:248-281` (VdfReveal::decode), `crates/montana-node/src/commands/start.rs:196` (reveal_pool init), `crates/montana-node/src/commands/start.rs:622-700` (drain MsgType::VdfReveal), `crates/montana-node/src/commands/start.rs:300-370` (follower compute+broadcast own Reveal), `crates/montana-node/src/commands/start.rs:850-870` (bootstrap broadcast own Reveal), `crates/montana-node/src/commands/start.rs:1010-1080` (spin+grace inline Reveal handling).
+**Spec section:** «VDF_Reveal pipeline» / «Cemented Reveal set»
+**What the code does (before):** only bootstrap inserted its own reveal_hash into BC; the Reveal object itself was never broadcast over the wire. Peer nodes had no way to participate in the lottery.
+**What the code does (after):**
+  1. All Active operators compute their own Reveal each window using `compute_endpoint(t_r_window, cba_w_minus_2, my_node, window_index)`.
+  2. The Reveal is broadcast as `MsgType::VdfReveal` envelope (wire size 3381 = 32+8+32+3309).
+  3. Every node maintains `reveal_pool: BTreeMap<u64, BTreeMap<NodeId, VdfReveal>>` keyed by window, bounded to last 64 windows.
+  4. Main dispatcher and proposer's spin-drain / grace handlers all decode VdfReveal envelopes, validate via `mt_lottery::validate_reveal`, and insert into the pool.
+  5. Follower's BC.reveal_hashes is populated from `reveal_pool.get(window_index)` (own + any peer reveals received).
+
+**Severity:** prerequisite for DEV-021 winner determination and DEV-022 Lookback rotation.
+**Closure path:** ↑ implemented in this commit.
+**Closure cost:** ~150 lines of Rust + VdfReveal::decode added to mt-lottery.
+**Status:** closed (Build 17/18, this session).
+
+---
+
+## DEV-021: winner determination from cemented Reveal set
+
+**Crate:** `montana-node`, `mt-lottery`
+**File:line:** `crates/montana-node/src/commands/start.rs:1240-1290` (winner computation block)
+**Spec section:** «Lookback Leadership / Determine winner_{W-1}»
+**Spec quote:** «`winner_{W-1} = argmin(weighted_ticket_node)` среди cemented VDF_Reveal узлов-кандидатов окна W-1»
+**What the code does (before):** proposer set `winner_id = my_node` unconditionally — no lottery, no per-window winner.
+**What the code does (after):**
+  1. At cement time, proposer computes `cemented_hashes = union of reveal_hashes across BCs in accumulator[current]`.
+  2. Filters `reveal_pool[current]` by `cemented_hashes` to get cemented_reveals.
+  3. Builds `mt_lottery::Candidate` list using `weighted_ticket_node(reveal.endpoint, node.chain_length, snapshot)`.
+  4. `winner_id = mt_lottery::determine_winner(&candidates).map(|w| w.id).unwrap_or(my_node)`.
+  5. Settle + header.winner_id = winner_id.
+  Logs `[dev-021] cemented_reveals=N candidates=N winner=ID` per window.
+
+**Severity:** mainnet blocker for genuine lottery (without this, proposer always wins → emission centralization).
+**Closure path:** ↑ implemented in this commit. Live verification limited by upstream: peer BCs consistently late (DEV-019b note); cemented set typically = {proposer's own Reveal}; full multi-candidate lottery achievable once peer-drain-during-VDF issue closed (see open follow-up below).
+**Closure cost:** ~50 lines of Rust.
+**Status:** closed (Build 17/18, this session); upstream blocker tracked separately.
+
+---
+
+## DEV-021b (open): peer drain during VDF tick
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs:627` (vdf_step_chunked call inside main loop body)
+**Spec section:** «Cross-window cementing timeline»
+**What the code currently does:** follower's main loop drains `incoming_rx` only at the very top of each iteration. Each iteration takes ~30s (VDF tick) + ~500ms (idle sleep). Candidate Proposal envelopes arrive mid-VDF and queue in `incoming_rx` until next iteration top. By the time the follower's drain processes a candidate, the proposer has already moved past that window into the next, so follower's BC for window N reaches the proposer ~30s late — too late to land in `accumulator[N]` before cement.
+**Consequence:** peer BCs and peer Reveals are chronically 1 window late. DEV-019b grace mitigates partially; full multi-confirmer cement (bundles=N) and multi-candidate lottery (DEV-021) require lockstep timing.
+**Closure path:** restructure follower main loop so `incoming_rx` is drained periodically during `vdf_step_chunked` (callback every N steps), or move drain into a separate tokio task in the network thread with shared state. Either change implies a larger refactor than fits this session.
+**Closure cost:** ~1–2 days wall-clock for correct implementation + integration test.
+**Status:** open. Tracked as the gate for DEV-022 Lookback Leadership rotation.
+

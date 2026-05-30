@@ -252,6 +252,32 @@ impl VdfReveal {
         write_u64(buf, self.window_index);
         write_bytes(buf, &self.endpoint);
     }
+
+    // DEV-020: decode wire-format VdfReveal. Layout = 32 (node_id) + 8 (window_index LE)
+    // + 32 (endpoint) + SIGNATURE_SIZE (signature) = 32+8+32+3309 = 3381 bytes for ML-DSA-65.
+    pub fn decode(input: &[u8]) -> Result<(Self, usize), &'static str> {
+        let needed = 32 + 8 + 32 + SIGNATURE_SIZE;
+        if input.len() < needed {
+            return Err("truncated VdfReveal");
+        }
+        let mut node_id = [0u8; 32];
+        node_id.copy_from_slice(&input[0..32]);
+        let window_index = u64::from_le_bytes(input[32..40].try_into().unwrap());
+        let mut endpoint = [0u8; 32];
+        endpoint.copy_from_slice(&input[40..72]);
+        let mut sig_bytes = [0u8; SIGNATURE_SIZE];
+        sig_bytes.copy_from_slice(&input[72..72 + SIGNATURE_SIZE]);
+        let signature = Signature::from_array(sig_bytes);
+        Ok((
+            VdfReveal {
+                node_id,
+                window_index,
+                endpoint,
+                signature,
+            },
+            needed,
+        ))
+    }
 }
 
 impl CanonicalEncode for VdfReveal {

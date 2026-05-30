@@ -194,6 +194,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // DEV-012 T_r history: per-window T_r snapshot for BC endpoint validation
     // when BCs arrive after current has advanced.
     let mut t_r_history: BTreeMap<u64, Hash32> = BTreeMap::new();
+    // DEV-020: per-window reveal pool, keyed by (window_index → (node_id → VdfReveal)).
+    // Все Active узлы публикуют собственный Reveal каждое окно через MsgType::VdfReveal.
+    // Proposer на cement-time собирает cemented Reveal-ы (те, чей reveal_hash вошёл в
+    // 67% chain_length BC) и вычисляет winner = argmin(weighted_ticket_node) per spec.
+    let mut reveal_pool: BTreeMap<u64, BTreeMap<mt_state::NodeId, VdfReveal>> = BTreeMap::new();
 
     // DEV-012 multi-confirmer: per-window accumulator of BCs from Active peers.
     // Keyed by window then node_id so duplicates from same node deduplicate.
@@ -310,15 +315,50 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                     &my_node,
                                     window_index,
                                 );
-                                let _ = endpoint;
-                                // Per existing convention (validate_bundle line ~140):
-                                // bc.endpoint stores the raw T_r(W) of the proposer.
+                                // DEV-020 follower Reveal: вычислить и broadcast
+                                // собственный VdfReveal для текущего окна.
+                                let mut own_reveal = VdfReveal {
+                                    node_id: my_node,
+                                    window_index,
+                                    endpoint,
+                                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+                                };
+                                let mut reveal_scope = Vec::new();
+                                own_reveal.encode_signed_scope(&mut reveal_scope);
+                                own_reveal.signature = sign(&identity.node_sk, &reveal_scope)
+                                    .map_err(NodeError::Crypto)?;
+                                let own_reveal_hash = mt_lottery::reveal_hash(&own_reveal);
+                                // Store own reveal in pool
+                                reveal_pool
+                                    .entry(window_index)
+                                    .or_default()
+                                    .insert(my_node, own_reveal.clone());
+                                while reveal_pool.len() > 64 {
+                                    let oldest = *reveal_pool.keys().next().unwrap();
+                                    reveal_pool.remove(&oldest);
+                                }
+                                // Broadcast Reveal envelope to peers
+                                let mut reveal_payload = Vec::new();
+                                own_reveal.encode(&mut reveal_payload);
+                                let reveal_env = ProtocolMessage::new(
+                                    MsgType::VdfReveal,
+                                    window_index,
+                                    reveal_payload,
+                                );
+                                let _ = handle.broadcast_tx.send(reveal_env);
+                                // Build BC with reveal_hashes from pool (own + any peer reveals received earlier)
+                                let mut bc_reveal_hashes: Vec<Hash32> = reveal_pool
+                                    .get(&window_index)
+                                    .map(|m| m.values().map(|r| mt_lottery::reveal_hash(r)).collect())
+                                    .unwrap_or_default();
+                                bc_reveal_hashes.sort();  // canonical order
+                                let _ = own_reveal_hash;
                                 let mut bc = BundledConfirmation {
                                     node_id: my_node,
                                     endpoint: t_r_w,
                                     window_index,
                                     op_hashes: Vec::new(),
-                                    reveal_hashes: Vec::new(),
+                                    reveal_hashes: bc_reveal_hashes,
                                     signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
                                 };
                                 let mut bc_scope = Vec::new();
@@ -619,6 +659,42 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             }
                         }
                     },
+                    MsgType::VdfReveal => {
+                        // DEV-020: incoming peer Reveal — validate + insert into reveal_pool.
+                        // Proposer на cement-time использует cemented Reveal set для winner
+                        // determination (DEV-021).
+                        if let Ok((rec_reveal, _)) = VdfReveal::decode(&msg.payload) {
+                            let exp_t_r = t_r_history
+                                .get(&rec_reveal.window_index)
+                                .copied()
+                                .unwrap_or(timechain.t_r);
+                            let cba = mt_timechain::cemented_bundle_aggregate(
+                                rec_reveal.window_index.saturating_sub(2),
+                                &[],
+                            );
+                            if mt_lottery::validate_reveal(
+                                &rec_reveal,
+                                &state.nodes,
+                                &exp_t_r,
+                                &cba,
+                                rec_reveal.window_index,
+                            )
+                            .is_ok()
+                            {
+                                let nid = rec_reveal.node_id;
+                                let w = rec_reveal.window_index;
+                                reveal_pool.entry(w).or_default().insert(nid, rec_reveal);
+                                eprintln!(
+                                    "[dev-020] accepted Reveal from {} for w={w}",
+                                    hex16(&nid)
+                                );
+                                while reveal_pool.len() > 64 {
+                                    let oldest = *reveal_pool.keys().next().unwrap();
+                                    reveal_pool.remove(&oldest);
+                                }
+                            }
+                        }
+                    },
                     MsgType::BundledConfirmation => {
                         // DEV-012 Phase B: validate incoming BC and insert into accumulator.
                         // Quorum check + cementing is done at the top of the Active loop.
@@ -812,6 +888,25 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 )
                 .map_err(|e| NodeError::InvalidArguments(format!("validate_reveal: {e:?}")))?;
                 let r_hash = reveal_hash(&reveal);
+                // DEV-020: proposer also broadcasts own Reveal envelope so followers
+                // can include it in their BC.reveal_hashes for cement-time winner determination.
+                reveal_pool
+                    .entry(current)
+                    .or_default()
+                    .insert(my_node, reveal.clone());
+                while reveal_pool.len() > 64 {
+                    let oldest = *reveal_pool.keys().next().unwrap();
+                    reveal_pool.remove(&oldest);
+                }
+                if let Some(ref handle) = network_handle {
+                    let mut reveal_payload = Vec::new();
+                    reveal.encode(&mut reveal_payload);
+                    let _ = handle.broadcast_tx.send(ProtocolMessage::new(
+                        MsgType::VdfReveal,
+                        current,
+                        reveal_payload,
+                    ));
+                }
 
                 let mut bc = BundledConfirmation {
                     node_id: my_node,
@@ -881,6 +976,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // "signature ML-DSA-65 над signed_scope(header) (Правило R1)";
                 // все поля канонически вычислимы из cemented set, значит state_root
                 // в подписи обязан быть post-apply.
+                // header.winner_id initially = my_node, overwritten below after DEV-021 winner computation
                 let mut header = ProposalHeader {
                     prev_proposal_hash,
                     window_index: current,
@@ -1057,6 +1153,45 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                             "[m7] served FastSync snapshot (spin): anchor={current} chunks={total}"
                                         );
                                     }
+                                } else if msg.msg_type == MsgType::VdfReveal {
+                                    // DEV-020 spin-drain: peer Reveals must land in pool
+                                    // so winner determination at cement time sees them.
+                                    if let Ok((rec_reveal, _)) = VdfReveal::decode(&msg.payload) {
+                                        let exp_t_r = t_r_history
+                                            .get(&rec_reveal.window_index)
+                                            .copied()
+                                            .unwrap_or(timechain.t_r);
+                                        let cba_r = mt_timechain::cemented_bundle_aggregate(
+                                            rec_reveal.window_index.saturating_sub(2),
+                                            &[],
+                                        );
+                                        if mt_lottery::validate_reveal(
+                                            &rec_reveal,
+                                            &state.nodes,
+                                            &exp_t_r,
+                                            &cba_r,
+                                            rec_reveal.window_index,
+                                        )
+                                        .is_ok()
+                                        {
+                                            let nid = rec_reveal.node_id;
+                                            let w = rec_reveal.window_index;
+                                            reveal_pool
+                                                .entry(w)
+                                                .or_default()
+                                                .insert(nid, rec_reveal);
+                                            eprintln!(
+                                                "[dev-020] spin Reveal from {} for w={w}",
+                                                hex16(&nid)
+                                            );
+                                        } else {
+                                            eprintln!(
+                                                "[dev-020] Reveal validate failed for {} w={}",
+                                                hex16(&rec_reveal.node_id),
+                                                rec_reveal.window_index
+                                            );
+                                        }
+                                    }
                                 } else {
                                     deferred.push(msg);
                                 }
@@ -1119,6 +1254,37 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                                                     );
                                                 }
                                             }
+                                        } else if grace_msg.msg_type == MsgType::VdfReveal {
+                                            if let Ok((rec_reveal, _)) = VdfReveal::decode(&grace_msg.payload) {
+                                                let exp_t_r = t_r_history
+                                                    .get(&rec_reveal.window_index)
+                                                    .copied()
+                                                    .unwrap_or(timechain.t_r);
+                                                let cba_r = mt_timechain::cemented_bundle_aggregate(
+                                                    rec_reveal.window_index.saturating_sub(2),
+                                                    &[],
+                                                );
+                                                if mt_lottery::validate_reveal(
+                                                    &rec_reveal,
+                                                    &state.nodes,
+                                                    &exp_t_r,
+                                                    &cba_r,
+                                                    rec_reveal.window_index,
+                                                )
+                                                .is_ok()
+                                                {
+                                                    let nid = rec_reveal.node_id;
+                                                    let w = rec_reveal.window_index;
+                                                    reveal_pool
+                                                        .entry(w)
+                                                        .or_default()
+                                                        .insert(nid, rec_reveal);
+                                                    eprintln!(
+                                                        "[dev-020] grace Reveal from {} for w={w}",
+                                                        hex16(&nid)
+                                                    );
+                                                }
+                                            }
                                         } else {
                                             deferred.push(grace_msg);
                                         }
@@ -1144,9 +1310,57 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         v
                     })
                     .unwrap_or_else(|| vec![my_node]);
+                // DEV-021: compute winner from cemented Reveal set.
+                // Cemented reveal_hashes = union of reveal_hashes across BCs in accumulator[current].
+                let mut cemented_hashes: std::collections::BTreeSet<Hash32> = std::collections::BTreeSet::new();
+                if let Some(bcs) = bc_accumulator.get(&current) {
+                    for bc in bcs.values() {
+                        for rh in &bc.reveal_hashes {
+                            cemented_hashes.insert(*rh);
+                        }
+                    }
+                }
+                // Lookup Reveal objects from pool by hash
+                let cemented_reveals: Vec<&VdfReveal> = reveal_pool
+                    .get(&current)
+                    .map(|m| {
+                        m.values()
+                            .filter(|r| cemented_hashes.contains(&mt_lottery::reveal_hash(r)))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                // Compute winner via argmin(weighted_ticket_node).
+                // weighted_ticket_node(endpoint, chain_length, snapshot) → u128 ticket
+                let candidates: Vec<mt_lottery::Candidate> = cemented_reveals
+                    .iter()
+                    .filter_map(|r| {
+                        state.nodes.get(&r.node_id).map(|n| {
+                            let snapshot = n.chain_length_snapshot.max(1);
+                            let ticket = mt_lottery::weighted_ticket_node(
+                                &r.endpoint,
+                                n.chain_length,
+                                snapshot,
+                            );
+                            mt_lottery::Candidate {
+                                ticket,
+                                class: mt_lottery::WINNER_CLASS_NODE,
+                                id: r.node_id,
+                            }
+                        })
+                    })
+                    .collect();
+                let winner_id = mt_lottery::determine_winner(&candidates)
+                    .map(|w| w.id)
+                    .unwrap_or(my_node);
+                eprintln!(
+                    "[dev-021] cemented_reveals={} candidates={} winner={}",
+                    cemented_reveals.len(),
+                    candidates.len(),
+                    hex16(&winner_id)
+                );
                 let settle = ProposalSettle {
                     window_w: current,
-                    winner_id: my_node,
+                    winner_id,
                     cemented_confirmers: confirmer_ids.clone(),
                 };
                 let post_state_root = apply_proposal(
@@ -1157,6 +1371,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     params,
                 );
 
+                // DEV-021: write computed winner_id into header (was placeholder my_node)
+                header.winner_id = settle.winner_id;
                 header.state_root = post_state_root;
                 header.account_root = state.accounts.root();
                 header.node_root = state.nodes.root();
