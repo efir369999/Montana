@@ -1079,13 +1079,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                             // The total operator count includes self; we need
                             // ⌈total/2⌉ confirmers including self in accumulator[current].
                             let total_active = state.nodes.len();
-                            let peer_target = (total_active + 1) / 2;  // ⌈total/2⌉
+                            let peer_target = (total_active + 1) / 2; // ⌈total/2⌉
                             let grace_deadline = Instant::now() + Duration::from_millis(5000);
                             while Instant::now() < grace_deadline {
-                                let current_count = bc_accumulator
-                                    .get(&current)
-                                    .map(|m| m.len())
-                                    .unwrap_or(0);
+                                let current_count =
+                                    bc_accumulator.get(&current).map(|m| m.len()).unwrap_or(0);
                                 if current_count >= peer_target {
                                     eprintln!(
                                         "[dev-019] peer-quorum gate satisfied: {current_count}/{peer_target} BCs for w={current}"
