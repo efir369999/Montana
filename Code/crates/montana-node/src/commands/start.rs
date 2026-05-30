@@ -894,8 +894,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     .copied()
                     .unwrap_or(0);
                 let primary_silent = current.saturating_sub(primary_last_cement);
-                let primary_active = primary_silent < K_FALLBACK_WINDOWS
-                    || primary_proposer == bootstrap_node_id;
+                let primary_active =
+                    primary_silent < K_FALLBACK_WINDOWS || primary_proposer == bootstrap_node_id;
                 let active_proposer = if primary_active {
                     primary_proposer
                 } else {
