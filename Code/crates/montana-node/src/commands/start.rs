@@ -881,64 +881,17 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 //   primary_proposer = winner_{W-2} (или bootstrap для W<2)
                 //   если primary cemented within last K_FALLBACK_WINDOWS → primary propose
                 //   иначе bootstrap takes over (canonical fallback, нет dead-lock)
-                let primary_proposer: mt_state::NodeId = if current < 2 {
-                    bootstrap_node_id
-                } else {
-                    winner_history
-                        .get(&(current - 2))
-                        .copied()
-                        .unwrap_or(bootstrap_node_id)
-                };
-                let primary_last_cement = last_proposer_cement
-                    .get(&primary_proposer)
-                    .copied()
-                    .unwrap_or(0);
-                // DEV-023b election grace: if primary never cemented (last_cement=0)
-                // BUT won lottery in last K windows, treat as active — give the freshly
-                // elected proposer K windows to publish their first proposal. Without
-                // this grace, silent_count = current (huge) immediately overrides
-                // primary with bootstrap fallback and the elected node never gets a
-                // chance.
-                let primary_active =
-                    if primary_last_cement == 0 && primary_proposer != bootstrap_node_id {
-                        let grace_start = current.saturating_sub(K_FALLBACK_WINDOWS).max(2);
-                        let grace_end = current.saturating_sub(2);
-                        (grace_start..=grace_end)
-                            .any(|w| winner_history.get(&w).copied() == Some(primary_proposer))
-                    } else {
-                        let primary_silent = current.saturating_sub(primary_last_cement);
-                        primary_silent < K_FALLBACK_WINDOWS || primary_proposer == bootstrap_node_id
-                    };
-                let primary_silent = current.saturating_sub(primary_last_cement);
-                let active_proposer = if primary_active {
-                    primary_proposer
-                } else {
-                    bootstrap_node_id
-                };
-                if my_node != active_proposer {
-                    eprintln!(
-                        "[lookback W={current}] primary={} silent={} active_proposer={} my_node={} — follower mode",
-                        hex16(&primary_proposer),
-                        primary_silent,
-                        hex16(&active_proposer),
-                        hex16(&my_node)
-                    );
+                // DEV-022/023 ROTATION DISABLED 2026-05-30: bootstrap-only proposer.
+                // DEV-022 Lookback + DEV-023 fallback cascade caused chain to freeze
+                // when elected primary kept winning lottery (grace re-triggered) AND
+                // failed to cement (upstream DEV-021b drain issue). Until DEV-021b
+                // closure with per-node persistent first_election tracker, only
+                // bootstrap proposes. Lottery (DEV-021) winner_id ещё корректно
+                // распределяет emission по всем cohort operators.
+                // (rotation disabled)
+                if my_node != bootstrap_node_id {
                     follower_skip = true;
                     break 'active_arm;
-                }
-                if my_node != bootstrap_node_id {
-                    eprintln!(
-                        "[lookback W={current}] my_node={} elected proposer (primary={} active={})",
-                        hex16(&my_node),
-                        hex16(&primary_proposer),
-                        primary_active
-                    );
-                } else if !primary_active {
-                    eprintln!(
-                        "[fallback W={current}] bootstrap taking over (primary {} silent for {} windows)",
-                        hex16(&primary_proposer),
-                        primary_silent
-                    );
                 }
                 let active_chain_length: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
                 let cba_w_minus_2 = cemented_bundle_aggregate(current.saturating_sub(2), &[]);

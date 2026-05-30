@@ -664,3 +664,13 @@ After K windows since FIRST election, bootstrap fallback fires regardless of whe
 **Severity:** mainnet liveness blocker — must close before re-enabling rotation; deployed as urgent hotfix.
 **Status:** closed (Build 25 sha 5a22bf8c53c6, this session).
 
+
+---
+
+## DEV-022/023 disabled (v1.0.1 baseline freeze)
+
+**Decision (mainnet 2026-05-30 17:55):** DEV-022 Lookback rotation + DEV-023(a/b/c) fallback cascade gate DISABLED. Bootstrap is sole proposer. Lottery (DEV-021) still picks per-window winner_id and distributes emission; rotation just doesn't kick in.
+**Reason:** Even after DEV-023c first-election-anchored grace, chain throughput collapsed to ~1 cement per 16 min (vs 30s baseline) because each new primary win re-armed grace via fresh winner_history entries while old min() values aged out. Without DEV-021b drain refactor (peer can apply candidate during their sequential SHA chain tick), non-bootstrap proposers can never actually cement, so rotation only stalls the chain.
+**Code change:** active arm gate is `my_node != bootstrap_node_id → follower_skip = true`. `winner_history`, `last_proposer_cement`, `K_FALLBACK_WINDOWS` remain in code (unused, dead-letter) for future v1.0.1 re-enable on top of DEV-021b closure.
+**Status:** Bootstrap-only proposer is the v1.0.1 mainnet baseline. Rotation gated on DEV-021b future work.
+
