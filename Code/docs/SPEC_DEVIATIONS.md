@@ -543,3 +543,18 @@ Multi-candidate lottery proven on real mainnet windows.
 **Closure cost:** ~50 lines of Rust.
 **Status:** closed (Build 21 sha 8936f063, this session).
 
+
+---
+
+## DEV-022b: Lookback rotation gate disabled pending DEV-023 fallback cascade
+
+**Crate:** `montana-node`
+**File:line:** `crates/montana-node/src/commands/start.rs` (active arm gate)
+**Spec section:** «Lookback Leadership / Fallback cascade»
+**What the code does (before):** DEV-022 gated active arm on `my_node == winner_{W-2}`. Each operator independently maintained `winner_history`; both bootstrap and elected proposer saw the OTHER as proposer for their respective windows and both became followers — dead-lock. The spec's fallback cascade («fallback_proposer_W = second_min(weighted_ticket)») was not yet implemented, so a stuck elected proposer left the chain indefinitely frozen.
+**What the code does (after):** rotation gate reverted to bootstrap-only. `winner_history` is still maintained (drain-side + own cement) so DEV-023 can introduce rotation on top of a working fallback cascade.
+**Severity:** dead-lock recovery; not a fairness regression beyond pre-DEV-022 state.
+**Closure path:** implement DEV-023 fallback cascade (if elected proposer doesn't cement within K windows, second_min becomes proposer), then re-enable rotation gate.
+**Closure cost:** revert: 5 lines; DEV-023: ~80 lines.
+**Status:** closed (Build 22 sha c8de927c, this session).
+

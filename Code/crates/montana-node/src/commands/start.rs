@@ -870,35 +870,18 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // a BC on incoming candidate Proposal. (Spec calls for lookback-based
                 // proposer rotation in a future iteration; for the v1.0.0 cohort the
                 // bootstrap-only proposer model is the deployed baseline.)
-                // DEV-022 Lookback Leadership:
-                //   proposer_0 = bootstrap (genesis rule)
-                //   proposer_1 = bootstrap (genesis rule)
-                //   proposer_W = winner_{W-2} для W ≥ 2 (lookback)
-                // Если winner_{W-2} ещё не известен (catch-up phase, no cemented W-2),
-                // fallback на bootstrap чтобы цепочка не застряла.
-                let proposer_w: mt_state::NodeId = if current < 2 {
-                    bootstrap_node_id
-                } else {
-                    winner_history
-                        .get(&(current - 2))
-                        .copied()
-                        .unwrap_or(bootstrap_node_id)
-                };
-                if my_node != proposer_w {
-                    eprintln!(
-                        "[lookback W={current}] proposer_W={} (winner_W-2) != my_node={} — follower mode",
-                        hex16(&proposer_w),
-                        hex16(&my_node)
-                    );
+                // DEV-022 Lookback: rotation gate DISABLED pending DEV-023 fallback
+                // cascade. Live test on mainnet 2026-05-30 revealed dead-lock:
+                // both elected proposer и bootstrap become followers waiting for each
+                // other when winner_{W-2} ≠ bootstrap. Without a working «if elected
+                // proposer doesn't cement within K windows → second_min» fallback,
+                // the chain stalls. Keep winner_history population for future DEV-023
+                // logic; revert active gate to bootstrap-only.
+                if my_node != bootstrap_node_id {
                     follower_skip = true;
                     break 'active_arm;
                 }
-                if my_node != bootstrap_node_id {
-                    eprintln!(
-                        "[lookback W={current}] my_node={} elected proposer (winner_W-2)",
-                        hex16(&my_node)
-                    );
-                }
+                let _ = winner_history.get(&current.saturating_sub(2));
                 let active_chain_length: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
                 let cba_w_minus_2 = cemented_bundle_aggregate(current.saturating_sub(2), &[]);
                 let endpoint = compute_endpoint(&timechain.t_r, &cba_w_minus_2, &my_node, current);
