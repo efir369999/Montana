@@ -238,14 +238,14 @@ mod tests {
 
     #[test]
     fn parse_three_peer_manifest() {
+        // helsinki removed from fixture 2026-05-30 → 2 peers
         let toml_text = three_peer_manifest_json();
         let m = GenesisManifest::parse(&toml_text).expect("valid manifest");
         assert_eq!(m.network_name, "montana");
-        assert_eq!(m.peers.len(), 3);
+        assert_eq!(m.peers.len(), 2);
         assert_eq!(m.peers[0].label, "moscow");
         assert!(m.peers[0].bootstrap);
         assert!(!m.peers[1].bootstrap);
-        assert!(!m.peers[2].bootstrap);
         assert_eq!(m.bootstrap_peer().unwrap().label, "moscow");
     }
 
