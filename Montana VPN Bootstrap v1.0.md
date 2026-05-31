@@ -1,6 +1,6 @@
 # Montana VPN — Bootstrap Deployment
 
-**Version:** 0.5 (2026-05-31)
+**Version:** 1.0 (2026-05-31) — first stable production release
 
 **Layer:** Operational — the currently-deployed Montana VPN service, predating the protocol-level [Montana Egress v1.0.0](./Montana%20Egress%20v1.0.0.md). This document describes the running infrastructure; the Egress specification describes the future peer-to-peer egress that will eventually replace it.
 
@@ -68,16 +68,20 @@ The single Reality entry on the front, plus one client UUID per supported countr
 Each VLESS link carries:
 
 - A per-country client UUID
-- A label of the form `<flag> <country> Монтана · <N>👤`, where `N` is the per-country online count derived from the live counter (see SSOT below)
+- A label of the form `<flag> <country> Монтана` (an online counter was present through v0.5 but removed in v1.0 — see Online counting below)
 - Identical Reality parameters across countries (same SNI, public key, shortId)
 
 The link list is sorted by `N` descending, so the busiest country appears first.
 
 ---
 
-## SSOT — single source of online count
+## Online counting
 
-The online counter is per-tag (`<country>-cascade`) and reported by the front. **This source is currently degraded by the privacy lockdown:** the access log it derived from has been turned off (see Privacy below), so the counter reports `0` for every tag until the migration to the xray stats API completes in v0.6. The subscription generator, the snapshot file format, and the per-link `· N👤` label are unchanged; only the value source is.
+Earlier Bootstrap versions appended `· N👤` to each per-country label, where `N` was the count of distinct active source addresses observed in a sliding window. The counter read its source from the front's xray `access.log`.
+
+v0.5 disabled the access log on every node (see Privacy) — the counter then reported `0` for every tag. Carrying a constantly-zero counter conveyed nothing, so v1.0 removes the suffix entirely. The subscription generator no longer attaches `· N👤`; labels are clean.
+
+A future bootstrap version will reintroduce per-country online metrics by reading the xray statistics API (`StatsService`), which exposes inbound and outbound byte and connection counters without writing per-connection log lines. That migration is independent of the label format and will be added under a separate version bump.
 
 The historical access-log-based pipeline remains documented for reference:
 
@@ -109,6 +113,8 @@ The front mirror at Frankfurt runs an identical copy of the subscription generat
 <front>:/var/lib/xray-online.json
 <front>:/etc/montana-vpn/keys.json
 ```
+
+`<front>` is the operational address of the active front node, resolved by the operator from the private deployment topology — public artefacts (this spec, the subscription, the genesis manifest) name cities, never IPs.
 
 DNS `de.montana.quest` is a two-record A set (`multi-A`) holding the front and the mirror, served by Cloudflare with TTL 60–120. Clients reach either address; if one is unreachable they retry the other automatically (browser/HTTP resolver behaviour).
 
@@ -168,7 +174,7 @@ The architecture preserves anonymity from the destination, hides destinations fr
 | Authentication | UUID possession | IBT level-3 (ML-DSA-65 account proof) |
 | Entry sees destinations | Yes (front terminates the inner session) | No (entry carries ciphertext only) |
 | Exit attribution | Backend operator | Opt-in mesh node operator |
-| Online counting | xray stats API on the front (v0.6) | Out of scope (advisory directory only) |
+| Online counting | not displayed (stats-API integration deferred) | Out of scope (advisory directory only) |
 | Retention | Zero (v0.5) | Zero by design |
 
 The Bootstrap is the running service until enough Montana mesh nodes exist to make Egress v1.0.0 deployable.
