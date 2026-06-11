@@ -100,6 +100,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         .map(|m| m.extra_actives())
         .unwrap_or_default();
     let mut state = LocalState::load_or_bootstrap(&data_dir, &identity, params, &extra_actives)?;
+    // Persist the seeded genesis state immediately so a separate `status`
+    // invocation (which loads with empty extra_actives) reads the real
+    // bootstrapped tables instead of re-bootstrapping an incomplete view.
+    if !data_dir.join("accounts.bin").exists() {
+        state.save(&data_dir)?;
+    }
     let mut current = load_current_window(&data_dir)?;
     let mut timechain = load_or_init_timechain(&data_dir)?;
     let mut lifecycle = load_or_init_lifecycle(&data_dir, &identity, params)?;
