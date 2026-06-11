@@ -127,13 +127,17 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         .unwrap_or(0);
 
     let is_genesis = NodeLifecycle::is_bootstrap_node(&identity, params);
+    // Genesis cohort member = the compiled bootstrap node OR a force_active peer
+    // pre-seeded into the genesis NodeTable (state.rs seeds both as Active
+    // operators). Both start Active; every other node joins via the candidate
+    // VDF + admission path.
+    let is_genesis_member = is_genesis || state.nodes.contains(&my_node);
 
-    // Phase Bootstrap = первая загрузка. Для genesis узла (identity.node_pk
-    // совпадает с params.bootstrap_node_pubkey либо placeholder pre-ceremony) —
-    // переход прямо в Active. Для candidate узла — переход в CandidateVdf
+    // Phase Bootstrap = первая загрузка. Genesis-член (bootstrap или force_active,
+    // уже активный в NodeTable) → сразу Active. Прочие узлы → CandidateVdf
     // с target_chain_length = τ₂ и w_start = текущее окно + 1.
     if lifecycle.phase == NodePhase::Bootstrap {
-        if is_genesis {
+        if is_genesis_member {
             lifecycle.phase = NodePhase::Active;
         } else {
             lifecycle.phase = NodePhase::CandidateVdf;
