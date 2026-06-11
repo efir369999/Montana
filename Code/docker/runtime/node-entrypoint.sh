@@ -40,11 +40,13 @@ if [ -f "$MANIFEST" ] && [ -n "${MONTANA_MANIFEST_SHA256:-}" ]; then
 fi
 
 # 3. Start the node.
-set -- start --data-dir "$DATA_DIR" --listen "$LISTEN"
+# The node requires --listen and --genesis-manifest TOGETHER (cross-machine mode)
+# or NEITHER (singleton mode). Never --listen alone.
 if [ -f "$MANIFEST" ]; then
-  set -- "$@" --genesis-manifest "$MANIFEST"
-  echo "[entrypoint] starting node with genesis manifest $MANIFEST"
+  set -- start --data-dir "$DATA_DIR" --listen "$LISTEN" --genesis-manifest "$MANIFEST"
+  echo "[entrypoint] cross-machine mode — manifest $MANIFEST, listen $LISTEN"
 else
-  echo "[entrypoint] no manifest mounted — standalone bootstrap genesis"
+  set -- start --data-dir "$DATA_DIR"
+  echo "[entrypoint] singleton mode — no manifest, no --listen"
 fi
 exec runuser -u montana -- /usr/local/bin/montana-node "$@"
