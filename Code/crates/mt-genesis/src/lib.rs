@@ -112,7 +112,7 @@ pub fn genesis_app_id() -> Hash32 {
 pub fn genesis_params() -> &'static ProtocolParams {
     static INSTANCE: OnceLock<ProtocolParams> = OnceLock::new();
     INSTANCE.get_or_init(|| ProtocolParams {
-        d0: 100_000_000,
+        d0: 325_000_000,
         reserved_m0: [0u8; 8],
         tau2_windows: 20_160,
         emission_moneta: 13_000_000_000,
@@ -288,7 +288,7 @@ mod tests {
         let h1 = compute_genesis_state_hash(&root, genesis_params());
 
         let mut mutated = genesis_params().clone();
-        mutated.d0 = 100_000_001;
+        mutated.d0 = 325_000_001;
         let h2 = compute_genesis_state_hash(&root, &mutated);
         assert_ne!(h1, h2);
     }
