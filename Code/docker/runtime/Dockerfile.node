@@ -34,7 +34,7 @@ RUN cargo build --release -j 1 -p montana-node && \
 FROM debian:trixie-slim
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      ca-certificates tini util-linux iproute2 openssl coreutils && \
+      ca-certificates tini util-linux iproute2 openssl coreutils curl && \
     rm -rf /var/lib/apt/lists/* && \
     useradd -r -m -d /var/lib/montana -s /usr/sbin/nologin montana && \
     mkdir -p /etc/montana && \
