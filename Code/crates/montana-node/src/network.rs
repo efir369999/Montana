@@ -62,6 +62,10 @@ pub async fn run_network_loop(
     );
 
     let mut dialed: HashMap<PeerId, String> = HashMap::new();
+    // Цели перенабора: соседи из манифеста; при потере соединения (или если
+    // сосед ещё не поднялся на старте) набираем заново на каждом ударе
+    // сердцебиения — сеть обязана сцепляться «из коробки», без рестартов.
+    let mut redial_targets: Vec<(PeerId, String, Multiaddr)> = Vec::new();
     for peer in &manifest.peers {
         let peer_id_parsed = PeerId::from_str(&peer.peer_id)
             .map_err(|e| NodeError::Network(format!("invalid peer_id {}: {e}", peer.peer_id)))?;
@@ -81,6 +85,7 @@ pub async fn run_network_loop(
             .dial(dial_target.clone())
             .map_err(|e| NodeError::Network(format!("dial {}: {e}", peer.label)))?;
         dialed.insert(peer_id_parsed, peer.label.clone());
+        redial_targets.push((peer_id_parsed, peer.label.clone(), dial_target));
     }
 
     let mut heartbeat = tokio::time::interval(HEARTBEAT_PERIOD);
@@ -170,6 +175,12 @@ pub async fn run_network_loop(
                 }
             }
             _ = heartbeat.tick() => {
+                for (peer_id, label, addr) in &redial_targets {
+                    if !connected_peers.contains_key(peer_id) {
+                        eprintln!("[network] redial {} ({})", label, addr);
+                        let _ = swarm.dial(addr.clone());
+                    }
+                }
                 let peers: Vec<PeerId> = connected_peers.keys().copied().collect();
                 for peer_id in peers {
                     request_id_counter = request_id_counter.wrapping_add(1);
