@@ -286,6 +286,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         }
     }
 
+    // Длительность предыдущего витка — основа адаптивного liveness-grace.
+    let mut last_tick_dur = Duration::from_secs(30);
     loop {
         // Эффективное D пере-считывается каждый виток (адаптация на границе τ₂
         // происходит в едином переходе состояния settle_and_bookkeep).
@@ -311,9 +313,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     last_cement_at: &mut last_cement_at,
                     prev_proposal_hash: &mut prev_proposal_hash,
                     fast_sync_lag_threshold,
+                    fallback_secs: (last_tick_dur.as_secs() * 2).max(3),
                     data_dir: &data_dir,
                     params,
                     store: &store,
+                    identity: &identity,
                     my_node,
                     bootstrap_node_id,
                 }
@@ -345,6 +349,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             // вычисляется непрерывно; финализация и приём билетов идут
             // параллельно — вычитка сети между порциями витка.
             let tick_seed = timechain.t_r;
+            let tick_t0 = Instant::now();
             let next_t_r = vdf_step_chunked(
                 &tick_seed,
                 effective_d,
@@ -359,6 +364,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     }
                 },
             );
+            last_tick_dur = tick_t0.elapsed();
             // Сверка с сетевым значением, если окно уже видели в конверте
             // (или его успел применить drain посреди нашего витка).
             if let Some(known) = t_r_history.get(&next_window) {
@@ -545,7 +551,15 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // Ожидание кворума подтверждений окна propose_w.
                 // Спецификация «Свойство темпа сети»: быстрейший узел ждёт,
                 // пока 67% активной длины цепочки подтвердят окно.
+                // Failsafe (M4-INFO-10): bootstrap не ждёт молчащих вечно —
+                // через liveness-grace он цементирует присутствующим набором
+                // (degraded mode), чтобы сеть жила даже одним узлом. Восстановление
+                // полного кворума автоматическое, когда соседи возобновят BC.
+                let tick_dur = last_tick_dur;
+                let liveness_grace = (tick_dur * 3).max(Duration::from_secs(20));
+                let wait_start = Instant::now();
                 let mut last_notify = Instant::now();
+                let mut degraded = false;
                 loop {
                     if let Some(ref mut handle) = network_handle {
                         let mut ctx = net_ctx!();
@@ -565,6 +579,13 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         })
                         .unwrap_or(0);
                     if got >= need {
+                        break;
+                    }
+                    if my_node == bootstrap_node_id && wait_start.elapsed() > liveness_grace {
+                        eprintln!(
+                            "[liveness] w={propose_w}: кворум {got}/{need} не собран за grace — bootstrap цементирует присутствующими (degraded M4-INFO-10)"
+                        );
+                        degraded = true;
                         break;
                     }
                     if last_notify.elapsed() > Duration::from_secs(10) {
@@ -590,8 +611,20 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // Цементация: улики = подтверждения окна propose_w,
                 // included_bundles = подтверждения окна propose_w-1.
                 let active_cl = active_chain_length_at(&state.nodes, propose_w, params);
-                let need = quorum(active_cl);
                 let evidence = bc_accumulator.get(&propose_w).cloned().unwrap_or_default();
+                // В штатном режиме порог = 67% активной длины. В degraded-режиме
+                // (bootstrap-failsafe) — 67% присутствующих confirmer-ов: сеть
+                // продвигается тем, кто реально онлайн (спецификация «темп
+                // медианного активного набора»).
+                let present_cl: u64 = evidence
+                    .keys()
+                    .filter_map(|id| state.nodes.get(id).map(|n| n.chain_length))
+                    .sum();
+                let need = if degraded {
+                    quorum(present_cl)
+                } else {
+                    quorum(active_cl)
+                };
                 let mut cemented = weighted_cemented_hashes(&evidence, &state.nodes, need);
                 cemented.sort();
                 let prev_w = propose_w.saturating_sub(1);
@@ -808,7 +841,6 @@ const VDF_PROGRESS_CHUNKS: u64 = 10;
 
 /// Тайм-аут молчания ведущего: после стольких секунд без цементирования
 /// каскад запасных сдвигается на одну позицию (спецификация «Fallback cascade»).
-const FALLBACK_TIMEOUT_SECS: u64 = 120;
 /// Глубина хранения пооконных историй (пулы, победители, наборы подтвердивших).
 const HISTORY_BOUND: usize = 64;
 
@@ -859,9 +891,14 @@ struct NetCtx<'a> {
     last_cement_at: &'a mut Instant,
     prev_proposal_hash: &'a mut Hash32,
     fast_sync_lag_threshold: u64,
+    // Адаптивный таймаут перехвата ведущего (× длительности окна): по истечении
+    // каждого такого интервала молчания законного ведущего роль уходит на
+    // следующего запасного, терминально — на bootstrap (сеть не встаёт).
+    fallback_secs: u64,
     data_dir: &'a std::path::Path,
     params: &'static mt_genesis::ProtocolParams,
     store: &'a FsStore,
+    identity: &'a crate::identity::Identity,
     my_node: mt_state::NodeId,
     bootstrap_node_id: mt_state::NodeId,
 }
@@ -884,7 +921,7 @@ fn expected_proposer(ctx: &NetCtx, w: u64, silence_secs: u64) -> (mt_state::Node
     if w < 2 {
         return (ctx.bootstrap_node_id, 1);
     }
-    let depth_extra = (silence_secs / FALLBACK_TIMEOUT_SECS).min(254) as u8;
+    let depth_extra = (silence_secs / ctx.fallback_secs.max(1)).min(254) as u8;
     if depth_extra == 0 {
         if let Some(p) = ctx.winner_history.get(&(w - 2)) {
             return (*p, 1);
@@ -1281,7 +1318,7 @@ fn handle_protocol_message(
             // глубины на расхождение настенных часов между узлами.
             let silence = ctx.last_cement_at.elapsed().as_secs();
             let (exp_now, _) = expected_proposer(ctx, w, silence);
-            let (exp_next, _) = expected_proposer(ctx, w, silence + FALLBACK_TIMEOUT_SECS);
+            let (exp_next, _) = expected_proposer(ctx, w, silence + ctx.fallback_secs);
             let proposer_ok = header.proposer_node_id == exp_now
                 || header.proposer_node_id == exp_next
                 || header.proposer_node_id == ctx.bootstrap_node_id;
@@ -1304,7 +1341,10 @@ fn handle_protocol_message(
                 return Ok(());
             };
             let active_cl = active_chain_length_at(&ctx.state.nodes, w, ctx.params);
-            let need_quorum = quorum(active_cl);
+            // Failsafe (M4-INFO-10): конверт от bootstrap-узла принимается с
+            // порогом по присутствующим confirmer-ам (degraded mode). Конверты
+            // от любого другого ведущего — строгий 67% активной длины.
+            let degraded = header.proposer_node_id == ctx.bootstrap_node_id;
             // Проверка included_bundles (подтверждения окна w-1).
             let mut confirmers: Vec<mt_state::NodeId> = Vec::new();
             if w >= 1 {
@@ -1329,9 +1369,12 @@ fn handle_protocol_message(
                             confirmers.push(bc.node_id);
                         }
                     }
-                    if mt_consensus::validate_bundles_threshold(sum, active_cl).is_err() {
+                    if !degraded
+                        && mt_consensus::validate_bundles_threshold(sum, active_cl).is_err()
+                    {
                         eprintln!(
-                            "[consensus] w={w}: included_bundles {sum} < кворума {need_quorum} — skip"
+                            "[consensus] w={w}: included_bundles {sum} < кворума {} — skip",
+                            quorum(active_cl)
                         );
                         return Ok(());
                     }
@@ -1355,6 +1398,15 @@ fn handle_protocol_message(
                     ev_map.insert(bc.node_id, bc.clone());
                 }
             }
+            let present_cl: u64 = ev_map
+                .keys()
+                .filter_map(|id| ctx.state.nodes.get(id).map(|n| n.chain_length))
+                .sum();
+            let need_quorum = if degraded {
+                quorum(present_cl)
+            } else {
+                quorum(active_cl)
+            };
             if w >= 1 && ev_sum < need_quorum {
                 eprintln!(
                     "[consensus] w={w}: улики цементации {ev_sum} < кворума {need_quorum} — skip"
@@ -1563,6 +1615,53 @@ fn handle_protocol_message(
                         .insert(nid, rec_reveal);
                     bound_map(ctx.reveal_pool);
                     eprintln!("[lottery] принят билет от {} за окно {rw}", hex16(&nid));
+                    // Дозревание подтверждения: наше BC окна rw+1 несёт хэши
+                    // билетов окна rw. Опоздавший билет дополняет набор —
+                    // переиздаём BC, чтобы у всех confirmer-ов сошёлся
+                    // единогласный (на равных весах) цементируемый набор.
+                    let bw_own = rw + 1;
+                    if ctx.own_bc_cache.contains_key(&bw_own) {
+                        if let Some(t_r_bw) = ctx.t_r_history.get(&bw_own).copied() {
+                            let mut hashes: Vec<Hash32> = ctx
+                                .reveal_pool
+                                .get(&rw)
+                                .map(|m| m.values().map(reveal_hash).collect())
+                                .unwrap_or_default();
+                            hashes.sort();
+                            let stale = ctx
+                                .own_bc_cache
+                                .get(&bw_own)
+                                .map(|b| b.reveal_hashes != hashes)
+                                .unwrap_or(true);
+                            if stale {
+                                let mut bc = BundledConfirmation {
+                                    node_id: ctx.my_node,
+                                    endpoint: t_r_bw,
+                                    window_index: bw_own,
+                                    op_hashes: Vec::new(),
+                                    reveal_hashes: hashes,
+                                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+                                };
+                                let mut scope = Vec::new();
+                                bc.encode_signed_scope(&mut scope);
+                                if let Ok(sig) = sign(&ctx.identity.node_sk, &scope) {
+                                    bc.signature = sig;
+                                    ctx.own_bc_cache.insert(bw_own, bc.clone());
+                                    ctx.bc_accumulator
+                                        .entry(bw_own)
+                                        .or_default()
+                                        .insert(ctx.my_node, bc.clone());
+                                    let mut payload = Vec::new();
+                                    bc.encode(&mut payload);
+                                    let _ = broadcast_tx.send(ProtocolMessage::new(
+                                        MsgType::BundledConfirmation,
+                                        bw_own,
+                                        payload,
+                                    ));
+                                }
+                            }
+                        }
+                    }
                 } else {
                     eprintln!(
                         "[lottery] билет {} w={rw} не прошёл проверку",
