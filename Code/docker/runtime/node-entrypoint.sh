@@ -59,7 +59,7 @@ LABEL="${MONTANA_LABEL:-$ALIAS}"; COUNTRY="${MONTANA_COUNTRY:-}";
     st="$(/usr/local/bin/montana-node status --data-dir "$DATA_DIR" 2>/dev/null)"
     win="$(printf '%s' "$st" | grep current_window | grep -oE '[0-9]+' | head -1)"
     ph="$(printf '%s' "$st" | awk '/^phase/{print $3; exit}')"
-    nt="$(printf '%s' "$st" | grep node_table | grep -oE '[0-9]+' | head -1)"
+    nt="$(printf '%s' "$st" | grep -i "NodeTable" | grep -oE '[0-9]+' | head -1)"
     [ -n "$ph" ] && curl -sf -m 8 -X POST -H 'Content-Type: application/json' \
       --data "{\"node\":\"$ALIAS\",\"label\":\"$LABEL\",\"country\":\"$COUNTRY\",\"current_window\":${win:-0},\"phase\":\"$ph\",\"node_table\":${nt:-0},\"ok\":true}" \
       "$REPORT_URL" >/dev/null 2>&1
