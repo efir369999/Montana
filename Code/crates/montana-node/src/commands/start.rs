@@ -1137,6 +1137,22 @@ fn handle_protocol_message(
                             bc_payload,
                         ));
                     }
+                    // Сеть собирает окно дальше нашей головы — мы отстали.
+                    // Сигналим своим последним зацементированным конвертом:
+                    // сосед в ответ раздаст недостающие архивные конверты.
+                    if w > *ctx.current + 1 {
+                        if let Ok(Some(env)) = ctx.store.load_proposal_envelope(*ctx.current) {
+                            let _ = broadcast_tx.send(ProtocolMessage::new(
+                                MsgType::Proposal,
+                                *ctx.current,
+                                env,
+                            ));
+                            eprintln!(
+                                "[consensus] отстал (голова {}, сеть собирает {w}) — сигналю своим конвертом",
+                                *ctx.current
+                            );
+                        }
+                    }
                 }
                 return Ok(());
             }
@@ -1184,6 +1200,27 @@ fn handle_protocol_message(
                         "[consensus] cemented w={w} gap (current={}) — жду последовательного цементирования или быстрой синхронизации",
                         *ctx.current
                     );
+                } else if header.proposer_node_id != ctx.my_node {
+                    // Сосед вещает уже закрытое окно = он отстал. Раздаём ему
+                    // недостающие архивные конверты последовательно.
+                    let from = w + 1;
+                    let upto = (*ctx.current).min(w + 8);
+                    let mut served = 0u32;
+                    for w_re in from..=upto {
+                        if let Ok(Some(env)) = ctx.store.load_proposal_envelope(w_re) {
+                            let _ = broadcast_tx.send(ProtocolMessage::new(
+                                MsgType::Proposal,
+                                w_re,
+                                env,
+                            ));
+                            served += 1;
+                        }
+                    }
+                    if served > 0 {
+                        eprintln!(
+                            "[consensus] сосед на устаревшем окне {w} — повторно раздал {served} конверт(ов) до {upto}"
+                        );
+                    }
                 }
                 return Ok(());
             }
@@ -1498,6 +1535,27 @@ fn handle_protocol_message(
                         "[bc] принято подтверждение от {} за окно {bw}",
                         hex16(&node_id)
                     );
+                    // Подтверждение за уже закрытое окно = сосед отстал на
+                    // несколько окон (меньше порога быстрой синхронизации).
+                    // Повторно раздаём архивные зацементированные конверты,
+                    // чтобы он догнал последовательным применением.
+                    if bw < *ctx.current && node_id != ctx.my_node {
+                        let upto = (*ctx.current).min(bw + 8);
+                        for w_re in bw..=upto {
+                            if let Ok(Some(env)) = ctx.store.load_proposal_envelope(w_re) {
+                                let _ = broadcast_tx.send(ProtocolMessage::new(
+                                    MsgType::Proposal,
+                                    w_re,
+                                    env,
+                                ));
+                            }
+                        }
+                        eprintln!(
+                            "[consensus] сосед {} отстал (окно {bw} ≤ {}), повторно раздал конверты",
+                            hex16(&node_id),
+                            *ctx.current
+                        );
+                    }
                 } else {
                     eprintln!(
                         "[bc] подтверждение {} w={bw} не прошло проверку",
