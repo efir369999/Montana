@@ -69,9 +69,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let params = genesis_params();
 
     // Cross-machine M8: spawn network thread с собственным tokio runtime.
-    // Network событийный loop отделён от consensus loop (VDF compute) —
+    // Network событийный loop отделён от consensus loop (SSHA compute) —
     // separate OS thread предотвращает блокировку async задач CPU-heavy
-    // операциями подсчёта VDF.
+    // операциями подсчёта SSHA.
     let mut network_handle: Option<NetworkHandle> = None;
     if let (Some(listen_str), Some(manifest_path)) =
         (&args.listen_multiaddr, &args.genesis_manifest)
@@ -136,7 +136,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // Genesis cohort member = the compiled bootstrap node OR a force_active peer
     // pre-seeded into the genesis NodeTable (state.rs seeds both as Active
     // operators). Both start Active; every other node joins via the candidate
-    // VDF + admission path.
+    // SSHA + admission path.
     let is_genesis_member = is_genesis || state.nodes.contains(&my_node);
 
     // Phase Bootstrap = первая загрузка. Genesis-член (bootstrap или force_active,
@@ -185,12 +185,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             .target_chain_length
             .saturating_sub(lifecycle.candidate_progress);
         println!(
-            "candidate VDF    : прогресс {}/{}, осталось {} окон до регистрации",
+            "candidate SSHA    : прогресс {}/{}, осталось {} окон до регистрации",
             lifecycle.candidate_progress, lifecycle.target_chain_length, remaining
         );
     }
     println!();
-    println!("--- VDF тикает ---");
+    println!("--- SSHA тикает ---");
     println!();
 
     let session_start = Instant::now();
@@ -244,6 +244,20 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let mut own_bc_cache: BTreeMap<u64, BundledConfirmation> = BTreeMap::new();
     let mut pending_msgs: Vec<ProtocolMessage> = Vec::new();
     let mut last_cement_at = Instant::now();
+    // Перевещание последнего зацементированного конверта после рестарта:
+    // если процесс умер между цементированием и доставкой, ведомые получат
+    // конверт сейчас (идемпотентно: лишний конверт отбивается монотонностью).
+    if current >= 1 {
+        if let Ok(Some(env)) = store.load_proposal_envelope(current) {
+            if let Some(ref handle) = network_handle {
+                let _ =
+                    handle
+                        .broadcast_tx
+                        .send(ProtocolMessage::new(MsgType::Proposal, current, env));
+                eprintln!("[consensus] перевещаю архивный конверт w={current} после рестарта");
+            }
+        }
+    }
     // Собственные сохранённые часы — каноническое значение своего последнего
     // витка: без этой записи узел после рестарта не может перепубликовать
     // артефакты ещё не зацементированного окна (архив пуст в первых окнах).
@@ -327,14 +341,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         let next_window = current + 1;
 
         if timechain.last_window < next_window {
-            // Спецификация «Непрерывность VDF»: цепочка следующего окна
+            // Спецификация «непрерывность последовательной SHA-256 цепочки (SSHA)»: цепочка следующего окна
             // вычисляется непрерывно; финализация и приём билетов идут
             // параллельно — вычитка сети между порциями витка.
             let tick_seed = timechain.t_r;
             let next_t_r = vdf_step_chunked(
                 &tick_seed,
                 effective_d,
-                "TimeChain VDF",
+                "TimeChain SSHA",
                 next_window,
                 || {
                     if let Some(ref mut handle) = network_handle {
@@ -402,7 +416,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 lifecycle.candidate_endpoint = vdf_step_chunked(
                     &lifecycle.candidate_endpoint,
                     effective_d,
-                    "Candidate VDF",
+                    "Candidate SSHA",
                     next_window,
                     || {},
                 );
@@ -687,6 +701,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 for bc in evidence.values() {
                     bc.encode(&mut envelope_payload);
                 }
+                // Архив до рассылки: зацементированный конверт обязан пережить
+                // падение процесса — после рестарта он перевещается из архива.
+                if let Err(e) = store.archive_proposal_envelope(propose_w, &envelope_payload) {
+                    eprintln!(
+                        "[archive] ОТКАЗ записи конверта w={propose_w} в {}/proposals: {e:?}",
+                        data_dir.display()
+                    );
+                }
                 if let Some(ref handle) = network_handle {
                     let envelope = ProtocolMessage::new(
                         MsgType::Proposal,
@@ -705,11 +727,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         );
                     }
                 }
-                store
-                    .archive_proposal_envelope(propose_w, &envelope_payload)
-                    .map_err(|e| {
-                        NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}"))
-                    })?;
                 recent_roots.insert(propose_w, post_root);
                 bound_map(&mut recent_roots);
                 prev_proposal_hash = proposal_hash(&header);
@@ -728,7 +745,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     println!("--- сессия завершена ---");
     println!("phase            : {:?}", lifecycle.phase);
     println!(
-        "candidate VDF    : {}/{}",
+        "candidate SSHA    : {}/{}",
         lifecycle.candidate_progress, lifecycle.target_chain_length
     );
     println!("обработано окон  : {session_windows} (только в Active phase)");
@@ -1405,11 +1422,14 @@ fn handle_protocol_message(
                 ctx.timechain.t_r = header.timechain_value;
                 ctx.timechain.last_window = w;
             }
-            ctx.store
-                .archive_proposal_envelope(w, &msg.payload)
-                .map_err(|e| {
-                    NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}"))
-                })?;
+            // Архив — наблюдаемость, не консенсус: отказ записи логируем
+            // громко (с путём), узел продолжает работу.
+            if let Err(e) = ctx.store.archive_proposal_envelope(w, &msg.payload) {
+                eprintln!(
+                    "[archive] ОТКАЗ записи конверта w={w} в {}/proposals: {e:?}",
+                    ctx.data_dir.display()
+                );
+            }
             *ctx.prev_proposal_hash = proposal_hash(&header);
             ctx.last_proposer_cement.insert(header.proposer_node_id, w);
             *ctx.last_cement_at = Instant::now();
