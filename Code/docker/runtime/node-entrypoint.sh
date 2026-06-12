@@ -52,11 +52,11 @@ fi
 # Autonomous heartbeat → explorer API. Any node self-reports; the explorer
 # auto-discovers it (no manual list). Pure outbound HTTPS, works behind NAT.
 REPORT_URL="${MONTANA_REPORT_URL:-https://montana.quest/api/node-report}"
-ALIAS="${MONTANA_ALIAS:-$(/usr/local/bin/montana-node inspect --data-dir "$DATA_DIR" 2>/dev/null | awk '/^node_id/{print substr($3,1,8)}')}"
+ALIAS="${MONTANA_ALIAS:-$(runuser -u montana -- /usr/local/bin/montana-node inspect --data-dir "$DATA_DIR" 2>/dev/null | awk '/^node_id/{print substr($3,1,8)}')}"
 LABEL="${MONTANA_LABEL:-$ALIAS}"; COUNTRY="${MONTANA_COUNTRY:-}"; 
 (
   while true; do
-    st="$(/usr/local/bin/montana-node status --data-dir "$DATA_DIR" 2>/dev/null)"
+    st="$(runuser -u montana -- /usr/local/bin/montana-node status --data-dir "$DATA_DIR" 2>/dev/null)"
     win="$(printf '%s' "$st" | grep current_window | grep -oE '[0-9]+' | head -1)"
     ph="$(printf '%s' "$st" | awk '/^phase/{print $3; exit}')"
     nt="$(printf '%s' "$st" | grep -i "NodeTable" | grep -oE '[0-9]+' | head -1)"
