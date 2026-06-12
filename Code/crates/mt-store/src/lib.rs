@@ -457,6 +457,16 @@ impl FsStore {
         let bytes = fs::read(&path)?;
         Ok(Some(decode_proposal_header(&bytes)?))
     }
+
+    // Сырые байты архивированного конверта (header + списки подтверждений) —
+    // для восстановления пооконных историй консенсуса после рестарта узла.
+    pub fn load_proposal_envelope(&self, window: u64) -> Result<Option<Vec<u8>>, StoreError> {
+        let path = self.proposal_path(window);
+        if !path.exists() {
+            return Ok(None);
+        }
+        Ok(Some(fs::read(&path)?))
+    }
 }
 
 // ============ Phase D: Crash recovery (meta last_cemented_window) ============

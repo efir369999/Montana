@@ -14,8 +14,8 @@ use mt_entry::{
 };
 use mt_genesis::genesis_params;
 use mt_lottery::{
-    bundle_hash, compute_endpoint, lottery_weight, quorum, reveal_hash, seniority_term,
-    validate_bundle, validate_reveal, weighted_ticket_node, BundledConfirmation, VdfReveal,
+    bundle_hash, compute_endpoint, quorum, reveal_hash, validate_bundle, validate_reveal,
+    weighted_ticket_node, BundledConfirmation, VdfReveal,
 };
 use mt_merkle::{empty_internal, SparseMerkleTree, TREE_DEPTH};
 use mt_net::{MsgType, ProtocolMessage};
@@ -207,11 +207,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // DEV-022: bootstrap_node_id used both in main drain (Proposal verify) and
     // active arm (Lookback proposer selection); hoist to outer scope.
     let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
-    // Build 31: hold raw bytes of last cemented envelope (header + bundle_count + bundles)
-    // so proposer can archive the full envelope, not just the header (so explorer's
-    // /api/window/<W> returns real bundles array, not just empty bundle_count from header).
-    #[allow(unused_assignments)]
-    let mut last_cemented_envelope: Option<Vec<u8>> = None;
     // DEV-023: track per-proposer last cemented window so each node can decide
     // when an elected proposer has gone silent (≥ K_FALLBACK_WINDOWS windows
     // without producing cement). Bootstrap is the canonical fallback.
@@ -243,535 +238,70 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // the trusted set a reconstructed snapshot root must match.
     let mut recent_roots: BTreeMap<u64, Hash32> = BTreeMap::new();
 
-    loop {
-        // M9 Phase 2: drain incoming Proposal envelopes от bootstrap. Decode window_index
-        // и proposer_node_id напрямую из 3722-байтного header layout без полного
-        // deserialize (signature валидация в M10). Для каждого нового окна — apply_proposal
-        // с reconstructed singleton ProposalSettle (winner = bootstrap, confirmers = [bootstrap]).
-        // Followers: current_window растёт в lockstep с Moscow.
-        if let Some(ref mut handle) = network_handle {
-            // DEV-022: bootstrap_node_id hoisted to outer scope above
-            let mut bc_count = 0usize;
-            while let Ok(msg) = handle.incoming_rx.try_recv() {
-                match msg.msg_type {
-                    MsgType::Proposal => {
-                        // M9 Phase 2: bootstrap Proposal envelope (3722 B header layout).
-                        // Decode window_index + winner + proposer без полного deserialize
-                        // (signature валидация в M10), apply_proposal with reconstructed
-                        // singleton ProposalSettle. Followers stay in lockstep with Moscow.
-                        if msg.payload.len() < 3722 {
-                            eprintln!(
-                                "[consensus] Proposal envelope wrong size {} (expected >= 3722) — skip",
-                                msg.payload.len()
-                            );
-                            continue;
-                        }
-                        let is_cemented = msg.payload.len() > 3722;
-                        let window_index = u64::from_le_bytes([
-                            msg.payload[32],
-                            msg.payload[33],
-                            msg.payload[34],
-                            msg.payload[35],
-                            msg.payload[36],
-                            msg.payload[37],
-                            msg.payload[38],
-                            msg.payload[39],
-                        ]);
-                        let mut winner_id = [0u8; 32];
-                        winner_id.copy_from_slice(&msg.payload[332..364]);
-                        let mut proposer_node_id = [0u8; 32];
-                        proposer_node_id.copy_from_slice(&msg.payload[364..396]);
-                        // DEV-022: record cemented winner_id for Lookback proposer selection
-                        winner_history.insert(window_index, winner_id);
-                        // DEV-023: record proposer activity for fallback cascade decisions
-                        last_proposer_cement.insert(proposer_node_id, window_index);
-                        while winner_history.len() > 64 {
-                            let oldest = *winner_history.keys().next().unwrap();
-                            winner_history.remove(&oldest);
-                        }
-
-                        if proposer_node_id != bootstrap_node_id {
-                            eprintln!("[consensus] Proposal от не-bootstrap proposer, skip");
-                            continue;
-                        }
-                        // M10: cryptographic verification of the bootstrap
-                        // signature over signed_scope (bytes 0..413). Rejects
-                        // any forged or tampered Proposal — closes the M9
-                        // Phase 2 deferred-signature gate symmetrically for
-                        // the replay path and (via recent_roots) for fast-sync.
-                        let mut sig_bytes = [0u8; mt_crypto::SIGNATURE_SIZE];
-                        sig_bytes.copy_from_slice(&msg.payload[413..3722]);
-                        let sig = mt_crypto::Signature::from_array(sig_bytes);
-                        let bootstrap_pk =
-                            mt_crypto::PublicKey::from_array(params.bootstrap_node_pubkey);
-                        if !mt_crypto::verify(&bootstrap_pk, &msg.payload[0..413], &sig) {
-                            eprintln!(
-                                "[consensus] Proposal w={window_index} с невалидной подписью bootstrap — skip"
-                            );
-                            continue;
-                        }
-                        // Record this bootstrap Proposal's state_root as a trusted
-                        // fast-sync anchor (offset 172..204), bounded to recent windows.
-                        let mut sr = [0u8; 32];
-                        sr.copy_from_slice(&msg.payload[172..204]);
-                        recent_roots.insert(window_index, sr);
-                        while recent_roots.len() > 64 {
-                            let oldest = *recent_roots.keys().next().unwrap();
-                            recent_roots.remove(&oldest);
-                        }
-                        // DEV-017 follower t_r history: extract proposer's T_r(W)
-                        // from Proposal envelope (offset 204..236 = timechain_value
-                        // field) so incoming BCs from other followers validate
-                        // against the authoritative T_r, not the follower's own
-                        // (out-of-sync) timechain.t_r.
-                        let mut t_r_w_extracted = [0u8; 32];
-                        t_r_w_extracted.copy_from_slice(&msg.payload[204..236]);
-                        t_r_history.insert(window_index, t_r_w_extracted);
-                        while t_r_history.len() > 64 {
-                            let oldest = *t_r_history.keys().next().unwrap();
-                            t_r_history.remove(&oldest);
-                        }
-                        // Candidate envelope (size == 3722, no bundles) is NOT applied:
-                        // it serves as a notification "window W is being proposed,
-                        // send me your BC". Active followers respond with a BC.
-                        if !is_cemented {
-                            // Active follower: compute own BC for this window and
-                            // broadcast back to the proposer (and to peers).
-                            let am_active_in_table = state.nodes.get(&my_node).is_some();
-                            if am_active_in_table && my_node != bootstrap_node_id {
-                                let mut t_r_w = [0u8; 32];
-                                t_r_w.copy_from_slice(&msg.payload[204..236]);
-                                let cba = mt_timechain::cemented_bundle_aggregate(
-                                    window_index.saturating_sub(2),
-                                    &[],
-                                );
-                                let endpoint = mt_lottery::compute_endpoint(
-                                    &t_r_w,
-                                    &cba,
-                                    &my_node,
-                                    window_index,
-                                );
-                                // DEV-020 follower Reveal: вычислить и broadcast
-                                // собственный VdfReveal для текущего окна.
-                                let mut own_reveal = VdfReveal {
-                                    node_id: my_node,
-                                    window_index,
-                                    endpoint,
-                                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
-                                };
-                                let mut reveal_scope = Vec::new();
-                                own_reveal.encode_signed_scope(&mut reveal_scope);
-                                own_reveal.signature = sign(&identity.node_sk, &reveal_scope)
-                                    .map_err(NodeError::Crypto)?;
-                                let own_reveal_hash = mt_lottery::reveal_hash(&own_reveal);
-                                // Store own reveal in pool
-                                reveal_pool
-                                    .entry(window_index)
-                                    .or_default()
-                                    .insert(my_node, own_reveal.clone());
-                                while reveal_pool.len() > 64 {
-                                    let oldest = *reveal_pool.keys().next().unwrap();
-                                    reveal_pool.remove(&oldest);
-                                }
-                                // Broadcast Reveal envelope to peers
-                                let mut reveal_payload = Vec::new();
-                                own_reveal.encode(&mut reveal_payload);
-                                let reveal_env = ProtocolMessage::new(
-                                    MsgType::VdfReveal,
-                                    window_index,
-                                    reveal_payload,
-                                );
-                                let _ = handle.broadcast_tx.send(reveal_env);
-                                // Build BC with reveal_hashes from pool (own + any peer reveals received earlier)
-                                let mut bc_reveal_hashes: Vec<Hash32> = reveal_pool
-                                    .get(&window_index)
-                                    .map(|m| m.values().map(mt_lottery::reveal_hash).collect())
-                                    .unwrap_or_default();
-                                bc_reveal_hashes.sort(); // canonical order
-                                let _ = own_reveal_hash;
-                                let mut bc = BundledConfirmation {
-                                    node_id: my_node,
-                                    endpoint: t_r_w,
-                                    window_index,
-                                    op_hashes: Vec::new(),
-                                    reveal_hashes: bc_reveal_hashes,
-                                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
-                                };
-                                let mut bc_scope = Vec::new();
-                                bc.encode_signed_scope(&mut bc_scope);
-                                bc.signature = sign(&identity.node_sk, &bc_scope)
-                                    .map_err(NodeError::Crypto)?;
-                                let mut bc_payload = Vec::new();
-                                bc.encode(&mut bc_payload);
-                                let envelope = ProtocolMessage::new(
-                                    MsgType::BundledConfirmation,
-                                    window_index,
-                                    bc_payload,
-                                );
-                                if handle.broadcast_tx.send(envelope).is_ok() {
-                                    eprintln!("[bc] broadcast own BC for window {window_index}");
-                                }
-                            }
-                            // Candidate not advanced; cemented envelope will advance current.
-                            continue;
-                        }
-                        // Cemented envelope: parse bundles, validate, multi-confirmer apply.
-                        let mut bundles: Vec<BundledConfirmation> = Vec::new();
-                        let payload = &msg.payload;
-                        if payload.len() >= 3722 + 2 {
-                            let mut bc_buf = [0u8; 2];
-                            bc_buf.copy_from_slice(&payload[3722..3724]);
-                            let bundle_count = u16::from_le_bytes(bc_buf) as usize;
-                            let mut off = 3724;
-                            let mut ok = true;
-                            for _ in 0..bundle_count {
-                                match BundledConfirmation::decode(&payload[off..]) {
-                                    Ok((bc, used)) => {
-                                        bundles.push(bc);
-                                        off += used;
-                                    },
-                                    Err(e) => {
-                                        eprintln!(
-                                            "[consensus] cemented bundle decode failed: {e:?} — skip envelope"
-                                        );
-                                        ok = false;
-                                        break;
-                                    },
-                                }
-                            }
-                            if !ok {
-                                continue;
-                            }
-                        }
-                        let mut t_r_w_cemented = [0u8; 32];
-                        t_r_w_cemented.copy_from_slice(&msg.payload[204..236]);
-                        let mut valid_confirmers: Vec<mt_state::NodeId> = Vec::new();
-                        let mut any_invalid = false;
-                        for bc in &bundles {
-                            if mt_lottery::validate_bundle(bc, &state.nodes, &t_r_w_cemented)
-                                .is_ok()
-                            {
-                                valid_confirmers.push(bc.node_id);
-                            } else {
-                                any_invalid = true;
-                            }
-                        }
-                        if any_invalid {
-                            eprintln!(
-                                "[consensus] cemented w={window_index}: некоторые bundles не прошли validate, продолжаю с валидными {}",
-                                valid_confirmers.len()
-                            );
-                        }
-                        if valid_confirmers.is_empty() && !bundles.is_empty() {
-                            eprintln!(
-                                "[consensus] cemented w={window_index}: 0 валидных bundles — skip"
-                            );
-                            continue;
-                        }
-                        // Fallback: if bundles empty (legacy 3722-only envelope), treat as
-                        // singleton with proposer as sole confirmer. Unreachable here since
-                        // is_cemented = payload.len() > 3722; but defensive.
-                        if valid_confirmers.is_empty() {
-                            valid_confirmers.push(proposer_node_id);
-                        }
-                        // M7 fast-sync: if a snapshot is already in flight, ignore
-                        // cemented proposals until apply.
-                        // DEV-018c: drop stale in-flight client if no response within 10s.
-                        // Without this, a single unanswered FastSyncRequest stalls catch-up
-                        // forever — broadcast may be lost, peer may be unable to serve,
-                        // chunks may be partial and never complete.
-                        if let Some(deadline) = fast_sync_deadline {
-                            if Instant::now() > deadline {
-                                eprintln!("[m7] fast-sync deadline exceeded — drop client, retry");
-                                fast_sync = None;
-                                fast_sync_deadline = None;
-                            }
-                        }
-                        if fast_sync.is_some() {
-                            continue;
-                        }
-                        // Far behind → request a fast-sync snapshot instead of waiting
-                        // for many cemented envelopes (one per window) to catch up.
-                        if window_index.saturating_sub(current) > fast_sync_lag_threshold {
-                            let mut fs_payload = Vec::new();
-                            mt_net::FastSyncRequest {
-                                anchor_window: window_index,
-                                resume_offset: 0,
-                            }
-                            .encode(&mut fs_payload);
-                            match handle.broadcast_tx.send(ProtocolMessage::new(
-                                MsgType::FastSyncRequest,
-                                msg.request_id,
-                                fs_payload,
-                            )) {
-                                Ok(()) => {
-                                    eprintln!(
-                                        "[m7] {} windows behind (> {fast_sync_lag_threshold}) \u{2192} fast-sync anchored at window {window_index}",
-                                        window_index.saturating_sub(current)
-                                    );
-                                    fast_sync = Some(mt_sync::FastSyncClient::new());
-                                    fast_sync_deadline =
-                                        Some(Instant::now() + std::time::Duration::from_secs(10));
-                                },
-                                Err(e) => eprintln!("[m7] FastSyncRequest broadcast failed: {e}"),
-                            }
-                            continue;
-                        }
-                        // One cemented envelope = one window advance.
-                        if window_index != current + 1 {
-                            eprintln!(
-                                "[consensus] cemented w={window_index} gap (current={current}) — wait for sequential cemented or fast-sync"
-                            );
-                            continue;
-                        }
-                        let settle = ProposalSettle {
-                            window_w: window_index,
-                            winner_id,
-                            cemented_confirmers: valid_confirmers.clone(),
-                        };
-                        let _post_state_root = apply_proposal(
-                            &mut state.accounts,
-                            &mut state.nodes,
-                            &state.candidates,
-                            &settle,
-                            params,
-                        );
-                        current = window_index;
-                        save_current_window(&data_dir, current)?;
-                        eprintln!(
-                            "[consensus] applied cemented Proposal w={current} (confirmers={})",
-                            valid_confirmers.len()
-                        );
-                        let mut applied_count = 0u64;
-                        while current < window_index {
-                            let next_w = current + 1;
-                            let settle = ProposalSettle {
-                                window_w: next_w,
-                                winner_id,
-                                cemented_confirmers: vec![proposer_node_id],
-                            };
-                            let _post_state_root = apply_proposal(
-                                &mut state.accounts,
-                                &mut state.nodes,
-                                &state.candidates,
-                                &settle,
-                                params,
-                            );
-                            current = next_w;
-                            applied_count += 1;
-                        }
-                        save_current_window(&data_dir, current)?;
-                        eprintln!(
-                            "[consensus] applied {applied_count} window(s) from peer Proposal → current_window={current}"
-                        );
-                    },
-                    MsgType::FastSyncRequest => {
-                        // M7 server-side: peer requested a snapshot anchored at a window.
-                        // Build a Snapshot from the live state, chunk into wire format,
-                        // and broadcast the chunks. Requester filters by request_id;
-                        // unrelated peers see the broadcast and drop it via msg_type +
-                        // request_id mismatch.
-                        match mt_net::FastSyncRequest::decode(&msg.payload) {
-                            Ok(req) => {
-                                let snap = mt_sync::Snapshot::from_tables(
-                                    current,
-                                    &state.accounts,
-                                    &state.nodes,
-                                    &state.candidates,
-                                );
-                                let chunks = snap.to_wire_chunks(32);
-                                let total = chunks.len();
-                                for chunk in chunks {
-                                    let table_id_byte = match chunk.table_id {
-                                        mt_sync::FastSyncTableId::Account => {
-                                            mt_net::TableId::Account
-                                        },
-                                        mt_sync::FastSyncTableId::Node => mt_net::TableId::Node,
-                                        mt_sync::FastSyncTableId::Candidate => {
-                                            mt_net::TableId::Candidate
-                                        },
-                                        mt_sync::FastSyncTableId::Proposals => {
-                                            mt_net::TableId::Proposals
-                                        },
-                                    };
-                                    let mut flat: Vec<u8> = Vec::new();
-                                    for r in &chunk.records {
-                                        flat.extend_from_slice(r);
-                                    }
-                                    let wire_chunk = mt_net::FastSyncResponseChunk {
-                                        chunk_index: chunk.chunk_index,
-                                        total_chunks: chunk.total_chunks,
-                                        table_id: table_id_byte,
-                                        record_count: chunk.records.len() as u32,
-                                        // DEV-018: stamp current cemented head into every chunk
-                                        // so receiver can: (a) discard chunks from peers at/below
-                                        // its own current, (b) verify against the correct
-                                        // recent_roots[anchor_window] entry, not any matching root.
-                                        anchor_window: current,
-                                        records: flat,
-                                    };
-                                    let mut payload = Vec::new();
-                                    wire_chunk.encode(&mut payload);
-                                    let envelope = ProtocolMessage::new(
-                                        MsgType::FastSyncResponse,
-                                        msg.request_id,
-                                        payload,
-                                    );
-                                    if let Err(e) = handle.broadcast_tx.send(envelope) {
-                                        eprintln!("[m7] fastsync response broadcast failed: {e}");
-                                        break;
-                                    }
-                                }
-                                eprintln!(
-                                    "[m7] served FastSync snapshot: anchor_window={current} req={} chunks={total}",
-                                    req.anchor_window
-                                );
-                            },
-                            Err(e) => {
-                                eprintln!("[m7] FastSyncRequest decode failed: {e:?}");
-                            },
-                        }
-                    },
-                    MsgType::FastSyncResponse => {
-                        if let Some(mut client) = fast_sync.take() {
-                            // DEV-018: peek chunk anchor_window before accepting. Drop
-                            // chunks from peers at <= our current (they cannot help us
-                            // catch up). This avoids the StateRootUnmatched cascade where
-                            // we'd otherwise import a peer's stale snapshot, fail finalize,
-                            // and retry on every cemented Proposal.
-                            let chunk_anchor = mt_net::FastSyncResponseChunk::decode(&msg.payload)
-                                .ok()
-                                .map(|c| c.anchor_window)
-                                .unwrap_or(0);
-                            if chunk_anchor <= current {
-                                eprintln!(
-                                    "[m7] discard FastSyncResponse anchor={chunk_anchor} <= current={current} (peer not ahead) — drop client, retry on next cemented"
-                                );
-                                // Drop the client so the next cemented Proposal triggers
-                                // a fresh FastSyncRequest. Keeping client = Some would
-                                // block re-trigger via the `fast_sync.is_some()` guard
-                                // above and we'd stall forever if the first response
-                                // happens to come from a stale peer.
-                                drop(client);
-                                fast_sync_deadline = None;
-                                continue;
-                            }
-                            let parsed = mt_net::FastSyncResponseChunk::decode(&msg.payload)
-                                .map_err(|e| format!("decode: {e:?}"))
-                                .and_then(|w| {
-                                    crate::commands::fastsync::wire_chunk_to_sync(w)
-                                        .map_err(|e| format!("wire: {e:?}"))
-                                });
-                            match parsed {
-                                Ok(chunk) => match client.accept_chunk(chunk) {
-                                    Ok(mt_sync::AcceptOutcome::Complete) => {
-                                        match client.finalize(&recent_roots) {
-                                            Ok((window, tables)) => {
-                                                state.apply_fast_sync(
-                                                    tables, &data_dir, window,
-                                                )?;
-                                                current = window;
-                                                save_current_window(&data_dir, current)?;
-                                                fast_sync_deadline = None;
-                                                eprintln!("[m7] fast-sync complete \u{2192} state replaced, current_window={current}");
-                                            },
-                                            Err(e) => eprintln!(
-                                                "[m7] fast-sync finalize rejected: {e:?} \u{2014} retry on next lag"
-                                            ),
-                                        }
-                                    },
-                                    Ok(mt_sync::AcceptOutcome::Progress { received, total }) => {
-                                        eprintln!("[m7] fast-sync chunk {received}/{total}");
-                                        fast_sync = Some(client);
-                                    },
-                                    Err(e) => eprintln!(
-                                        "[m7] fast-sync chunk rejected: {e:?} \u{2014} discard, retry on next lag"
-                                    ),
-                                },
-                                Err(reason) => {
-                                    eprintln!("[m7] FastSyncResponse {reason}");
-                                    fast_sync = Some(client);
-                                },
-                            }
-                        }
-                    },
-                    MsgType::VdfReveal => {
-                        // DEV-020: incoming peer Reveal — validate + insert into reveal_pool.
-                        // Proposer на cement-time использует cemented Reveal set для winner
-                        // determination (DEV-021).
-                        if let Ok((rec_reveal, _)) = VdfReveal::decode(&msg.payload) {
-                            let exp_t_r = t_r_history
-                                .get(&rec_reveal.window_index)
-                                .copied()
-                                .unwrap_or(timechain.t_r);
-                            let cba = mt_timechain::cemented_bundle_aggregate(
-                                rec_reveal.window_index.saturating_sub(2),
-                                &[],
-                            );
-                            if mt_lottery::validate_reveal(
-                                &rec_reveal,
-                                &state.nodes,
-                                &exp_t_r,
-                                &cba,
-                                rec_reveal.window_index,
-                            )
-                            .is_ok()
-                            {
-                                let nid = rec_reveal.node_id;
-                                let w = rec_reveal.window_index;
-                                reveal_pool.entry(w).or_default().insert(nid, rec_reveal);
-                                eprintln!(
-                                    "[dev-020] accepted Reveal from {} for w={w}",
-                                    hex16(&nid)
-                                );
-                                while reveal_pool.len() > 64 {
-                                    let oldest = *reveal_pool.keys().next().unwrap();
-                                    reveal_pool.remove(&oldest);
-                                }
-                            }
-                        }
-                    },
-                    MsgType::BundledConfirmation => {
-                        // DEV-012 Phase B: validate incoming BC and insert into accumulator.
-                        // Quorum check + cementing is done at the top of the Active loop.
-                        bc_count += 1;
-                        match BundledConfirmation::decode(&msg.payload) {
-                            Ok((bc, _used)) => {
-                                // expected_endpoint = my own t_r at bc.window_index. For
-                                // current-window BCs this is timechain.t_r; for past windows
-                                // we'd need history. Simplification: validate against
-                                // current t_r only; older BCs may fail and be ignored.
-                                let expected_t_r = t_r_history
-                                    .get(&bc.window_index)
-                                    .copied()
-                                    .unwrap_or(timechain.t_r);
-                                if mt_lottery::validate_bundle(&bc, &state.nodes, &expected_t_r)
-                                    .is_ok()
-                                {
-                                    let node_id = bc.node_id;
-                                    let w = bc.window_index;
-                                    bc_accumulator.entry(w).or_default().insert(node_id, bc);
-                                    eprintln!(
-                                        "[bc] accepted BC from {} for window {w}",
-                                        hex16(&node_id)
-                                    );
-                                } else {
-                                    eprintln!(
-                                        "[bc] BC validate failed for {} w={}",
-                                        hex16(&bc.node_id),
-                                        bc.window_index
-                                    );
-                                }
-                            },
-                            Err(e) => eprintln!("[bc] decode failed: {e:?}"),
-                        }
-                    },
-                    _ => {},
+    // Пооконные истории консенсуса (ограничены HISTORY_BOUND окнами).
+    let mut lottery_history: BTreeMap<u64, Vec<mt_lottery::Candidate>> = BTreeMap::new();
+    let mut bc_set_history: BTreeMap<u64, Vec<mt_state::NodeId>> = BTreeMap::new();
+    let mut own_bc_cache: BTreeMap<u64, BundledConfirmation> = BTreeMap::new();
+    let mut pending_msgs: Vec<ProtocolMessage> = Vec::new();
+    let mut last_cement_at = Instant::now();
+    // Восстановление историй из архива зацементированных конвертов после
+    // рестарта: набор подтвердивших, победители, значения часов.
+    for w in current.saturating_sub(8)..=current {
+        if let Ok(Some(env)) = store.load_proposal_envelope(w) {
+            if let Some(h) = parse_header(&env) {
+                t_r_history.insert(w, h.timechain_value);
+                if w >= 1 {
+                    winner_history.insert(w - 1, h.winner_id);
                 }
+                if let Some((bundles_prev, _evidence)) = parse_envelope_bundles(&env) {
+                    if w >= 1 {
+                        let mut ids: Vec<mt_state::NodeId> =
+                            bundles_prev.iter().map(|b| b.node_id).collect();
+                        ids.sort();
+                        bc_set_history.insert(w - 1, ids);
+                    }
+                }
+                prev_proposal_hash = proposal_hash(&h);
             }
-            if bc_count > 0 {
-                eprintln!("[consensus] drained {bc_count} BundledConfirmation envelope(s) — DEV-012 Phase A scaffold (no validation yet)");
-            }
+        }
+    }
+
+    loop {
+        // Эффективное D пере-считывается каждый виток (адаптация на границе τ₂
+        // происходит в едином переходе состояния settle_and_bookkeep).
+        effective_d = args.d_test_override.unwrap_or(timechain.current_d);
+        macro_rules! net_ctx {
+            () => {
+                NetCtx {
+                    state: &mut state,
+                    current: &mut current,
+                    timechain: &mut timechain,
+                    recent_roots: &mut recent_roots,
+                    t_r_history: &mut t_r_history,
+                    reveal_pool: &mut reveal_pool,
+                    bc_accumulator: &mut bc_accumulator,
+                    winner_history: &mut winner_history,
+                    lottery_history: &mut lottery_history,
+                    bc_set_history: &mut bc_set_history,
+                    last_proposer_cement: &mut last_proposer_cement,
+                    own_bc_cache: &mut own_bc_cache,
+                    pending_msgs: &mut pending_msgs,
+                    fast_sync: &mut fast_sync,
+                    fast_sync_deadline: &mut fast_sync_deadline,
+                    last_cement_at: &mut last_cement_at,
+                    prev_proposal_hash: &mut prev_proposal_hash,
+                    fast_sync_lag_threshold,
+                    data_dir: &data_dir,
+                    params,
+                    store: &store,
+                    my_node,
+                    bootstrap_node_id,
+                }
+            };
+        }
+        if let Some(ref mut handle) = network_handle {
+            let mut ctx = net_ctx!();
+            drain_network(&mut ctx, handle)?;
         }
 
         if STOP.load(Ordering::SeqCst) {
@@ -787,18 +317,77 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             }
         }
 
-        let window_start = Instant::now();
+        // Окно, которое сеть закрывает следующим.
         let next_window = current + 1;
 
-        let next_t_r = vdf_step_chunked(&timechain.t_r, effective_d, "TimeChain VDF", next_window);
+        if timechain.last_window < next_window {
+            // Спецификация «Непрерывность VDF»: цепочка следующего окна
+            // вычисляется непрерывно; финализация и приём билетов идут
+            // параллельно — вычитка сети между порциями витка.
+            let tick_seed = timechain.t_r;
+            let next_t_r = vdf_step_chunked(
+                &tick_seed,
+                effective_d,
+                "TimeChain VDF",
+                next_window,
+                || {
+                    if let Some(ref mut handle) = network_handle {
+                        let mut ctx = net_ctx!();
+                        if let Err(e) = drain_network(&mut ctx, handle) {
+                            eprintln!("[drain] посреди витка: {e:?}");
+                        }
+                    }
+                },
+            );
+            // Сверка с сетевым значением, если окно уже видели в конверте
+            // (или его успел применить drain посреди нашего витка).
+            if let Some(known) = t_r_history.get(&next_window) {
+                if *known != next_t_r {
+                    return Err(NodeError::InvalidArguments(format!(
+                        "расхождение цепочки времени в окне {next_window}: сеть ≠ локально"
+                    )));
+                }
+            }
+            if timechain.last_window < next_window {
+                timechain.t_r = next_t_r;
+                timechain.last_window = next_window;
+            }
+            t_r_history.insert(next_window, next_t_r);
+            bound_map(&mut t_r_history);
+        } else {
+            // Виток этого окна уже посчитан; ждём цементирования из сети.
+            std::thread::sleep(Duration::from_millis(50));
+        }
 
-        // DEV-012 follower mode: set to true when this iteration is a follower
-        // (Active + NodeTable.len() > 1), in which case the post-match epilogue
-        // skips current_window advance — the only way the cemented head moves
-        // is via apply_proposal from the bootstrap proposer at the start of
-        // the next iteration. This keeps Frankfurt / Helsinki / Armenia in
-        // lockstep with Moscow until M9 Phase 2 multi-confirmer is wired.
-        let mut follower_skip = false;
+        // Каждый Active узел публикует артефакты окна от канонических часов:
+        // билет (VDF_Reveal) окна next_window + подтверждение
+        // (BundledConfirmation) с хэшами билетов предыдущего окна. Билет окна
+        // next_window цементируется уликами окна next_window+1, поэтому
+        // публикация уместна и тогда, когда часы продвинул конверт из сети.
+        if lifecycle.phase == NodePhase::Active
+            && state.nodes.get(&my_node).is_some()
+            && !own_bc_cache.contains_key(&next_window)
+        {
+            if let Some(t_r_w) = t_r_history.get(&next_window).copied() {
+                publish_window_artifacts(
+                    &state,
+                    &mut reveal_pool,
+                    &mut bc_accumulator,
+                    &mut own_bc_cache,
+                    &bc_set_history,
+                    &identity,
+                    my_node,
+                    next_window,
+                    &t_r_w,
+                    network_handle.as_ref().map(|h| &h.broadcast_tx),
+                )?;
+            }
+        }
+
+        if current >= next_window {
+            save_progress(&data_dir, &state, &timechain, &lifecycle, current)?;
+            continue;
+        }
 
         match lifecycle.phase {
             NodePhase::Bootstrap => unreachable!("Bootstrap → CandidateVdf transition выше"),
@@ -808,6 +397,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     effective_d,
                     "Candidate VDF",
                     next_window,
+                    || {},
                 );
                 lifecycle.candidate_progress = lifecycle
                     .candidate_progress
@@ -816,7 +406,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
 
                 if lifecycle.candidate_progress >= lifecycle.target_chain_length {
                     let cba_w_start_minus_2 =
-                        cemented_bundle_aggregate(lifecycle.w_start.saturating_sub(2), &[]);
+                        cba_from(&bc_set_history, lifecycle.w_start.saturating_sub(2));
                     let proof_endpoint =
                         candidate_vdf_init(&timechain.t_r, &cba_w_start_minus_2, &my_node);
 
@@ -845,8 +435,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
 
                     let pending_baseline = state.candidates.len() as u64;
                     let active_nodes = state.nodes.len() as u64;
-                    let cba_w_p_minus_2 =
-                        cemented_bundle_aggregate(next_window.saturating_sub(2), &[]);
+                    let cba_w_p_minus_2 = cba_from(&bc_set_history, next_window.saturating_sub(2));
                     let outcome = apply_noderegistrations_batch(
                         &mut state.candidates,
                         &[nr.clone()],
@@ -876,721 +465,252 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             },
             NodePhase::Registered => {},
             NodePhase::Active => 'active_arm: {
-                // SPEC DEVIATION DEV-012: singleton-only proposal generation.
-                // Этот блок реализует proposal где my_node — единственный confirmer
-                // (included_bundles = {my_bundle}, included_reveals = {my_reveal}),
-                // что корректно ТОЛЬКО когда state.nodes == {my_node}. При наличии
-                // других узлов в NodeTable spec требует cemented_sum = Σ chain_length
-                // confirmer-узлов ≥ quorum(active_chain_length) — то есть сбор
-                // BundledConfirmation от peer-ов через сеть (M9 Phase 2). Этот сбор
-                // ещё не реализован (line 162-169: «log only; Phase 2 = apply_proposal»).
-                // Пока M9 Phase 2 не подключён, минoritarian валидатор в multi-node
-                // NodeTable работает как passive follower: не producит proposal,
-                // break 'active_arm падает в post-match cleanup (candidate_expiry +
-                // selection_event + next_d + save_progress) — узел остаётся жив.
-                // DEV-012 multi-confirmer: bootstrap is the canonical proposer; any
-                // Active node that is NOT the bootstrap stays a follower and contributes
-                // a BC on incoming candidate Proposal. (Spec calls for lookback-based
-                // proposer rotation in a future iteration; for the v1.0.0 cohort the
-                // bootstrap-only proposer model is the deployed baseline.)
-                // DEV-022 + DEV-023: Lookback rotation with bootstrap fallback.
-                //   primary_proposer = winner_{W-2} (или bootstrap для W<2)
-                //   если primary cemented within last K_FALLBACK_WINDOWS → primary propose
-                //   иначе bootstrap takes over (canonical fallback, нет dead-lock)
-                // DEV-022/023 ROTATION DISABLED 2026-05-30: bootstrap-only proposer.
-                // DEV-022 Lookback + DEV-023 fallback cascade caused chain to freeze
-                // when elected primary kept winning lottery (grace re-triggered) AND
-                // failed to cement (upstream DEV-021b drain issue). Until DEV-021b
-                // closure with per-node persistent first_election tracker, only
-                // bootstrap proposes. Lottery (DEV-021) winner_id ещё корректно
-                // распределяет emission по всем cohort operators.
-                // (rotation disabled)
-                if my_node != bootstrap_node_id {
-                    follower_skip = true;
+                // Законный ведущий окна next_window: победитель окна
+                // next_window-2; при молчании — каскад запасных по
+                // возрастанию взвешенного билета (спецификация Lookback).
+                let silence = last_cement_at.elapsed().as_secs();
+                let (acting, my_depth) = {
+                    let ctx = net_ctx!();
+                    expected_proposer(&ctx, next_window, silence)
+                };
+                if acting != my_node {
                     break 'active_arm;
                 }
-                let active_chain_length: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
-                let cba_w_minus_2 = cemented_bundle_aggregate(current.saturating_sub(2), &[]);
-                let endpoint = compute_endpoint(&timechain.t_r, &cba_w_minus_2, &my_node, current);
-
-                let mut reveal = VdfReveal {
-                    node_id: my_node,
-                    window_index: current,
-                    endpoint,
-                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
-                };
-                let mut reveal_scope = Vec::new();
-                reveal.encode_signed_scope(&mut reveal_scope);
-                reveal.signature =
-                    sign(&identity.node_sk, &reveal_scope).map_err(NodeError::Crypto)?;
-                validate_reveal(
-                    &reveal,
-                    &state.nodes,
-                    &timechain.t_r,
-                    &cba_w_minus_2,
-                    current,
-                )
-                .map_err(|e| NodeError::InvalidArguments(format!("validate_reveal: {e:?}")))?;
-                let r_hash = reveal_hash(&reveal);
-                // DEV-020: proposer also broadcasts own Reveal envelope so followers
-                // can include it in their BC.reveal_hashes for cement-time winner determination.
-                reveal_pool
-                    .entry(current)
-                    .or_default()
-                    .insert(my_node, reveal.clone());
-                while reveal_pool.len() > 64 {
-                    let oldest = *reveal_pool.keys().next().unwrap();
-                    reveal_pool.remove(&oldest);
-                }
-                if let Some(ref handle) = network_handle {
-                    let mut reveal_payload = Vec::new();
-                    reveal.encode(&mut reveal_payload);
-                    let _ = handle.broadcast_tx.send(ProtocolMessage::new(
-                        MsgType::VdfReveal,
-                        current,
-                        reveal_payload,
-                    ));
+                let propose_w = next_window;
+                if my_depth > 1 {
+                    eprintln!(
+                        "[lookback W={propose_w}] вступаю как запасной ведущий (глубина {my_depth})"
+                    );
                 }
 
-                let mut bc = BundledConfirmation {
-                    node_id: my_node,
-                    endpoint: timechain.t_r,
-                    window_index: current,
-                    op_hashes: Vec::new(),
-                    reveal_hashes: vec![r_hash],
-                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
-                };
-                let mut bc_scope = Vec::new();
-                bc.encode_signed_scope(&mut bc_scope);
-                bc.signature = sign(&identity.node_sk, &bc_scope).map_err(NodeError::Crypto)?;
-                validate_bundle(&bc, &state.nodes, &timechain.t_r)
-                    .map_err(|e| NodeError::InvalidArguments(format!("validate_bundle: {e:?}")))?;
-                let bc_h = bundle_hash(&bc);
-
-                let my_node_record = state.nodes.get(&my_node).cloned().ok_or_else(|| {
-                    NodeError::InvalidArguments("active phase но узел не в NodeTable".into())
-                })?;
-                let cemented_chain_length = my_node_record.chain_length;
-                // DEV-012: cementing check is performed against the multi-confirmer
-                // accumulator after broadcast+drain (below). The singleton-only check
-                // is no longer correct in multi-Active mode.
-                let _ = (cemented_chain_length, active_chain_length);
-
-                let snapshot = my_node_record.chain_length_snapshot.max(1);
-                let _weight = lottery_weight(my_node_record.chain_length, snapshot);
-                let _term = seniority_term(my_node_record.chain_length, snapshot);
-                let _ticket =
-                    weighted_ticket_node(&endpoint, my_node_record.chain_length, snapshot);
-
-                // Proposal-level Merkle roots строятся как Sparse Merkle Tree
-                // глубины 256 (тот же primitive что для state-уровня), индексация
-                // по natural keys per spec, раздел "Структура proposal-level
-                // Merkle roots":
-                //   - included_bundles_root: ключ = confirmer_node_id,
-                //     значение = (confirmer_node_id || bundle_hash)
-                //   - included_reveals_root: ключ = reveal_author_node_id,
-                //     значение = (reveal_author_node_id || reveal_hash)
-                //   - control_root: ключ = nodereg_hash,
-                //     значение = canonical_bytes(control_object)
-                // Empty marker для всех трёх = empty_internal(TREE_DEPTH).
-                // Singleton: один confirmer = my_node, один reveal = my_node;
-                // control_set пустой (нет cemented NodeRegistration в singleton).
-                let included_bundles_root = {
-                    let mut tree = SparseMerkleTree::new();
-                    let mut bundle_meta = Vec::with_capacity(64);
-                    bundle_meta.extend_from_slice(&my_node);
-                    bundle_meta.extend_from_slice(&bc_h);
-                    tree.insert(my_node, &bundle_meta);
-                    tree.root()
-                };
-                let included_reveals_root = {
-                    let mut tree = SparseMerkleTree::new();
-                    let mut reveal_meta = Vec::with_capacity(64);
-                    reveal_meta.extend_from_slice(&my_node);
-                    reveal_meta.extend_from_slice(&r_hash);
-                    tree.insert(my_node, &reveal_meta);
-                    tree.root()
-                };
-                let control_root = empty_internal(TREE_DEPTH);
-
-                // Header формируется с placeholder values для post-apply полей
-                // (state_root / account_root / node_root). Подпись вычисляется
-                // ровно один раз — после apply_proposal — над финальным
-                // signed_scope с post-apply значениями. Spec, раздел "Proposal":
-                // "signature ML-DSA-65 над signed_scope(header) (Правило R1)";
-                // все поля канонически вычислимы из cemented set, значит state_root
-                // в подписи обязан быть post-apply.
-                // header.winner_id initially = my_node, overwritten below after DEV-021 winner computation
-                let mut header = ProposalHeader {
-                    prev_proposal_hash,
-                    window_index: current,
-                    protocol_version: 1,
-                    control_root,
-                    node_root: [0u8; 32],
-                    candidate_root: state.candidates.root(),
-                    account_root: [0u8; 32],
-                    state_root: [0u8; 32],
-                    timechain_value: timechain.t_r,
-                    included_bundles_root,
-                    included_reveals_root,
-                    winner_endpoint: endpoint,
-                    winner_id: my_node,
-                    proposer_node_id: my_node,
-                    target: u128::MAX,
-                    fallback_depth: 1,
-                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
-                };
-
-                // DEV-012: record T_r for this window so late-arriving BCs validate
-                // against historical T_r (not Armenia's current after window advances).
-                t_r_history.insert(current, timechain.t_r);
-                while t_r_history.len() > 64 {
-                    let oldest = *t_r_history.keys().next().unwrap();
-                    t_r_history.remove(&oldest);
-                }
-                // Insert own BC into accumulator first.
-                bc_accumulator
-                    .entry(current)
-                    .or_default()
-                    .insert(my_node, bc.clone());
-
-                // Multi-confirmer: if not singleton, broadcast candidate (3722) first,
-                // then spin draining incoming for BCs from peers up to 800ms or quorum.
-                if state.nodes.len() > 1 {
-                    // Build a minimal candidate header (placeholder state_root) for the
-                    // notification broadcast. Signed scope must include real T_r so peers
-                    // compute matching BC.endpoint.
-                    let candidate = ProposalHeader {
+                // Уведомление-кандидат: сигнал «окно propose_w собирается»
+                // + каноническое значение часов для отстающих узлов.
+                let t_r_w = *t_r_history.get(&propose_w).unwrap_or(&timechain.t_r);
+                let notify = {
+                    let mut h = ProposalHeader {
                         prev_proposal_hash,
-                        window_index: current,
+                        window_index: propose_w,
                         protocol_version: 1,
-                        control_root,
+                        control_root: empty_internal(TREE_DEPTH),
                         node_root: [0u8; 32],
                         candidate_root: state.candidates.root(),
                         account_root: [0u8; 32],
                         state_root: [0u8; 32],
-                        timechain_value: timechain.t_r,
-                        included_bundles_root,
-                        included_reveals_root,
-                        winner_endpoint: endpoint,
+                        timechain_value: t_r_w,
+                        included_bundles_root: [0u8; 32],
+                        included_reveals_root: [0u8; 32],
+                        winner_endpoint: [0u8; 32],
                         winner_id: my_node,
                         proposer_node_id: my_node,
                         target: u128::MAX,
-                        fallback_depth: 1,
+                        fallback_depth: my_depth,
                         signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
                     };
-                    let mut cand_scope = Vec::new();
-                    candidate.encode_signed_scope(&mut cand_scope);
-                    let cand_sig =
-                        sign(&identity.node_sk, &cand_scope).map_err(NodeError::Crypto)?;
-                    let mut signed_cand = candidate.clone();
-                    signed_cand.signature = cand_sig;
-                    let mut cand_bytes = Vec::with_capacity(3722);
-                    signed_cand.encode(&mut cand_bytes);
-                    if let Some(ref handle) = network_handle {
-                        let _ = handle.broadcast_tx.send(ProtocolMessage::new(
-                            MsgType::Proposal,
-                            current,
-                            cand_bytes,
-                        ));
-                        eprintln!(
-                            "[dev-012] broadcast candidate Proposal w={current} (NodeTable.len={}, awaiting BCs)",
-                            state.nodes.len()
-                        );
-                    }
-
-                    // Spin draining BCs up to 800ms.
-                    let active_sum: u64 = state.nodes.iter().map(|n| n.chain_length).sum();
-                    let need_quorum = quorum(active_sum);
-                    let deadline = Instant::now() + Duration::from_millis(5000);
-                    // DEV-018d: drain non-BC messages into a deferred queue so
-                    // FastSyncRequest / FastSyncResponse / Proposal envelopes from
-                    // peers are not silently dropped while the proposer spins
-                    // waiting for BC quorum. Deferred messages are re-handled
-                    // after spin completes (top of next main-loop iteration).
-                    let mut deferred: Vec<ProtocolMessage> = Vec::new();
-                    while Instant::now() < deadline {
-                        if let Some(ref mut handle) = network_handle {
-                            while let Ok(msg) = handle.incoming_rx.try_recv() {
-                                if msg.msg_type == MsgType::BundledConfirmation {
-                                    if let Ok((rec_bc, _)) =
-                                        BundledConfirmation::decode(&msg.payload)
-                                    {
-                                        let exp_t_r = t_r_history
-                                            .get(&rec_bc.window_index)
-                                            .copied()
-                                            .unwrap_or(timechain.t_r);
-                                        if mt_lottery::validate_bundle(
-                                            &rec_bc,
-                                            &state.nodes,
-                                            &exp_t_r,
-                                        )
-                                        .is_ok()
-                                        {
-                                            let nid = rec_bc.node_id;
-                                            let w = rec_bc.window_index;
-                                            bc_accumulator
-                                                .entry(w)
-                                                .or_default()
-                                                .insert(nid, rec_bc);
-                                            eprintln!(
-                                                "[dev-012] accepted BC from {} for w={w} (current={current})",
-                                                hex16(&nid)
-                                            );
-                                        }
-                                    }
-                                } else if msg.msg_type == MsgType::FastSyncRequest {
-                                    // DEV-018d: serve fast-sync inline during spin.
-                                    // Followers depend on the proposer to deliver
-                                    // current-window snapshots; if we defer the request
-                                    // they may have already retried with a different
-                                    // anchor by the time we get back to the main drain.
-                                    if let Ok(_req) = mt_net::FastSyncRequest::decode(&msg.payload)
-                                    {
-                                        let snap = mt_sync::Snapshot::from_tables(
-                                            current,
-                                            &state.accounts,
-                                            &state.nodes,
-                                            &state.candidates,
-                                        );
-                                        let chunks = snap.to_wire_chunks(32);
-                                        let total = chunks.len();
-                                        for chunk in chunks {
-                                            let table_id_byte = match chunk.table_id {
-                                                mt_sync::FastSyncTableId::Account => {
-                                                    mt_net::TableId::Account
-                                                },
-                                                mt_sync::FastSyncTableId::Node => {
-                                                    mt_net::TableId::Node
-                                                },
-                                                mt_sync::FastSyncTableId::Candidate => {
-                                                    mt_net::TableId::Candidate
-                                                },
-                                                mt_sync::FastSyncTableId::Proposals => {
-                                                    mt_net::TableId::Proposals
-                                                },
-                                            };
-                                            let mut flat: Vec<u8> = Vec::new();
-                                            for r in &chunk.records {
-                                                flat.extend_from_slice(r);
-                                            }
-                                            let wire_chunk = mt_net::FastSyncResponseChunk {
-                                                chunk_index: chunk.chunk_index,
-                                                total_chunks: chunk.total_chunks,
-                                                table_id: table_id_byte,
-                                                record_count: chunk.records.len() as u32,
-                                                anchor_window: current,
-                                                records: flat,
-                                            };
-                                            let mut payload = Vec::new();
-                                            wire_chunk.encode(&mut payload);
-                                            let envelope = ProtocolMessage::new(
-                                                MsgType::FastSyncResponse,
-                                                msg.request_id,
-                                                payload,
-                                            );
-                                            if handle.broadcast_tx.send(envelope).is_err() {
-                                                break;
-                                            }
-                                        }
-                                        eprintln!(
-                                            "[m7] served FastSync snapshot (spin): anchor={current} chunks={total}"
-                                        );
-                                    }
-                                } else if msg.msg_type == MsgType::VdfReveal {
-                                    // DEV-020 spin-drain: peer Reveals must land in pool
-                                    // so winner determination at cement time sees them.
-                                    if let Ok((rec_reveal, _)) = VdfReveal::decode(&msg.payload) {
-                                        let exp_t_r = t_r_history
-                                            .get(&rec_reveal.window_index)
-                                            .copied()
-                                            .unwrap_or(timechain.t_r);
-                                        let cba_r = mt_timechain::cemented_bundle_aggregate(
-                                            rec_reveal.window_index.saturating_sub(2),
-                                            &[],
-                                        );
-                                        if mt_lottery::validate_reveal(
-                                            &rec_reveal,
-                                            &state.nodes,
-                                            &exp_t_r,
-                                            &cba_r,
-                                            rec_reveal.window_index,
-                                        )
-                                        .is_ok()
-                                        {
-                                            let nid = rec_reveal.node_id;
-                                            let w = rec_reveal.window_index;
-                                            reveal_pool
-                                                .entry(w)
-                                                .or_default()
-                                                .insert(nid, rec_reveal);
-                                            eprintln!(
-                                                "[dev-020] spin Reveal from {} for w={w}",
-                                                hex16(&nid)
-                                            );
-                                        } else {
-                                            eprintln!(
-                                                "[dev-020] Reveal validate failed for {} w={}",
-                                                hex16(&rec_reveal.node_id),
-                                                rec_reveal.window_index
-                                            );
-                                        }
-                                    }
-                                } else {
-                                    deferred.push(msg);
-                                }
-                            }
-                        }
-                        let collected: u64 = bc_accumulator
-                            .get(&current)
-                            .map(|m| {
-                                m.keys()
-                                    .filter_map(|id| state.nodes.get(id).map(|n| n.chain_length))
-                                    .sum()
-                            })
-                            .unwrap_or(0);
-                        if collected >= need_quorum {
-                            // DEV-019b: when self-quorum trivially met (proposer's own
-                            // chain_length dominates Σ), wait until at least ⌈N/2⌉ peer
-                            // BCs land for current window OR 5000ms timeout. Without
-                            // a peer-quorum gate, every peer that's even slightly
-                            // late never gets credit → chain_length stays at 1 forever.
-                            // The total operator count includes self; we need
-                            // ⌈total/2⌉ confirmers including self in accumulator[current].
-                            let total_active = state.nodes.len();
-                            let peer_target = (total_active + 1) / 2; // ⌈total/2⌉
-                            let grace_deadline = Instant::now() + Duration::from_millis(30000);
-                            while Instant::now() < grace_deadline {
-                                let current_count =
-                                    bc_accumulator.get(&current).map(|m| m.len()).unwrap_or(0);
-                                if current_count >= peer_target {
-                                    eprintln!(
-                                        "[dev-019] peer-quorum gate satisfied: {current_count}/{peer_target} BCs for w={current}"
-                                    );
-                                    break;
-                                }
-                                if let Some(ref mut handle) = network_handle {
-                                    while let Ok(grace_msg) = handle.incoming_rx.try_recv() {
-                                        if grace_msg.msg_type == MsgType::BundledConfirmation {
-                                            if let Ok((rec_bc, _)) =
-                                                BundledConfirmation::decode(&grace_msg.payload)
-                                            {
-                                                let exp_t_r = t_r_history
-                                                    .get(&rec_bc.window_index)
-                                                    .copied()
-                                                    .unwrap_or(timechain.t_r);
-                                                if mt_lottery::validate_bundle(
-                                                    &rec_bc,
-                                                    &state.nodes,
-                                                    &exp_t_r,
-                                                )
-                                                .is_ok()
-                                                {
-                                                    let nid = rec_bc.node_id;
-                                                    let w = rec_bc.window_index;
-                                                    bc_accumulator
-                                                        .entry(w)
-                                                        .or_default()
-                                                        .insert(nid, rec_bc);
-                                                    eprintln!(
-                                                        "[dev-019] grace BC from {} for w={w}",
-                                                        hex16(&nid)
-                                                    );
-                                                }
-                                            }
-                                        } else if grace_msg.msg_type == MsgType::VdfReveal {
-                                            if let Ok((rec_reveal, _)) =
-                                                VdfReveal::decode(&grace_msg.payload)
-                                            {
-                                                let exp_t_r = t_r_history
-                                                    .get(&rec_reveal.window_index)
-                                                    .copied()
-                                                    .unwrap_or(timechain.t_r);
-                                                let cba_r = mt_timechain::cemented_bundle_aggregate(
-                                                    rec_reveal.window_index.saturating_sub(2),
-                                                    &[],
-                                                );
-                                                if mt_lottery::validate_reveal(
-                                                    &rec_reveal,
-                                                    &state.nodes,
-                                                    &exp_t_r,
-                                                    &cba_r,
-                                                    rec_reveal.window_index,
-                                                )
-                                                .is_ok()
-                                                {
-                                                    let nid = rec_reveal.node_id;
-                                                    let w = rec_reveal.window_index;
-                                                    reveal_pool
-                                                        .entry(w)
-                                                        .or_default()
-                                                        .insert(nid, rec_reveal);
-                                                    eprintln!(
-                                                        "[dev-020] grace Reveal from {} for w={w}",
-                                                        hex16(&nid)
-                                                    );
-                                                }
-                                            }
-                                        } else {
-                                            deferred.push(grace_msg);
-                                        }
-                                    }
-                                }
-                                std::thread::sleep(Duration::from_millis(20));
-                            }
-                            eprintln!(
-                                "[dev-012] quorum reached w={current}: cemented_sum={collected} >= {need_quorum}"
-                            );
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(20));
-                    }
+                    let mut scope = Vec::new();
+                    h.encode_signed_scope(&mut scope);
+                    h.signature = sign(&identity.node_sk, &scope).map_err(NodeError::Crypto)?;
+                    let mut bytes = Vec::with_capacity(3722);
+                    h.encode(&mut bytes);
+                    bytes
+                };
+                if let Some(ref handle) = network_handle {
+                    let _ = handle.broadcast_tx.send(ProtocolMessage::new(
+                        MsgType::Proposal,
+                        propose_w,
+                        notify.clone(),
+                    ));
                 }
 
-                // Build final settle from accumulator. Sorted by node_id for determinism.
-                let confirmer_ids: Vec<mt_state::NodeId> = bc_accumulator
-                    .get(&current)
-                    .map(|m| {
-                        let mut v: Vec<_> = m.keys().copied().collect();
-                        v.sort();
-                        v
+                // Ожидание кворума подтверждений окна propose_w.
+                // Спецификация «Свойство темпа сети»: быстрейший узел ждёт,
+                // пока 67% активной длины цепочки подтвердят окно.
+                let mut last_notify = Instant::now();
+                loop {
+                    if let Some(ref mut handle) = network_handle {
+                        let mut ctx = net_ctx!();
+                        drain_network(&mut ctx, handle)?;
+                    }
+                    if current >= propose_w || STOP.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    let active_cl = active_chain_length_at(&state.nodes, propose_w, params);
+                    let need = quorum(active_cl);
+                    let got: u64 = bc_accumulator
+                        .get(&propose_w)
+                        .map(|m| {
+                            m.keys()
+                                .filter_map(|id| state.nodes.get(id).map(|n| n.chain_length))
+                                .sum()
+                        })
+                        .unwrap_or(0);
+                    if got >= need {
+                        break;
+                    }
+                    if last_notify.elapsed() > Duration::from_secs(10) {
+                        if let Some(ref handle) = network_handle {
+                            let _ = handle.broadcast_tx.send(ProtocolMessage::new(
+                                MsgType::Proposal,
+                                propose_w,
+                                notify.clone(),
+                            ));
+                        }
+                        last_notify = Instant::now();
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                if current >= propose_w {
+                    // Окно зацементировал другой законный ведущий.
+                    break 'active_arm;
+                }
+                if STOP.load(Ordering::SeqCst) {
+                    break 'active_arm;
+                }
+
+                // Цементация: улики = подтверждения окна propose_w,
+                // included_bundles = подтверждения окна propose_w-1.
+                let active_cl = active_chain_length_at(&state.nodes, propose_w, params);
+                let need = quorum(active_cl);
+                let evidence = bc_accumulator.get(&propose_w).cloned().unwrap_or_default();
+                let mut cemented = weighted_cemented_hashes(&evidence, &state.nodes, need);
+                cemented.sort();
+                let prev_w = propose_w.saturating_sub(1);
+                let candidates_prev =
+                    candidates_from_pool(reveal_pool.get(&prev_w), &cemented, &state.nodes);
+                let (winner_id, winner_endpoint) = mt_lottery::determine_winner(&candidates_prev)
+                    .map(|win| {
+                        let ep = reveal_pool
+                            .get(&prev_w)
+                            .and_then(|m| m.get(&win.id))
+                            .map(|r| r.endpoint)
+                            .unwrap_or([0u8; 32]);
+                        (win.id, ep)
                     })
-                    .unwrap_or_else(|| vec![my_node]);
-                // DEV-021: compute winner from cemented Reveal set.
-                // Cemented reveal_hashes = union of reveal_hashes across BCs in accumulator[current].
-                let mut cemented_hashes: std::collections::BTreeSet<Hash32> =
-                    std::collections::BTreeSet::new();
-                if let Some(bcs) = bc_accumulator.get(&current) {
-                    for bc in bcs.values() {
-                        for rh in &bc.reveal_hashes {
-                            cemented_hashes.insert(*rh);
-                        }
-                    }
-                }
-                // Lookup Reveal objects from pool by hash
-                let cemented_reveals: Vec<&VdfReveal> = reveal_pool
-                    .get(&current)
+                    .unwrap_or((my_node, [0u8; 32]));
+                let bundles_prev: Vec<BundledConfirmation> = if propose_w >= 1 {
+                    bc_accumulator
+                        .get(&prev_w)
+                        .map(|m| m.values().cloned().collect())
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
+                let confirmers: Vec<mt_state::NodeId> =
+                    bundles_prev.iter().map(|b| b.node_id).collect();
+                let included_bundles_root = meta_root(
+                    &bundles_prev
+                        .iter()
+                        .map(|b| (b.node_id, bundle_hash(b)))
+                        .collect::<Vec<_>>(),
+                );
+                let reveal_entries: Vec<(mt_state::NodeId, Hash32)> = reveal_pool
+                    .get(&prev_w)
                     .map(|m| {
                         m.values()
-                            .filter(|r| cemented_hashes.contains(&mt_lottery::reveal_hash(r)))
+                            .filter(|r| cemented.binary_search(&reveal_hash(r)).is_ok())
+                            .map(|r| (r.node_id, reveal_hash(r)))
                             .collect()
                     })
                     .unwrap_or_default();
-                // Compute winner via argmin(weighted_ticket_node).
-                // weighted_ticket_node(endpoint, chain_length, snapshot) → u128 ticket
-                let candidates: Vec<mt_lottery::Candidate> = cemented_reveals
-                    .iter()
-                    .filter_map(|r| {
-                        state.nodes.get(&r.node_id).map(|n| {
-                            let snapshot = n.chain_length_snapshot.max(1);
-                            let ticket = mt_lottery::weighted_ticket_node(
-                                &r.endpoint,
-                                n.chain_length,
-                                snapshot,
-                            );
-                            mt_lottery::Candidate {
-                                ticket,
-                                class: mt_lottery::WINNER_CLASS_NODE,
-                                id: r.node_id,
-                            }
-                        })
-                    })
-                    .collect();
-                let winner_id = mt_lottery::determine_winner(&candidates)
-                    .map(|w| w.id)
-                    .unwrap_or(my_node);
+                let included_reveals_root = meta_root(&reveal_entries);
+
                 eprintln!(
-                    "[dev-021] cemented_reveals={} candidates={} winner={}",
-                    cemented_reveals.len(),
-                    candidates.len(),
+                    "[lottery W={prev_w}] кандидатов={} победитель={}",
+                    candidates_prev.len(),
                     hex16(&winner_id)
                 );
-                let settle = ProposalSettle {
-                    window_w: current,
-                    winner_id,
-                    cemented_confirmers: confirmer_ids.clone(),
+
+                // Единый переход состояния (тот же, что у ведомых).
+                let post_root = {
+                    let mut ctx = net_ctx!();
+                    settle_and_bookkeep(
+                        &mut ctx,
+                        propose_w,
+                        winner_id,
+                        &confirmers,
+                        candidates_prev.clone(),
+                    )?
                 };
-                let post_state_root = apply_proposal(
-                    &mut state.accounts,
-                    &mut state.nodes,
-                    &state.candidates,
-                    &settle,
-                    params,
-                );
-
-                // DEV-021: write computed winner_id into header (was placeholder my_node)
-                header.winner_id = settle.winner_id;
-                header.state_root = post_state_root;
-                header.account_root = state.accounts.root();
-                header.node_root = state.nodes.root();
-                let mut header_scope = Vec::new();
-                header.encode_signed_scope(&mut header_scope);
-                header.signature =
-                    sign(&identity.node_sk, &header_scope).map_err(NodeError::Crypto)?;
-
-                // DEV-012: broadcast CEMENTED envelope: [header(3722)][u16 bundle_count][N × BC].
-                // Build 31: capture envelope bytes into last_cemented_envelope so archive
-                // can persist the full envelope, not just header.
-                let mut envelope_payload: Vec<u8> =
-                    Vec::with_capacity(3722 + 2 + 4096 * confirmer_ids.len());
-                header.encode(&mut envelope_payload);
-                let bundles_for_envelope: Vec<&BundledConfirmation> = {
-                    let map = bc_accumulator.get(&current).cloned().unwrap_or_default();
-                    let mut keys: Vec<_> = map.keys().copied().collect();
-                    keys.sort();
-                    keys.into_iter()
-                        .filter_map(|k| bc_accumulator.get(&current).and_then(|m| m.get(&k)))
-                        .collect::<Vec<_>>()
-                };
-                let bundle_count = bundles_for_envelope.len() as u16;
-                envelope_payload.extend_from_slice(&bundle_count.to_le_bytes());
-                for bc in &bundles_for_envelope {
-                    bc.encode(&mut envelope_payload);
-                }
-                last_cemented_envelope = Some(envelope_payload.clone());
-                if let Some(ref handle) = network_handle {
-                    let envelope = ProtocolMessage::new(
-                        MsgType::Proposal,
-                        header.window_index,
-                        envelope_payload,
-                    );
-                    if let Err(e) = handle.broadcast_tx.send(envelope) {
-                        eprintln!(
-                            "[consensus] broadcast CEMENTED Proposal w={} failed: {e}",
-                            header.window_index
-                        );
-                    } else {
-                        eprintln!(
-                            "[consensus] broadcast CEMENTED Proposal window={} → peers (bundles={})",
-                            header.window_index,
-                            bundle_count
-                        );
-                    }
-                }
-                // Window cemented; drop its accumulator entry.
-                bc_accumulator.remove(&current);
-
                 let recomputed = compute_state_root(
                     &state.nodes.root(),
                     &state.candidates.root(),
                     &state.accounts.root(),
                 );
-                if recomputed != post_state_root {
+                if recomputed != post_root {
                     panic!(
-                        "state_root self-verify failed: header={:02x?} recomputed={:02x?}",
-                        post_state_root, recomputed
+                        "state_root self-verify failed: {:02x?}.. ≠ {:02x?}..",
+                        &post_root[..4],
+                        &recomputed[..4]
                     );
                 }
 
-                // Build 31: archive FULL cemented envelope so explorer can show
-                // bundles array, not just header.
-                if let Some(ref env) = last_cemented_envelope {
-                    store
-                        .archive_proposal_envelope(header.window_index, env)
-                        .map_err(|e| {
-                            NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}"))
-                        })?;
-                } else {
-                    store.archive_proposal(&header).map_err(|e| {
-                        NodeError::InvalidArguments(format!("archive_proposal: {e:?}"))
-                    })?;
-                }
-                store.save_meta_last_cemented(current).map_err(|e| {
-                    NodeError::InvalidArguments(format!("save_meta_last_cemented: {e:?}"))
-                })?;
-                // DEV-022: own cemented winner_id must populate winner_history so the
-                // proposer rotation gate at W+2 sees the correct proposer (otherwise
-                // proposer keeps thinking it's always self via unwrap_or fallback).
-                winner_history.insert(current, header.winner_id);
-                // DEV-023: own cement also updates per-proposer activity tracker
-                last_proposer_cement.insert(my_node, current);
-                while winner_history.len() > 64 {
-                    let oldest = *winner_history.keys().next().unwrap();
-                    winner_history.remove(&oldest);
-                }
-                prev_proposal_hash = proposal_hash(&header);
+                let mut header = ProposalHeader {
+                    prev_proposal_hash,
+                    window_index: propose_w,
+                    protocol_version: 1,
+                    control_root: empty_internal(TREE_DEPTH),
+                    node_root: state.nodes.root(),
+                    candidate_root: state.candidates.root(),
+                    account_root: state.accounts.root(),
+                    state_root: post_root,
+                    timechain_value: t_r_w,
+                    included_bundles_root,
+                    included_reveals_root,
+                    winner_endpoint,
+                    winner_id,
+                    proposer_node_id: my_node,
+                    target: u128::MAX,
+                    fallback_depth: my_depth,
+                    signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+                };
+                let mut header_scope = Vec::new();
+                header.encode_signed_scope(&mut header_scope);
+                header.signature =
+                    sign(&identity.node_sk, &header_scope).map_err(NodeError::Crypto)?;
 
+                // Конверт: [header 3722][u16 n1][BC окна w-1][u16 n2][BC окна w].
+                let mut envelope_payload: Vec<u8> =
+                    Vec::with_capacity(3722 + 4 + 3500 * (bundles_prev.len() + evidence.len()));
+                header.encode(&mut envelope_payload);
+                envelope_payload.extend_from_slice(&(bundles_prev.len() as u16).to_le_bytes());
+                for bc in &bundles_prev {
+                    bc.encode(&mut envelope_payload);
+                }
+                envelope_payload.extend_from_slice(&(evidence.len() as u16).to_le_bytes());
+                for bc in evidence.values() {
+                    bc.encode(&mut envelope_payload);
+                }
+                if let Some(ref handle) = network_handle {
+                    let envelope = ProtocolMessage::new(
+                        MsgType::Proposal,
+                        propose_w,
+                        envelope_payload.clone(),
+                    );
+                    if let Err(e) = handle.broadcast_tx.send(envelope) {
+                        eprintln!(
+                            "[consensus] broadcast CEMENTED Proposal w={propose_w} failed: {e}"
+                        );
+                    } else {
+                        eprintln!(
+                            "[consensus] broadcast CEMENTED Proposal window={propose_w} → peers (bundles={}, evidence={})",
+                            bundles_prev.len(),
+                            evidence.len()
+                        );
+                    }
+                }
+                store
+                    .archive_proposal_envelope(propose_w, &envelope_payload)
+                    .map_err(|e| {
+                        NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}"))
+                    })?;
+                recent_roots.insert(propose_w, post_root);
+                bound_map(&mut recent_roots);
+                prev_proposal_hash = proposal_hash(&header);
+                last_proposer_cement.insert(my_node, propose_w);
+                last_cement_at = Instant::now();
                 session_emitted = session_emitted.saturating_add(params.emission_moneta);
                 session_windows += 1;
             },
         }
-
-        let _ = apply_candidate_expiry(&mut state.candidates, next_window);
-        if is_selection_window(next_window, params) {
-            let active = state.nodes.len() as u64;
-            let cba = cemented_bundle_aggregate(next_window.saturating_sub(2), &[]);
-            let activated = apply_selection_event(
-                &mut state.candidates,
-                &mut state.nodes,
-                &mut state.accounts,
-                &timechain.t_r,
-                &cba,
-                active,
-                next_window,
-                params,
-            );
-            if !activated.is_empty() {
-                println!(
-                    "[selection W={next_window}] активировано {} узл(ов)",
-                    activated.len()
-                );
-                if lifecycle.phase == NodePhase::Registered && state.nodes.contains(&my_node) {
-                    lifecycle.phase = NodePhase::Active;
-                    println!("[active W={next_window}] phase Registered → Active");
-                }
-            }
-        }
-
-        if next_window > 0 && next_window % params.tau2_windows == 0 {
-            let median_permille = 1000u32;
-            let new_d = next_d(timechain.current_d, median_permille, params);
-            if new_d != timechain.current_d {
-                println!(
-                    "[next_d W={next_window}] D: {} → {} (median_permille={median_permille})",
-                    timechain.current_d, new_d
-                );
-                timechain.current_d = new_d;
-                if args.d_test_override.is_none() {
-                    effective_d = new_d;
-                }
-            }
-        }
-
-        if follower_skip {
-            // Follower idle: do not advance the cemented head, do not tick the
-            // local VDF (timechain.t_r unchanged). The only way `current`
-            // advances is through the apply_proposal loop at the top of the
-            // outer loop body (lines around 200), driven by an incoming
-            // Proposal envelope from the bootstrap proposer. Brief sleep so
-            // the outer loop does not spin while waiting for the next peer
-            // broadcast.
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            continue;
-        }
-        timechain.t_r = next_t_r;
-        timechain.last_window = next_window;
-        current = next_window;
-
-        let balance = state
-            .accounts
-            .get(&my_account)
-            .map(|a| a.balance)
-            .unwrap_or(0);
-
-        let phase_marker = match lifecycle.phase {
-            NodePhase::Bootstrap => "Bootstrap",
-            NodePhase::CandidateVdf => "CandidateVdf",
-            NodePhase::Registered => "Registered",
-            NodePhase::Active => "Active",
-        };
-        let window_duration = window_start.elapsed();
-
-        // Per-window лог = только progress bar строка от vdf_step_chunked
-        // (in-place updates через `\r`, финал с `\n`). T_r/balance/phase
-        // не печатаются здесь — оператор видит их через `montana-node status`.
-        let _ = phase_marker;
-        let _ = window_duration;
-        let _ = balance;
 
         save_progress(&data_dir, &state, &timechain, &lifecycle, current)?;
     }
@@ -1661,7 +781,842 @@ fn install_shutdown_handlers() {
 // больше из-за rounding, но проценты в выводе всегда точно 10, 20, …, 100).
 const VDF_PROGRESS_CHUNKS: u64 = 10;
 
-fn vdf_step_chunked(prev: &Hash32, d: u64, label: &str, window: u64) -> Hash32 {
+/// Тайм-аут молчания ведущего: после стольких секунд без цементирования
+/// каскад запасных сдвигается на одну позицию (спецификация «Fallback cascade»).
+const FALLBACK_TIMEOUT_SECS: u64 = 120;
+/// Глубина хранения пооконных историй (пулы, победители, наборы подтвердивших).
+const HISTORY_BOUND: usize = 64;
+
+fn bound_map<K: Ord + Copy, V>(m: &mut BTreeMap<K, V>) {
+    while m.len() > HISTORY_BOUND {
+        let k = *m.keys().next().unwrap();
+        m.remove(&k);
+    }
+}
+
+/// Активная длина цепочки по спецификации «Confirmations»: учитываются только
+/// узлы с подтверждением за последние 2τ₂ (active predicate); start_window
+/// служит нижней границей для свежеактивированных узлов.
+fn active_chain_length_at(
+    nodes: &mt_state::NodeTable,
+    w: u64,
+    params: &mt_genesis::ProtocolParams,
+) -> u64 {
+    let horizon = 2 * params.tau2_windows;
+    nodes
+        .iter()
+        .filter(|n| {
+            let last_seen = n.last_confirmation_window.max(n.start_window);
+            w.saturating_sub(last_seen) <= horizon
+        })
+        .map(|n| n.chain_length)
+        .sum()
+}
+
+/// Весь консенсусный контекст узла одним пакетом ссылок — общий для
+/// разборщика сообщений, ведущего и эпилога витка.
+struct NetCtx<'a> {
+    state: &'a mut LocalState,
+    current: &'a mut u64,
+    timechain: &'a mut TimeChainState,
+    recent_roots: &'a mut BTreeMap<u64, Hash32>,
+    t_r_history: &'a mut BTreeMap<u64, Hash32>,
+    reveal_pool: &'a mut BTreeMap<u64, BTreeMap<mt_state::NodeId, VdfReveal>>,
+    bc_accumulator: &'a mut BTreeMap<u64, BTreeMap<mt_state::NodeId, BundledConfirmation>>,
+    winner_history: &'a mut BTreeMap<u64, mt_state::NodeId>,
+    lottery_history: &'a mut BTreeMap<u64, Vec<mt_lottery::Candidate>>,
+    bc_set_history: &'a mut BTreeMap<u64, Vec<mt_state::NodeId>>,
+    last_proposer_cement: &'a mut BTreeMap<mt_state::NodeId, u64>,
+    own_bc_cache: &'a mut BTreeMap<u64, BundledConfirmation>,
+    pending_msgs: &'a mut Vec<ProtocolMessage>,
+    fast_sync: &'a mut Option<mt_sync::FastSyncClient>,
+    fast_sync_deadline: &'a mut Option<Instant>,
+    last_cement_at: &'a mut Instant,
+    prev_proposal_hash: &'a mut Hash32,
+    fast_sync_lag_threshold: u64,
+    data_dir: &'a std::path::Path,
+    params: &'static mt_genesis::ProtocolParams,
+    store: &'a FsStore,
+    my_node: mt_state::NodeId,
+    bootstrap_node_id: mt_state::NodeId,
+}
+
+/// Канонический агрегат подтверждений окна w: набор подтвердивших берётся из
+/// included_bundles предложения, закрывшего окно w (bc_set_history).
+fn cba_from(history: &BTreeMap<u64, Vec<mt_state::NodeId>>, w: u64) -> Hash32 {
+    let set = history.get(&w).map(|v| v.as_slice()).unwrap_or(&[]);
+    cemented_bundle_aggregate(w, set)
+}
+
+fn cba_for(ctx: &NetCtx, w: u64) -> Hash32 {
+    cba_from(ctx.bc_set_history, w)
+}
+
+/// Законный ведущий окна w по спецификации Lookback Leadership:
+/// первые два окна — узел-первопоселенец; далее победитель окна w-2,
+/// при молчании — каскад запасных по возрастанию взвешенного билета окна w-2.
+fn expected_proposer(ctx: &NetCtx, w: u64, silence_secs: u64) -> (mt_state::NodeId, u8) {
+    if w < 2 {
+        return (ctx.bootstrap_node_id, 1);
+    }
+    let depth_extra = (silence_secs / FALLBACK_TIMEOUT_SECS).min(254) as u8;
+    if depth_extra == 0 {
+        if let Some(p) = ctx.winner_history.get(&(w - 2)) {
+            return (*p, 1);
+        }
+    }
+    let sorted = ctx
+        .lottery_history
+        .get(&(w - 2))
+        .cloned()
+        .unwrap_or_default();
+    let depth = 1u8.saturating_add(depth_extra);
+    (
+        mt_consensus::fallback_proposer(w, ctx.bootstrap_node_id, &sorted, depth),
+        depth,
+    )
+}
+
+/// Разбор 3722-байтного заголовка предложения из канонического layout.
+fn parse_header(payload: &[u8]) -> Option<ProposalHeader> {
+    if payload.len() < 3722 {
+        return None;
+    }
+    let h32 = |a: usize| -> Hash32 {
+        let mut b = [0u8; 32];
+        b.copy_from_slice(&payload[a..a + 32]);
+        b
+    };
+    let mut w8 = [0u8; 8];
+    w8.copy_from_slice(&payload[32..40]);
+    let mut v4 = [0u8; 4];
+    v4.copy_from_slice(&payload[40..44]);
+    let mut t16 = [0u8; 16];
+    t16.copy_from_slice(&payload[396..412]);
+    let mut sig = [0u8; SIGNATURE_SIZE];
+    sig.copy_from_slice(&payload[413..3722]);
+    Some(ProposalHeader {
+        prev_proposal_hash: h32(0),
+        window_index: u64::from_le_bytes(w8),
+        protocol_version: u32::from_le_bytes(v4),
+        control_root: h32(44),
+        node_root: h32(76),
+        candidate_root: h32(108),
+        account_root: h32(140),
+        state_root: h32(172),
+        timechain_value: h32(204),
+        included_bundles_root: h32(236),
+        included_reveals_root: h32(268),
+        winner_endpoint: h32(300),
+        winner_id: h32(332),
+        proposer_node_id: h32(364),
+        target: u128::from_le_bytes(t16),
+        fallback_depth: payload[412],
+        signature: Signature::from_array(sig),
+    })
+}
+
+/// Разбор хвоста зацементированного конверта:
+/// [u16 n1][n1 × BC окна w-1][u16 n2][n2 × BC окна w].
+fn parse_envelope_bundles(
+    payload: &[u8],
+) -> Option<(Vec<BundledConfirmation>, Vec<BundledConfirmation>)> {
+    let mut off = 3722usize;
+    let mut lists: Vec<Vec<BundledConfirmation>> = Vec::with_capacity(2);
+    for _ in 0..2 {
+        if payload.len() < off + 2 {
+            return None;
+        }
+        let mut cbuf = [0u8; 2];
+        cbuf.copy_from_slice(&payload[off..off + 2]);
+        let n = u16::from_le_bytes(cbuf) as usize;
+        off += 2;
+        let mut list = Vec::with_capacity(n);
+        for _ in 0..n {
+            match BundledConfirmation::decode(&payload[off..]) {
+                Ok((bc, used)) => {
+                    list.push(bc);
+                    off += used;
+                },
+                Err(_) => return None,
+            }
+        }
+        lists.push(list);
+    }
+    let second = lists.pop().unwrap();
+    let first = lists.pop().unwrap();
+    Some((first, second))
+}
+
+/// Дерево Меркла поверх (node_id ‖ hash)-пар — формат included_bundles_root /
+/// included_reveals_root из спецификации «Структура proposal-level Merkle roots».
+fn meta_root(entries: &[(mt_state::NodeId, Hash32)]) -> Hash32 {
+    if entries.is_empty() {
+        return empty_internal(TREE_DEPTH);
+    }
+    let mut tree = SparseMerkleTree::new();
+    for (id, h) in entries {
+        let mut meta = Vec::with_capacity(64);
+        meta.extend_from_slice(id);
+        meta.extend_from_slice(h);
+        tree.insert(*id, &meta);
+    }
+    tree.root()
+}
+
+/// Взвешенная цементация билетов: хэш билета зацементирован, когда суммарная
+/// длина цепочки подтвердивших его узлов достигает кворума (67% активной длины).
+fn weighted_cemented_hashes(
+    evidence: &BTreeMap<mt_state::NodeId, BundledConfirmation>,
+    nodes: &mt_state::NodeTable,
+    need_quorum: u64,
+) -> Vec<Hash32> {
+    let mut weight: BTreeMap<Hash32, u64> = BTreeMap::new();
+    for (nid, bc) in evidence {
+        let cl = nodes.get(nid).map(|n| n.chain_length).unwrap_or(0);
+        for rh in &bc.reveal_hashes {
+            *weight.entry(*rh).or_insert(0) += cl;
+        }
+    }
+    weight
+        .into_iter()
+        .filter(|(_, w)| *w >= need_quorum)
+        .map(|(h, _)| h)
+        .collect()
+}
+
+/// Отсортированный список кандидатов розыгрыша окна w из локального пула,
+/// ограниченный данным набором зацементированных хэшей.
+fn candidates_from_pool(
+    pool: Option<&BTreeMap<mt_state::NodeId, VdfReveal>>,
+    cemented: &[Hash32],
+    nodes: &mt_state::NodeTable,
+) -> Vec<mt_lottery::Candidate> {
+    let cem: std::collections::BTreeSet<&Hash32> = cemented.iter().collect();
+    let mut v: Vec<mt_lottery::Candidate> = pool
+        .map(|m| {
+            m.values()
+                .filter(|r| cem.contains(&reveal_hash(r)))
+                .filter_map(|r| {
+                    nodes.get(&r.node_id).map(|n| {
+                        let snapshot = n.chain_length_snapshot.max(1);
+                        mt_lottery::Candidate {
+                            ticket: weighted_ticket_node(&r.endpoint, n.chain_length, snapshot),
+                            class: mt_lottery::WINNER_CLASS_NODE,
+                            id: r.node_id,
+                        }
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    v.sort_by(|a, b| a.ticket.cmp(&b.ticket).then(a.id.cmp(&b.id)));
+    v
+}
+
+/// Единый переход состояния при закрытии окна settled_w — общий для ведущего
+/// и ведомых (детерминизм): apply_proposal + истечение кандидатов + событие
+/// отбора + адаптация D на границе τ₂ + пооконные истории.
+#[allow(clippy::too_many_arguments)]
+fn settle_and_bookkeep(
+    ctx: &mut NetCtx,
+    settled_w: u64,
+    winner_id: Hash32,
+    confirmers: &[mt_state::NodeId],
+    candidates_w_minus_1: Vec<mt_lottery::Candidate>,
+) -> Result<Hash32, NodeError> {
+    let settle = ProposalSettle {
+        window_w: settled_w,
+        winner_id,
+        cemented_confirmers: confirmers.to_vec(),
+    };
+    let post_root = apply_proposal(
+        &mut ctx.state.accounts,
+        &mut ctx.state.nodes,
+        &ctx.state.candidates,
+        &settle,
+        ctx.params,
+    );
+    let _ = apply_candidate_expiry(&mut ctx.state.candidates, settled_w);
+    if is_selection_window(settled_w, ctx.params) {
+        let active = ctx.state.nodes.len() as u64;
+        let cba = cba_for(ctx, settled_w.saturating_sub(2));
+        let t_r_s = ctx
+            .t_r_history
+            .get(&settled_w)
+            .copied()
+            .unwrap_or(ctx.timechain.t_r);
+        let activated = apply_selection_event(
+            &mut ctx.state.candidates,
+            &mut ctx.state.nodes,
+            &mut ctx.state.accounts,
+            &t_r_s,
+            &cba,
+            active,
+            settled_w,
+            ctx.params,
+        );
+        if !activated.is_empty() {
+            println!(
+                "[selection W={settled_w}] активировано {} узл(ов)",
+                activated.len()
+            );
+        }
+    }
+    if settled_w > 0 && settled_w % ctx.params.tau2_windows == 0 {
+        let median_permille = 1000u32;
+        let new_d = next_d(ctx.timechain.current_d, median_permille, ctx.params);
+        if new_d != ctx.timechain.current_d {
+            println!(
+                "[next_d W={settled_w}] D: {} → {}",
+                ctx.timechain.current_d, new_d
+            );
+            ctx.timechain.current_d = new_d;
+        }
+    }
+    if settled_w >= 1 {
+        ctx.bc_set_history
+            .insert(settled_w - 1, confirmers.to_vec());
+        ctx.winner_history.insert(settled_w - 1, winner_id);
+        ctx.lottery_history
+            .insert(settled_w - 1, candidates_w_minus_1);
+    }
+    bound_map(ctx.bc_set_history);
+    bound_map(ctx.winner_history);
+    bound_map(ctx.lottery_history);
+    ctx.bc_accumulator.remove(&settled_w.saturating_sub(1));
+    bound_map(ctx.bc_accumulator);
+    *ctx.current = settled_w;
+    save_current_window(ctx.data_dir, settled_w)?;
+    ctx.store
+        .save_meta_last_cemented(settled_w)
+        .map_err(|e| NodeError::InvalidArguments(format!("save_meta_last_cemented: {e:?}")))?;
+    Ok(post_root)
+}
+
+/// Обработка одного входящего протокольного сообщения. Вызывается из
+/// drain_network в начале витка, между порциями последовательной SHA-256
+/// цепочки и из цикла ожидания кворума ведущего — одна логика везде.
+fn handle_protocol_message(
+    ctx: &mut NetCtx,
+    broadcast_tx: &tokio::sync::mpsc::UnboundedSender<mt_net::ProtocolMessage>,
+    msg: ProtocolMessage,
+) -> Result<(), NodeError> {
+    match msg.msg_type {
+        MsgType::Proposal => {
+            let Some(header) = parse_header(&msg.payload) else {
+                eprintln!(
+                    "[consensus] Proposal envelope wrong size {} — skip",
+                    msg.payload.len()
+                );
+                return Ok(());
+            };
+            let w = header.window_index;
+            let is_cemented = msg.payload.len() > 3722;
+            // Сверка канонических часов: одно окно — одно значение цепочки времени.
+            if let Some(known) = ctx.t_r_history.get(&w) {
+                if *known != header.timechain_value {
+                    eprintln!(
+                        "[consensus] РАСХОЖДЕНИЕ ЦЕПОЧКИ ВРЕМЕНИ w={w}: конверт ≠ локально — skip"
+                    );
+                    return Ok(());
+                }
+            }
+            if !is_cemented {
+                // Уведомление-кандидат: сигнал «окно w собирается». Если наш BC
+                // этого окна уже опубликован — повторить (восстановление ведущего
+                // после рестарта). Самим пересчитывать BC из чужого t_r нельзя:
+                // подтверждение окна допустимо только от собственных часов.
+                if header.proposer_node_id != ctx.my_node {
+                    if let Some(bc) = ctx.own_bc_cache.get(&w) {
+                        let mut bc_payload = Vec::new();
+                        bc.encode(&mut bc_payload);
+                        let _ = broadcast_tx.send(ProtocolMessage::new(
+                            MsgType::BundledConfirmation,
+                            w,
+                            bc_payload,
+                        ));
+                    }
+                }
+                return Ok(());
+            }
+            // --- зацементированный конверт ---
+            // DEV-018c: сброс зависшего клиента быстрой синхронизации по дедлайну.
+            if let Some(deadline) = *ctx.fast_sync_deadline {
+                if Instant::now() > deadline {
+                    eprintln!("[m7] fast-sync deadline exceeded — drop client, retry");
+                    *ctx.fast_sync = None;
+                    *ctx.fast_sync_deadline = None;
+                }
+            }
+            if ctx.fast_sync.is_some() {
+                return Ok(());
+            }
+            if w.saturating_sub(*ctx.current) > ctx.fast_sync_lag_threshold {
+                let mut fs_payload = Vec::new();
+                mt_net::FastSyncRequest {
+                    anchor_window: w,
+                    resume_offset: 0,
+                }
+                .encode(&mut fs_payload);
+                match broadcast_tx.send(ProtocolMessage::new(
+                    MsgType::FastSyncRequest,
+                    msg.request_id,
+                    fs_payload,
+                )) {
+                    Ok(()) => {
+                        eprintln!(
+                            "[m7] {} windows behind (> {}) → fast-sync anchored at window {w}",
+                            w.saturating_sub(*ctx.current),
+                            ctx.fast_sync_lag_threshold
+                        );
+                        *ctx.fast_sync = Some(mt_sync::FastSyncClient::new());
+                        *ctx.fast_sync_deadline =
+                            Some(Instant::now() + std::time::Duration::from_secs(10));
+                    },
+                    Err(e) => eprintln!("[m7] FastSyncRequest broadcast failed: {e}"),
+                }
+                return Ok(());
+            }
+            if w != *ctx.current + 1 {
+                if w > *ctx.current {
+                    eprintln!(
+                        "[consensus] cemented w={w} gap (current={}) — жду последовательного цементирования или быстрой синхронизации",
+                        *ctx.current
+                    );
+                }
+                return Ok(());
+            }
+            // Спецификация «Финальность proposal»: подпись ведущего проверяется
+            // по таблице узлов (НЕ только первопоселенец), окно монотонно.
+            if let Err(e) =
+                mt_consensus::validate_header(&header, &ctx.state.nodes, *ctx.current, 1, 1)
+            {
+                eprintln!("[consensus] header w={w} отклонён: {e:?}");
+                return Ok(());
+            }
+            // Законность ведущего (Lookback + каскад). Терпимость ±1 уровень
+            // глубины на расхождение настенных часов между узлами.
+            let silence = ctx.last_cement_at.elapsed().as_secs();
+            let (exp_now, _) = expected_proposer(ctx, w, silence);
+            let (exp_next, _) = expected_proposer(ctx, w, silence + FALLBACK_TIMEOUT_SECS);
+            let proposer_ok = header.proposer_node_id == exp_now
+                || header.proposer_node_id == exp_next
+                || header.proposer_node_id == ctx.bootstrap_node_id;
+            if !proposer_ok {
+                eprintln!(
+                    "[consensus] w={w}: ведущий {} не является законным (ожидался {}) — skip",
+                    hex16(&header.proposer_node_id),
+                    hex16(&exp_now)
+                );
+                return Ok(());
+            }
+            let Some((bundles_prev, evidence)) = parse_envelope_bundles(&msg.payload) else {
+                eprintln!("[consensus] cemented w={w}: хвост конверта не разобран — skip");
+                return Ok(());
+            };
+            let active_cl = active_chain_length_at(&ctx.state.nodes, w, ctx.params);
+            let need_quorum = quorum(active_cl);
+            // Проверка included_bundles (подтверждения окна w-1).
+            let mut confirmers: Vec<mt_state::NodeId> = Vec::new();
+            if w >= 1 {
+                let t_r_prev = ctx.t_r_history.get(&(w - 1)).copied().or_else(|| {
+                    // После рестарта истории может не быть: единогласный endpoint
+                    // кворумного набора w-1 канонически задаёт T_r(w-1).
+                    let mut it = bundles_prev.iter().map(|b| b.endpoint);
+                    let first = it.next()?;
+                    it.all(|e| e == first).then_some(first)
+                });
+                if let Some(t_r_prev) = t_r_prev {
+                    ctx.t_r_history.entry(w - 1).or_insert(t_r_prev);
+                    let mut sum = 0u64;
+                    for bc in &bundles_prev {
+                        if validate_bundle(bc, &ctx.state.nodes, &t_r_prev).is_ok() {
+                            sum += ctx
+                                .state
+                                .nodes
+                                .get(&bc.node_id)
+                                .map(|n| n.chain_length)
+                                .unwrap_or(0);
+                            confirmers.push(bc.node_id);
+                        }
+                    }
+                    if mt_consensus::validate_bundles_threshold(sum, active_cl).is_err() {
+                        eprintln!(
+                            "[consensus] w={w}: included_bundles {sum} < кворума {need_quorum} — skip"
+                        );
+                        return Ok(());
+                    }
+                } else if !bundles_prev.is_empty() {
+                    eprintln!("[consensus] w={w}: разногласие endpoint в included_bundles — skip");
+                    return Ok(());
+                }
+            }
+            confirmers.sort();
+            // Проверка цементации билетов окна w-1 уликами окна w (взвешенно).
+            let mut ev_map: BTreeMap<mt_state::NodeId, BundledConfirmation> = BTreeMap::new();
+            let mut ev_sum = 0u64;
+            for bc in &evidence {
+                if validate_bundle(bc, &ctx.state.nodes, &header.timechain_value).is_ok() {
+                    ev_sum += ctx
+                        .state
+                        .nodes
+                        .get(&bc.node_id)
+                        .map(|n| n.chain_length)
+                        .unwrap_or(0);
+                    ev_map.insert(bc.node_id, bc.clone());
+                }
+            }
+            if w >= 1 && ev_sum < need_quorum {
+                eprintln!(
+                    "[consensus] w={w}: улики цементации {ev_sum} < кворума {need_quorum} — skip"
+                );
+                return Ok(());
+            }
+            let mut cemented = weighted_cemented_hashes(&ev_map, &ctx.state.nodes, need_quorum);
+            cemented.sort();
+            // included_reveals_root обязан совпасть с нашим пересчётом.
+            let reveal_entries: Vec<(mt_state::NodeId, Hash32)> = ctx
+                .reveal_pool
+                .get(&w.saturating_sub(1))
+                .map(|m| {
+                    m.values()
+                        .filter(|r| cemented.binary_search(&reveal_hash(r)).is_ok())
+                        .map(|r| (r.node_id, reveal_hash(r)))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let candidates_prev = candidates_from_pool(
+                ctx.reveal_pool.get(&w.saturating_sub(1)),
+                &cemented,
+                &ctx.state.nodes,
+            );
+            if reveal_entries.len() == cemented.len() {
+                if meta_root(&reveal_entries) != header.included_reveals_root {
+                    eprintln!("[consensus] w={w}: included_reveals_root mismatch — skip");
+                    return Ok(());
+                }
+                if w >= 1 && !candidates_prev.is_empty() {
+                    if let Err(e) = mt_consensus::validate_winner(&header, &candidates_prev) {
+                        eprintln!("[consensus] w={w}: победитель не сходится ({e:?}) — skip");
+                        return Ok(());
+                    }
+                }
+            } else {
+                eprintln!(
+                    "[consensus] w={w}: пул билетов неполон ({}/{}) — победитель принят по кворуму",
+                    reveal_entries.len(),
+                    cemented.len()
+                );
+            }
+            // Применение единым переходом состояния.
+            let post_root =
+                settle_and_bookkeep(ctx, w, header.winner_id, &confirmers, candidates_prev)?;
+            if post_root != header.state_root {
+                panic!(
+                    "расхождение state_root в окне {w}: конверт {:02x?}.. ≠ локально {:02x?}..",
+                    &header.state_root[..4],
+                    &post_root[..4]
+                );
+            }
+            ctx.recent_roots.insert(w, header.state_root);
+            bound_map(ctx.recent_roots);
+            ctx.t_r_history.insert(w, header.timechain_value);
+            bound_map(ctx.t_r_history);
+            if ctx.timechain.last_window < w {
+                // Каноническое значение часов из кворумного конверта — догоняем.
+                ctx.timechain.t_r = header.timechain_value;
+                ctx.timechain.last_window = w;
+            }
+            ctx.store
+                .archive_proposal_envelope(w, &msg.payload)
+                .map_err(|e| {
+                    NodeError::InvalidArguments(format!("archive_proposal_envelope: {e:?}"))
+                })?;
+            *ctx.prev_proposal_hash = proposal_hash(&header);
+            ctx.last_proposer_cement.insert(header.proposer_node_id, w);
+            *ctx.last_cement_at = Instant::now();
+            eprintln!(
+                "[consensus] applied cemented Proposal w={w} (confirmers={}, winner={})",
+                confirmers.len(),
+                hex16(&header.winner_id)
+            );
+        },
+        MsgType::FastSyncRequest => match mt_net::FastSyncRequest::decode(&msg.payload) {
+            Ok(req) => {
+                let snap = mt_sync::Snapshot::from_tables(
+                    *ctx.current,
+                    &ctx.state.accounts,
+                    &ctx.state.nodes,
+                    &ctx.state.candidates,
+                );
+                let chunks = snap.to_wire_chunks(32);
+                let total = chunks.len();
+                for chunk in chunks {
+                    let table_id_byte = match chunk.table_id {
+                        mt_sync::FastSyncTableId::Account => mt_net::TableId::Account,
+                        mt_sync::FastSyncTableId::Node => mt_net::TableId::Node,
+                        mt_sync::FastSyncTableId::Candidate => mt_net::TableId::Candidate,
+                        mt_sync::FastSyncTableId::Proposals => mt_net::TableId::Proposals,
+                    };
+                    let mut flat: Vec<u8> = Vec::new();
+                    for r in &chunk.records {
+                        flat.extend_from_slice(r);
+                    }
+                    let wire_chunk = mt_net::FastSyncResponseChunk {
+                        chunk_index: chunk.chunk_index,
+                        total_chunks: chunk.total_chunks,
+                        table_id: table_id_byte,
+                        record_count: chunk.records.len() as u32,
+                        anchor_window: *ctx.current,
+                        records: flat,
+                    };
+                    let mut payload = Vec::new();
+                    wire_chunk.encode(&mut payload);
+                    let envelope =
+                        ProtocolMessage::new(MsgType::FastSyncResponse, msg.request_id, payload);
+                    if broadcast_tx.send(envelope).is_err() {
+                        break;
+                    }
+                }
+                eprintln!(
+                    "[m7] served FastSync snapshot: anchor_window={} req={} chunks={total}",
+                    *ctx.current, req.anchor_window
+                );
+            },
+            Err(e) => {
+                eprintln!("[m7] FastSyncRequest decode failed: {e:?}");
+            },
+        },
+        MsgType::FastSyncResponse => {
+            if let Some(mut client) = ctx.fast_sync.take() {
+                let chunk_anchor = mt_net::FastSyncResponseChunk::decode(&msg.payload)
+                    .ok()
+                    .map(|c| c.anchor_window)
+                    .unwrap_or(0);
+                if chunk_anchor <= *ctx.current {
+                    eprintln!(
+                        "[m7] discard FastSyncResponse anchor={chunk_anchor} <= current={} — drop client, retry on next cemented",
+                        *ctx.current
+                    );
+                    drop(client);
+                    *ctx.fast_sync_deadline = None;
+                    return Ok(());
+                }
+                let parsed = mt_net::FastSyncResponseChunk::decode(&msg.payload)
+                    .map_err(|e| format!("decode: {e:?}"))
+                    .and_then(|wc| {
+                        crate::commands::fastsync::wire_chunk_to_sync(wc)
+                            .map_err(|e| format!("wire: {e:?}"))
+                    });
+                match parsed {
+                    Ok(chunk) => match client.accept_chunk(chunk) {
+                        Ok(mt_sync::AcceptOutcome::Complete) => {
+                            match client.finalize(ctx.recent_roots) {
+                                Ok((window, tables)) => {
+                                    ctx.state.apply_fast_sync(tables, ctx.data_dir, window)?;
+                                    *ctx.current = window;
+                                    save_current_window(ctx.data_dir, window)?;
+                                    *ctx.fast_sync_deadline = None;
+                                    eprintln!(
+                                    "[m7] fast-sync complete → state replaced, current_window={window}"
+                                );
+                                },
+                                Err(e) => eprintln!(
+                                    "[m7] fast-sync finalize rejected: {e:?} — retry on next lag"
+                                ),
+                            }
+                        },
+                        Ok(mt_sync::AcceptOutcome::Progress { received, total }) => {
+                            eprintln!("[m7] fast-sync chunk {received}/{total}");
+                            *ctx.fast_sync = Some(client);
+                        },
+                        Err(e) => eprintln!(
+                            "[m7] fast-sync chunk rejected: {e:?} — discard, retry on next lag"
+                        ),
+                    },
+                    Err(reason) => {
+                        eprintln!("[m7] FastSyncResponse {reason}");
+                        *ctx.fast_sync = Some(client);
+                    },
+                }
+            }
+        },
+        MsgType::VdfReveal => {
+            if let Ok((rec_reveal, _)) = VdfReveal::decode(&msg.payload) {
+                let rw = rec_reveal.window_index;
+                if !ctx.t_r_history.contains_key(&rw) && rw > ctx.timechain.last_window {
+                    // Часы этого окна нам ещё неизвестны — отложить до своего витка.
+                    if ctx.pending_msgs.len() < 512 {
+                        ctx.pending_msgs.push(msg);
+                    }
+                    return Ok(());
+                }
+                let exp_t_r = ctx
+                    .t_r_history
+                    .get(&rw)
+                    .copied()
+                    .unwrap_or(ctx.timechain.t_r);
+                let cba = cba_for(ctx, rw.saturating_sub(2));
+                if validate_reveal(&rec_reveal, &ctx.state.nodes, &exp_t_r, &cba, rw).is_ok() {
+                    let nid = rec_reveal.node_id;
+                    ctx.reveal_pool
+                        .entry(rw)
+                        .or_default()
+                        .insert(nid, rec_reveal);
+                    bound_map(ctx.reveal_pool);
+                    eprintln!("[lottery] принят билет от {} за окно {rw}", hex16(&nid));
+                } else {
+                    eprintln!(
+                        "[lottery] билет {} w={rw} не прошёл проверку",
+                        hex16(&rec_reveal.node_id)
+                    );
+                }
+            }
+        },
+        MsgType::BundledConfirmation => match BundledConfirmation::decode(&msg.payload) {
+            Ok((bc, _used)) => {
+                let bw = bc.window_index;
+                if !ctx.t_r_history.contains_key(&bw) && bw > ctx.timechain.last_window {
+                    if ctx.pending_msgs.len() < 512 {
+                        ctx.pending_msgs.push(msg);
+                    }
+                    return Ok(());
+                }
+                let expected_t_r = ctx
+                    .t_r_history
+                    .get(&bw)
+                    .copied()
+                    .unwrap_or(ctx.timechain.t_r);
+                if validate_bundle(&bc, &ctx.state.nodes, &expected_t_r).is_ok() {
+                    let node_id = bc.node_id;
+                    ctx.bc_accumulator
+                        .entry(bw)
+                        .or_default()
+                        .insert(node_id, bc);
+                    eprintln!(
+                        "[bc] принято подтверждение от {} за окно {bw}",
+                        hex16(&node_id)
+                    );
+                } else {
+                    eprintln!(
+                        "[bc] подтверждение {} w={bw} не прошло проверку",
+                        hex16(&bc.node_id)
+                    );
+                }
+            },
+            Err(e) => eprintln!("[bc] decode failed: {e:?}"),
+        },
+        _ => {},
+    }
+    Ok(())
+}
+
+/// Публикация артефактов окна w от собственных канонических часов:
+/// билет розыгрыша (VDF_Reveal) окна w и подтверждение (BundledConfirmation)
+/// окна w с хэшами билетов окна w-1 — спецификация «Confirmations»:
+/// «Bundle содержит операции текущего окна W и VDF_Reveals предыдущего окна W-1».
+#[allow(clippy::too_many_arguments)]
+fn publish_window_artifacts(
+    state: &LocalState,
+    reveal_pool: &mut BTreeMap<u64, BTreeMap<mt_state::NodeId, VdfReveal>>,
+    bc_accumulator: &mut BTreeMap<u64, BTreeMap<mt_state::NodeId, BundledConfirmation>>,
+    own_bc_cache: &mut BTreeMap<u64, BundledConfirmation>,
+    bc_set_history: &BTreeMap<u64, Vec<mt_state::NodeId>>,
+    identity: &crate::identity::Identity,
+    my_node: mt_state::NodeId,
+    w: u64,
+    t_r_w: &Hash32,
+    broadcast_tx: Option<&tokio::sync::mpsc::UnboundedSender<mt_net::ProtocolMessage>>,
+) -> Result<(), NodeError> {
+    let cba = cba_from(bc_set_history, w.saturating_sub(2));
+    let endpoint = compute_endpoint(t_r_w, &cba, &my_node, w);
+    let mut reveal = VdfReveal {
+        node_id: my_node,
+        window_index: w,
+        endpoint,
+        signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+    };
+    let mut scope = Vec::new();
+    reveal.encode_signed_scope(&mut scope);
+    reveal.signature = sign(&identity.node_sk, &scope).map_err(NodeError::Crypto)?;
+    validate_reveal(&reveal, &state.nodes, t_r_w, &cba, w)
+        .map_err(|e| NodeError::InvalidArguments(format!("validate_reveal: {e:?}")))?;
+    reveal_pool
+        .entry(w)
+        .or_default()
+        .insert(my_node, reveal.clone());
+    bound_map(reveal_pool);
+    if let Some(tx) = broadcast_tx {
+        let mut payload = Vec::new();
+        reveal.encode(&mut payload);
+        let _ = tx.send(ProtocolMessage::new(MsgType::VdfReveal, w, payload));
+    }
+    // Подтверждение окна w: хэши билетов предыдущего окна (двухоконный конвейер).
+    let mut bc_reveal_hashes: Vec<Hash32> = if w >= 1 {
+        reveal_pool
+            .get(&(w - 1))
+            .map(|m| m.values().map(reveal_hash).collect())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    bc_reveal_hashes.sort();
+    let mut bc = BundledConfirmation {
+        node_id: my_node,
+        endpoint: *t_r_w,
+        window_index: w,
+        op_hashes: Vec::new(),
+        reveal_hashes: bc_reveal_hashes,
+        signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+    };
+    let mut bc_scope = Vec::new();
+    bc.encode_signed_scope(&mut bc_scope);
+    bc.signature = sign(&identity.node_sk, &bc_scope).map_err(NodeError::Crypto)?;
+    validate_bundle(&bc, &state.nodes, t_r_w)
+        .map_err(|e| NodeError::InvalidArguments(format!("validate_bundle: {e:?}")))?;
+    bc_accumulator
+        .entry(w)
+        .or_default()
+        .insert(my_node, bc.clone());
+    own_bc_cache.insert(w, bc.clone());
+    bound_map(own_bc_cache);
+    if let Some(tx) = broadcast_tx {
+        let mut payload = Vec::new();
+        bc.encode(&mut payload);
+        let _ = tx.send(ProtocolMessage::new(
+            MsgType::BundledConfirmation,
+            w,
+            payload,
+        ));
+    }
+    Ok(())
+}
+
+/// Вычитка входящей очереди: сперва отложенные сообщения, чьи окна уже
+/// получили каноническое значение часов, затем свежие из канала.
+fn drain_network(ctx: &mut NetCtx, handle: &mut NetworkHandle) -> Result<(), NodeError> {
+    if !ctx.pending_msgs.is_empty() {
+        let pend = std::mem::take(ctx.pending_msgs);
+        let tx = handle.broadcast_tx.clone();
+        for msg in pend {
+            handle_protocol_message(ctx, &tx, msg)?;
+        }
+    }
+    let tx = handle.broadcast_tx.clone();
+    while let Ok(msg) = handle.incoming_rx.try_recv() {
+        handle_protocol_message(ctx, &tx, msg)?;
+    }
+    Ok(())
+}
+
+fn vdf_step_chunked<F: FnMut()>(
+    prev: &Hash32,
+    d: u64,
+    label: &str,
+    window: u64,
+    mut on_chunk: F,
+) -> Hash32 {
     if d == 0 {
         return *prev;
     }
@@ -1676,6 +1631,7 @@ fn vdf_step_chunked(prev: &Hash32, d: u64, label: &str, window: u64) -> Hash32 {
         let this_chunk = boundary - prev_boundary;
         current = vdf_step(&current, this_chunk);
         prev_boundary = boundary;
+        on_chunk();
         let percent = (i * 100) / VDF_PROGRESS_CHUNKS;
         let bar = progress_bar(boundary, d, 30);
         let elapsed = chunk_start.elapsed().as_secs_f64();
