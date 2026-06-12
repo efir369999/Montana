@@ -244,6 +244,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let mut own_bc_cache: BTreeMap<u64, BundledConfirmation> = BTreeMap::new();
     let mut pending_msgs: Vec<ProtocolMessage> = Vec::new();
     let mut last_cement_at = Instant::now();
+    // Собственные сохранённые часы — каноническое значение своего последнего
+    // витка: без этой записи узел после рестарта не может перепубликовать
+    // артефакты ещё не зацементированного окна (архив пуст в первых окнах).
+    if timechain.last_window >= 1 {
+        t_r_history.insert(timechain.last_window, timechain.t_r);
+    }
     // Восстановление историй из архива зацементированных конвертов после
     // рестарта: набор подтвердивших, победители, значения часов.
     for w in current.saturating_sub(8)..=current {
@@ -379,6 +385,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     my_node,
                     next_window,
                     &t_r_w,
+                    timechain.lottery_target,
                     network_handle.as_ref().map(|h| &h.broadcast_tx),
                 )?;
             }
@@ -502,7 +509,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         winner_endpoint: [0u8; 32],
                         winner_id: my_node,
                         proposer_node_id: my_node,
-                        target: u128::MAX,
+                        target: timechain.lottery_target,
                         fallback_depth: my_depth,
                         signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
                     };
@@ -628,6 +635,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         winner_id,
                         &confirmers,
                         candidates_prev.clone(),
+                        cemented.len() as u64,
                     )?
                 };
                 let recomputed = compute_state_root(
@@ -658,7 +666,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     winner_endpoint,
                     winner_id,
                     proposer_node_id: my_node,
-                    target: u128::MAX,
+                    target: timechain.lottery_target,
                     fallback_depth: my_depth,
                     signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
                 };
@@ -1024,6 +1032,7 @@ fn settle_and_bookkeep(
     winner_id: Hash32,
     confirmers: &[mt_state::NodeId],
     candidates_w_minus_1: Vec<mt_lottery::Candidate>,
+    cemented_reveal_count: u64,
 ) -> Result<Hash32, NodeError> {
     let settle = ProposalSettle {
         window_w: settled_w,
@@ -1063,6 +1072,10 @@ fn settle_and_bookkeep(
             );
         }
     }
+    ctx.timechain.tau2_reveal_count = ctx
+        .timechain
+        .tau2_reveal_count
+        .saturating_add(cemented_reveal_count);
     if settled_w > 0 && settled_w % ctx.params.tau2_windows == 0 {
         let median_permille = 1000u32;
         let new_d = next_d(ctx.timechain.current_d, median_permille, ctx.params);
@@ -1073,6 +1086,21 @@ fn settle_and_bookkeep(
             );
             ctx.timechain.current_d = new_d;
         }
+        // Спецификация «Калибровка target»: на границе τ₂ порог-цель
+        // пересчитывается к ~13 кандидатам на окно (биндинг-векторы TA1-TA5).
+        let new_target = mt_lottery::calibrate_target(
+            ctx.timechain.lottery_target,
+            ctx.timechain.tau2_reveal_count,
+            ctx.params.tau2_windows,
+        );
+        if new_target != ctx.timechain.lottery_target {
+            println!(
+                "[target W={settled_w}] {:#x} → {:#x} (билетов за τ₂: {})",
+                ctx.timechain.lottery_target, new_target, ctx.timechain.tau2_reveal_count
+            );
+            ctx.timechain.lottery_target = new_target;
+        }
+        ctx.timechain.tau2_reveal_count = 0;
     }
     if settled_w >= 1 {
         ctx.bc_set_history
@@ -1248,6 +1276,12 @@ fn handle_protocol_message(
                 );
                 return Ok(());
             }
+            if header.target != ctx.timechain.lottery_target {
+                eprintln!(
+                    "[consensus] w={w}: target конверта ≠ локальному — расхождение калибровки, skip"
+                );
+                return Ok(());
+            }
             let Some((bundles_prev, evidence)) = parse_envelope_bundles(&msg.payload) else {
                 eprintln!("[consensus] cemented w={w}: хвост конверта не разобран — skip");
                 return Ok(());
@@ -1347,8 +1381,14 @@ fn handle_protocol_message(
                 );
             }
             // Применение единым переходом состояния.
-            let post_root =
-                settle_and_bookkeep(ctx, w, header.winner_id, &confirmers, candidates_prev)?;
+            let post_root = settle_and_bookkeep(
+                ctx,
+                w,
+                header.winner_id,
+                &confirmers,
+                candidates_prev,
+                cemented.len() as u64,
+            )?;
             if post_root != header.state_root {
                 panic!(
                     "расхождение state_root в окне {w}: конверт {:02x?}.. ≠ локально {:02x?}..",
@@ -1585,10 +1625,21 @@ fn publish_window_artifacts(
     my_node: mt_state::NodeId,
     w: u64,
     t_r_w: &Hash32,
+    lottery_target: u128,
     broadcast_tx: Option<&tokio::sync::mpsc::UnboundedSender<mt_net::ProtocolMessage>>,
 ) -> Result<(), NodeError> {
     let cba = cba_from(bc_set_history, w.saturating_sub(2));
     let endpoint = compute_endpoint(t_r_w, &cba, &my_node, w);
+    // Спецификация: «Если weighted_ticket_node < target — узел кандидат и
+    // публикует VDF_Reveal». Подтверждение окна публикуется всегда.
+    let is_candidate = state
+        .nodes
+        .get(&my_node)
+        .map(|n| {
+            let snapshot = n.chain_length_snapshot.max(1);
+            weighted_ticket_node(&endpoint, n.chain_length, snapshot) < lottery_target
+        })
+        .unwrap_or(false);
     let mut reveal = VdfReveal {
         node_id: my_node,
         window_index: w,
@@ -1598,17 +1649,21 @@ fn publish_window_artifacts(
     let mut scope = Vec::new();
     reveal.encode_signed_scope(&mut scope);
     reveal.signature = sign(&identity.node_sk, &scope).map_err(NodeError::Crypto)?;
-    validate_reveal(&reveal, &state.nodes, t_r_w, &cba, w)
-        .map_err(|e| NodeError::InvalidArguments(format!("validate_reveal: {e:?}")))?;
-    reveal_pool
-        .entry(w)
-        .or_default()
-        .insert(my_node, reveal.clone());
-    bound_map(reveal_pool);
-    if let Some(tx) = broadcast_tx {
-        let mut payload = Vec::new();
-        reveal.encode(&mut payload);
-        let _ = tx.send(ProtocolMessage::new(MsgType::VdfReveal, w, payload));
+    if is_candidate {
+        validate_reveal(&reveal, &state.nodes, t_r_w, &cba, w)
+            .map_err(|e| NodeError::InvalidArguments(format!("validate_reveal: {e:?}")))?;
+        reveal_pool
+            .entry(w)
+            .or_default()
+            .insert(my_node, reveal.clone());
+        bound_map(reveal_pool);
+        if let Some(tx) = broadcast_tx {
+            let mut payload = Vec::new();
+            reveal.encode(&mut payload);
+            let _ = tx.send(ProtocolMessage::new(MsgType::VdfReveal, w, payload));
+        }
+    } else {
+        eprintln!("[lottery] окно {w}: взвешенный билет выше цели — не кандидат");
     }
     // Подтверждение окна w: хэши билетов предыдущего окна (двухоконный конвейер).
     let mut bc_reveal_hashes: Vec<Hash32> = if w >= 1 {
