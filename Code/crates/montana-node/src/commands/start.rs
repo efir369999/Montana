@@ -317,6 +317,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     prev_proposal_hash: &mut prev_proposal_hash,
                     fast_sync_lag_threshold,
                     fallback_secs: (last_tick_dur.as_secs() * 2).max(3),
+                    session_start,
                     data_dir: &data_dir,
                     params,
                     store: &store,
@@ -841,6 +842,12 @@ const HISTORY_BOUND: usize = 64;
 /// набора»). Лотерейный active-predicate (2τ₂, кандидатство) — отдельный.
 const QUORUM_ACTIVE_HORIZON: u64 = 4;
 
+/// Длинный grace для genesis-членов: узел из Genesis Decree ОЖИДАЕТСЯ в сети.
+/// Bootstrap не цементирует соло и не убегает, пока genesis-член поднимает
+/// связь или догоняет (молчит < этого порога). Так вес не накапливается у
+/// одного узла. Failsafe (соло) — только после реального долгого молчания.
+const GENESIS_MEMBER_GRACE_SECS: u64 = 90;
+
 fn bound_map<K: Ord + Copy, V>(m: &mut BTreeMap<K, V>) {
     while m.len() > HISTORY_BOUND {
         let k = *m.keys().next().unwrap();
@@ -896,6 +903,8 @@ struct NetCtx<'a> {
     last_cement_at: &'a mut Instant,
     prev_proposal_hash: &'a mut Hash32,
     fast_sync_lag_threshold: u64,
+    // Момент старта сессии — для презумпции живости genesis-членов на старте.
+    session_start: Instant,
     // Адаптивный таймаут перехвата ведущего (× длительности окна): по истечении
     // каждого такого интервала молчания законного ведущего роль уходит на
     // следующего запасного, терминально — на bootstrap (сеть не встаёт).
@@ -939,12 +948,18 @@ fn mark_peer_seen(ctx: &mut NetCtx, node: mt_state::NodeId) {
 /// интервала (минимум 30 с). Медленный-но-работающий узел остаётся живым;
 /// реально замолчавший — выпадает из кворумного набора.
 fn peer_alive(ctx: &NetCtx, node: &mt_state::NodeId) -> bool {
+    let genesis_grace = Duration::from_secs(GENESIS_MEMBER_GRACE_SECS);
     match ctx.peer_seen.get(node) {
         Some((last, interval)) => {
-            let timeout = (*interval * 3).max(Duration::from_secs(30));
+            // Живой пока молчит не дольше 3× своего интервала ИЛИ длинного
+            // genesis-grace — медленный/мигающий genesis-член не выпадает,
+            // bootstrap его ждёт (вес не накапливается соло).
+            let timeout = (*interval * 3).max(genesis_grace);
             Instant::now().saturating_duration_since(*last) < timeout
         },
-        None => false,
+        // Ещё ни одной вести: genesis-член ПРЕЗЮМИРУЕТСЯ живым в течение
+        // genesis-grace со старта сессии — ждём его подключения, не убегаем.
+        None => ctx.session_start.elapsed() < genesis_grace,
     }
 }
 
