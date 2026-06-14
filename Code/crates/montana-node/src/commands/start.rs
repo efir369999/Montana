@@ -288,6 +288,8 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
 
     // Длительность предыдущего витка — основа адаптивного liveness-grace.
     let mut last_tick_dur = Duration::from_secs(30);
+    // Живость соседей по факту получения их сообщений.
+    let mut peer_seen: BTreeMap<mt_state::NodeId, (Instant, Duration)> = BTreeMap::new();
     loop {
         // Эффективное D пере-считывается каждый виток (адаптация на границе τ₂
         // происходит в едином переходе состояния settle_and_bookkeep).
@@ -306,6 +308,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     lottery_history: &mut lottery_history,
                     bc_set_history: &mut bc_set_history,
                     last_proposer_cement: &mut last_proposer_cement,
+                    peer_seen: &mut peer_seen,
                     own_bc_cache: &mut own_bc_cache,
                     pending_msgs: &mut pending_msgs,
                     fast_sync: &mut fast_sync,
@@ -548,16 +551,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     ));
                 }
 
-                // Ожидание кворума подтверждений окна propose_w.
-                // Спецификация «Свойство темпа сети»: быстрейший узел ждёт,
-                // пока 67% активной длины цепочки подтвердят окно.
-                // Failsafe (M4-INFO-10): bootstrap не ждёт молчащих вечно —
-                // через liveness-grace он цементирует присутствующим набором
-                // (degraded mode), чтобы сеть жила даже одним узлом. Восстановление
-                // полного кворума автоматическое, когда соседи возобновят BC.
-                let tick_dur = last_tick_dur;
-                let liveness_grace = (tick_dur * 3).max(Duration::from_secs(20));
-                let wait_start = Instant::now();
+                // Ожидание кворума подтверждений окна propose_w по ЖИВОМУ набору.
+                // Спецификация «Свойство темпа сети»: быстрейший узел ЖДЁТ,
+                // пока достаточно других успеет — темп = медианный активный узел.
+                // Живой-но-медленный сосед НЕ бросается (его ждут сколько нужно);
+                // выпадает из набора лишь реально замолчавший (M4-INFO-10 failsafe).
                 let mut last_notify = Instant::now();
                 let mut degraded = false;
                 loop {
@@ -568,8 +566,10 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     if current >= propose_w || STOP.load(Ordering::SeqCst) {
                         break;
                     }
-                    let active_cl = active_chain_length_at(&state.nodes, propose_w, params);
-                    let need = quorum(active_cl);
+                    let (need, live_n) = {
+                        let ctx = net_ctx!();
+                        live_quorum_need(&ctx)
+                    };
                     let got: u64 = bc_accumulator
                         .get(&propose_w)
                         .map(|m| {
@@ -579,13 +579,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         })
                         .unwrap_or(0);
                     if got >= need {
-                        break;
-                    }
-                    if my_node == bootstrap_node_id && wait_start.elapsed() > liveness_grace {
-                        eprintln!(
-                            "[liveness] w={propose_w}: кворум {got}/{need} не собран за grace — bootstrap цементирует присутствующими (degraded M4-INFO-10)"
-                        );
-                        degraded = true;
+                        // Достигнут кворум живого набора. degraded — когда живых
+                        // меньше, чем узлов в таблице (кто-то реально замолчал).
+                        degraded = (live_n as usize) < state.nodes.len();
                         break;
                     }
                     if last_notify.elapsed() > Duration::from_secs(10) {
@@ -610,21 +606,15 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
 
                 // Цементация: улики = подтверждения окна propose_w,
                 // included_bundles = подтверждения окна propose_w-1.
-                let active_cl = active_chain_length_at(&state.nodes, propose_w, params);
                 let evidence = bc_accumulator.get(&propose_w).cloned().unwrap_or_default();
-                // В штатном режиме порог = 67% активной длины. В degraded-режиме
-                // (bootstrap-failsafe) — 67% присутствующих confirmer-ов: сеть
-                // продвигается тем, кто реально онлайн (спецификация «темп
-                // медианного активного набора»).
-                let present_cl: u64 = evidence
-                    .keys()
-                    .filter_map(|id| state.nodes.get(id).map(|n| n.chain_length))
-                    .sum();
-                let need = if degraded {
-                    quorum(present_cl)
-                } else {
-                    quorum(active_cl)
+                // Порог цементации = 67% ЖИВОГО набора (тот же, по которому
+                // ждали кворум). Билет зацементирован, если его подтвердили
+                // узлы с суммарной chain_length ≥ этого порога.
+                let (need, _live_n) = {
+                    let ctx = net_ctx!();
+                    live_quorum_need(&ctx)
                 };
+                let _ = degraded;
                 let mut cemented = weighted_cemented_hashes(&evidence, &state.nodes, need);
                 cemented.sort();
                 let prev_w = propose_w.saturating_sub(1);
@@ -844,6 +834,13 @@ const VDF_PROGRESS_CHUNKS: u64 = 10;
 /// Глубина хранения пооконных историй (пулы, победители, наборы подтвердивших).
 const HISTORY_BOUND: usize = 64;
 
+/// Горизонт активности для КВОРУМА цементации (в окнах). Узел, не приславший
+/// зацементированное подтверждение дольше этого числа окон, выпадает из
+/// active_chain_length — кворум считается от реально живых, сеть не блокируется
+/// хронически отсутствующим узлом (спецификация «темп медианного активного
+/// набора»). Лотерейный active-predicate (2τ₂, кандидатство) — отдельный.
+const QUORUM_ACTIVE_HORIZON: u64 = 4;
+
 fn bound_map<K: Ord + Copy, V>(m: &mut BTreeMap<K, V>) {
     while m.len() > HISTORY_BOUND {
         let k = *m.keys().next().unwrap();
@@ -857,12 +854,17 @@ fn bound_map<K: Ord + Copy, V>(m: &mut BTreeMap<K, V>) {
 fn active_chain_length_at(
     nodes: &mt_state::NodeTable,
     w: u64,
-    params: &mt_genesis::ProtocolParams,
+    _params: &mt_genesis::ProtocolParams,
 ) -> u64 {
-    let horizon = 2 * params.tau2_windows;
+    // В первые QUORUM_ACTIVE_HORIZON окон от genesis учитываем всех (раскачка,
+    // last_confirmation ещё не накоплен); далее — только реально активных.
+    let horizon = QUORUM_ACTIVE_HORIZON;
     nodes
         .iter()
         .filter(|n| {
+            if w <= horizon {
+                return true;
+            }
             let last_seen = n.last_confirmation_window.max(n.start_window);
             w.saturating_sub(last_seen) <= horizon
         })
@@ -884,6 +886,9 @@ struct NetCtx<'a> {
     lottery_history: &'a mut BTreeMap<u64, Vec<mt_lottery::Candidate>>,
     bc_set_history: &'a mut BTreeMap<u64, Vec<mt_state::NodeId>>,
     last_proposer_cement: &'a mut BTreeMap<mt_state::NodeId, u64>,
+    // Живость соседей: (момент последнего сообщения, наблюдаемый интервал).
+    // Интервал ≈ длительность витка соседа — медленный узел не выпадает.
+    peer_seen: &'a mut BTreeMap<mt_state::NodeId, (Instant, Duration)>,
     own_bc_cache: &'a mut BTreeMap<u64, BundledConfirmation>,
     pending_msgs: &'a mut Vec<ProtocolMessage>,
     fast_sync: &'a mut Option<mt_sync::FastSyncClient>,
@@ -912,6 +917,49 @@ fn cba_from(history: &BTreeMap<u64, Vec<mt_state::NodeId>>, w: u64) -> Hash32 {
 
 fn cba_for(ctx: &NetCtx, w: u64) -> Hash32 {
     cba_from(ctx.bc_set_history, w)
+}
+
+/// Отметить факт получения сообщения от соседа: обновить момент и сгладить
+/// наблюдаемый интервал между его сообщениями (≈ длительность его витка).
+fn mark_peer_seen(ctx: &mut NetCtx, node: mt_state::NodeId) {
+    let now = Instant::now();
+    let prev = ctx.peer_seen.get(&node).copied();
+    let interval = match prev {
+        Some((last, ema)) => {
+            let gap = now.saturating_duration_since(last);
+            // Сглаживание: новый интервал учитывается с весом 1/2.
+            (ema / 2).saturating_add(gap / 2)
+        },
+        None => Duration::from_secs(0),
+    };
+    ctx.peer_seen.insert(node, (now, interval));
+}
+
+/// Жив ли сосед: получали от него сообщение не дольше 3× его наблюдаемого
+/// интервала (минимум 30 с). Медленный-но-работающий узел остаётся живым;
+/// реально замолчавший — выпадает из кворумного набора.
+fn peer_alive(ctx: &NetCtx, node: &mt_state::NodeId) -> bool {
+    match ctx.peer_seen.get(node) {
+        Some((last, interval)) => {
+            let timeout = (*interval * 3).max(Duration::from_secs(30));
+            Instant::now().saturating_duration_since(*last) < timeout
+        },
+        None => false,
+    }
+}
+
+/// Кворумный порог по ЖИВОМУ набору: сумма chain_length себя и живых соседей.
+/// Темп сети = медианный активный набор (спецификация «Свойство темпа сети»).
+fn live_quorum_need(ctx: &NetCtx) -> (u64, u64) {
+    let mut live_cl = 0u64;
+    let mut live_n = 0u64;
+    for node in ctx.state.nodes.iter() {
+        if node.node_id == ctx.my_node || peer_alive(ctx, &node.node_id) {
+            live_cl += node.chain_length;
+            live_n += 1;
+        }
+    }
+    (quorum(live_cl), live_n)
 }
 
 /// Законный ведущий окна w по спецификации Lookback Leadership:
@@ -1609,6 +1657,9 @@ fn handle_protocol_message(
                 let cba = cba_for(ctx, rw.saturating_sub(2));
                 if validate_reveal(&rec_reveal, &ctx.state.nodes, &exp_t_r, &cba, rw).is_ok() {
                     let nid = rec_reveal.node_id;
+                    if nid != ctx.my_node {
+                        mark_peer_seen(ctx, nid);
+                    }
                     ctx.reveal_pool
                         .entry(rw)
                         .or_default()
@@ -1686,6 +1737,9 @@ fn handle_protocol_message(
                     .unwrap_or(ctx.timechain.t_r);
                 if validate_bundle(&bc, &ctx.state.nodes, &expected_t_r).is_ok() {
                     let node_id = bc.node_id;
+                    if node_id != ctx.my_node {
+                        mark_peer_seen(ctx, node_id);
+                    }
                     ctx.bc_accumulator
                         .entry(bw)
                         .or_default()
