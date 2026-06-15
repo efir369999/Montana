@@ -6,7 +6,9 @@ pub use manifest::{GenesisManifest, GenesisPeer, ManifestError};
 
 use std::sync::OnceLock;
 
-use mt_codec::{domain, write_bytes, write_u128, write_u16, write_u64, write_u8, CanonicalEncode};
+use mt_codec::{
+    domain, write_bytes, write_u128, write_u16, write_u32, write_u64, write_u8, CanonicalEncode,
+};
 use mt_crypto::{hash, Hash32, PUBLIC_KEY_SIZE};
 
 // PARAMS_ENCODED_SIZE: layout sum для protocol_params (см. spec раздел "Указ Генезиса").
@@ -14,8 +16,8 @@ use mt_crypto::{hash, Hash32, PUBLIC_KEY_SIZE};
 // d0(8) + reserved(8) + tau2(8) + emission(16) + target_zero(32) + quorum_num(1)
 // + quorum_den(1) + dead_zone(2+2) + d_adj(2+2) + vdf_entry(8) + sel_interval(8)
 // + admission_divisor(8) + cand_expiry(8) + adapt_thr(2) + adapt_mult(2) + pruning(8)
-// + 2×pubkey(2×1952=3904) + app_id(32) + data_hash(32) = 4094 bytes.
-pub const PARAMS_ENCODED_SIZE: usize = 4094;
+// + 2×pubkey(2×1952=3904) + app_id(32) + data_hash(32) = 4108 bytes (n_seed=0; +net 3×u32 +n_seed u16 vs prior 4094).
+pub const PARAMS_ENCODED_SIZE: usize = 4108;
 
 // === Genesis Ceremony 2026-05-02 — финализированные значения ===
 //
@@ -71,8 +73,13 @@ pub struct ProtocolParams {
     pub adaptive_vdf_threshold: u16,
     pub adaptive_vdf_multiplier: u16,
     pub pruning_idle_windows: u64,
+    pub bootstrap_pow_difficulty: u32,
+    pub max_protocol_payload_bytes: u32,
+    pub max_sf_ciphertext_bytes: u32,
     pub bootstrap_account_pubkey: [u8; PUBLIC_KEY_SIZE],
     pub bootstrap_node_pubkey: [u8; PUBLIC_KEY_SIZE],
+    pub n_seed: u16,
+    pub genesis_active_operators: Vec<([u8; PUBLIC_KEY_SIZE], [u8; PUBLIC_KEY_SIZE])>,
     pub genesis_content_app_id: Hash32,
     pub genesis_content_data_hash: Hash32,
 }
@@ -97,8 +104,16 @@ impl CanonicalEncode for ProtocolParams {
         write_u16(buf, self.adaptive_vdf_threshold);
         write_u16(buf, self.adaptive_vdf_multiplier);
         write_u64(buf, self.pruning_idle_windows);
+        write_u32(buf, self.bootstrap_pow_difficulty);
+        write_u32(buf, self.max_protocol_payload_bytes);
+        write_u32(buf, self.max_sf_ciphertext_bytes);
         write_bytes(buf, &self.bootstrap_account_pubkey);
         write_bytes(buf, &self.bootstrap_node_pubkey);
+        write_u16(buf, self.n_seed);
+        for (acct, node) in &self.genesis_active_operators {
+            write_bytes(buf, acct);
+            write_bytes(buf, node);
+        }
         write_bytes(buf, &self.genesis_content_app_id);
         write_bytes(buf, &self.genesis_content_data_hash);
     }
@@ -130,8 +145,13 @@ pub fn genesis_params() -> &'static ProtocolParams {
         adaptive_vdf_threshold: 1,
         adaptive_vdf_multiplier: 100,
         pruning_idle_windows: 80_640,
+        bootstrap_pow_difficulty: 65_536,
+        max_protocol_payload_bytes: 1_048_576,
+        max_sf_ciphertext_bytes: 65_536,
         bootstrap_account_pubkey: *BOOTSTRAP_ACCOUNT_PUBKEY_BYTES,
         bootstrap_node_pubkey: *BOOTSTRAP_NODE_PUBKEY_BYTES,
+        n_seed: 0,
+        genesis_active_operators: Vec::new(),
         genesis_content_app_id: genesis_app_id(),
         genesis_content_data_hash: GENESIS_CONTENT_DATA_HASH_BYTES,
     })
@@ -174,7 +194,7 @@ mod tests {
         let mut buf = Vec::new();
         genesis_params().encode(&mut buf);
         assert_eq!(buf.len(), PARAMS_ENCODED_SIZE);
-        assert_eq!(PARAMS_ENCODED_SIZE, 4094);
+        assert_eq!(PARAMS_ENCODED_SIZE, 4108);
     }
 
     #[test]
@@ -197,6 +217,11 @@ mod tests {
         assert_eq!(p.adaptive_vdf_threshold, 1);
         assert_eq!(p.adaptive_vdf_multiplier, 100);
         assert_eq!(p.pruning_idle_windows, 80_640);
+        assert_eq!(p.bootstrap_pow_difficulty, 65_536);
+        assert_eq!(p.max_protocol_payload_bytes, 1_048_576);
+        assert_eq!(p.max_sf_ciphertext_bytes, 65_536);
+        assert_eq!(p.n_seed, 0);
+        assert!(p.genesis_active_operators.is_empty());
     }
 
     #[test]

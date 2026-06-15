@@ -153,7 +153,12 @@ fn code_field_value(name: &str) -> Option<Option<u128>> {
         "bootstrap_node_pubkey" => Some(None),
         "genesis_content_app_id" => Some(None),
         "genesis_content_data_hash" => Some(None),
-        // Fields required by spec v35.26.1 but not yet in code -> Absent.
+        "bootstrap_pow_difficulty" => scalar(p.bootstrap_pow_difficulty as u128),
+        "max_protocol_payload_bytes" => scalar(p.max_protocol_payload_bytes as u128),
+        "max_sf_ciphertext_bytes" => scalar(p.max_sf_ciphertext_bytes as u128),
+        "n_seed" => scalar(p.n_seed as u128),
+        "genesis_active_operators" => Some(None),
+        // Unknown field -> Absent (cross-boundary structural drift).
         _ => None,
     }
 }
