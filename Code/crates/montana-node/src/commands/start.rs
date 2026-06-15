@@ -835,13 +835,6 @@ const VDF_PROGRESS_CHUNKS: u64 = 10;
 /// Глубина хранения пооконных историй (пулы, победители, наборы подтвердивших).
 const HISTORY_BOUND: usize = 64;
 
-/// Горизонт активности для КВОРУМА цементации (в окнах). Узел, не приславший
-/// зацементированное подтверждение дольше этого числа окон, выпадает из
-/// active_chain_length — кворум считается от реально живых, сеть не блокируется
-/// хронически отсутствующим узлом (спецификация «темп медианного активного
-/// набора»). Лотерейный active-predicate (2τ₂, кандидатство) — отдельный.
-const QUORUM_ACTIVE_HORIZON: u64 = 4;
-
 /// Genesis-член ОЖИДАЕТСЯ в сети (Genesis Decree). Два режима живости:
 /// - до ПЕРВОГО контакта узел презюмируется живым весь дедлайн первого
 ///   контакта — bootstrap стоит и ждёт основателей, НЕ накапливая вес соло,
@@ -849,6 +842,7 @@ const QUORUM_ACTIVE_HORIZON: u64 = 4;
 ///   фрейминг-мигов транспорта);
 /// - после первого контакта — резильентный grace (молчит < 3× своего
 ///   интервала, но не меньше базового): медленный/мигающий узел не выпадает.
+///
 /// Failsafe (соло-цементирование) — только когда genesis-член, ранее
 /// участвовавший, замолчал дольше grace (реально ушёл).
 const GENESIS_FIRST_CONTACT_SECS: u64 = 600;
@@ -861,26 +855,16 @@ fn bound_map<K: Ord + Copy, V>(m: &mut BTreeMap<K, V>) {
     }
 }
 
-/// Активная длина цепочки по спецификации «Confirmations»: учитываются только
-/// узлы с подтверждением за последние 2τ₂ (active predicate); start_window
-/// служит нижней границей для свежеактивированных узлов.
+/// Активная длина цепочки по спецификации «Active node predicate»: учитываются
+/// только узлы с cemented BundledConfirmation за последние 2τ₂ (mt_state::is_active).
 fn active_chain_length_at(
     nodes: &mt_state::NodeTable,
     w: u64,
-    _params: &mt_genesis::ProtocolParams,
+    params: &mt_genesis::ProtocolParams,
 ) -> u64 {
-    // В первые QUORUM_ACTIVE_HORIZON окон от genesis учитываем всех (раскачка,
-    // last_confirmation ещё не накоплен); далее — только реально активных.
-    let horizon = QUORUM_ACTIVE_HORIZON;
     nodes
         .iter()
-        .filter(|n| {
-            if w <= horizon {
-                return true;
-            }
-            let last_seen = n.last_confirmation_window.max(n.start_window);
-            w.saturating_sub(last_seen) <= horizon
-        })
+        .filter(|n| mt_state::is_active(n, w, params.tau2_windows))
         .map(|n| n.chain_length)
         .sum()
 }
