@@ -288,11 +288,15 @@ mod partial_write_tests {
     impl AsyncWrite for Jittery {
         fn poll_write(
             mut self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
+            cx: &mut Context<'_>,
             data: &[u8],
         ) -> Poll<io::Result<usize>> {
             if self.allow == 0 {
                 self.allow = 1;
+                // EXT-TEST-01: wake before returning Pending so the executor
+                // re-polls; otherwise futures::executor::block_on hangs forever
+                // (no waker was ever registered).
+                cx.waker().wake_by_ref();
                 return Poll::Pending;
             }
             self.allow -= 1;
@@ -330,7 +334,10 @@ mod partial_write_tests {
         futures::executor::block_on(async {
             let key_tx = [7u8; 32];
             let key_rx = [9u8; 32];
-            let wire = Jittery { buf: VecDeque::new(), allow: 0 };
+            let wire = Jittery {
+                buf: VecDeque::new(),
+                allow: 0,
+            };
             // tx пишет ключом key_tx; читатель должен читать тем же (его rx = key_tx).
             let mut writer = NoisePqStream::new(wire, key_tx, key_rx);
             let msgs: [&[u8]; 3] = [b"alpha", &[0xABu8; 4000], b"omega-final"];
@@ -342,7 +349,10 @@ mod partial_write_tests {
                 let inner = writer.inner;
                 inner.buf.into_iter().collect()
             };
-            let reader_wire = Jittery { buf: wire_bytes.into_iter().collect(), allow: usize::MAX };
+            let reader_wire = Jittery {
+                buf: wire_bytes.into_iter().collect(),
+                allow: usize::MAX,
+            };
             let mut reader = NoisePqStream::new(reader_wire, key_rx, key_tx);
             let mut got = Vec::new();
             let mut chunk = [0u8; 8192];
@@ -357,7 +367,10 @@ mod partial_write_tests {
             for m in &msgs {
                 expected.extend_from_slice(m);
             }
-            assert_eq!(got, expected, "поток расшифрован неверно — дублирование/потеря кадров");
+            assert_eq!(
+                got, expected,
+                "поток расшифрован неверно — дублирование/потеря кадров"
+            );
         });
     }
 }
