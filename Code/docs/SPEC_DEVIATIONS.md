@@ -721,3 +721,81 @@ After K windows since FIRST election, bootstrap fallback fires regardless of whe
 - **DEV-029 (closed): reveal-set ripening.** На равных весах кворум цементации билета = единогласие (⌈67%×N⌉ при N равных = N). Опоздавший билет окна W-1 выкидывал розыгрыш окна в одного кандидата. Узел переиздаёт своё подтверждение окна W при получении нового билета окна W-1, набор сходится к полному у всех → единогласный кворум достигается. Проверено: кандидатов=3 на 23-28 из 30 окон (было 0/1), победители ротируются по всем узлам.
 
 **Операционное (не дефект).** Узел за NAT/VPN (мигающий канал) в degraded-режиме включается в розыгрыш только когда его билеты доходят вовремя; его выпадение не роняет сеть (bootstrap+стабильные узлы тянут). Это и есть «темп медианного активного набора» спецификации.
+
+---
+
+## External audit GPT-5 Codex 01 (2026-06-14) — delta findings reconciliation
+
+The second external audit re-found several items that the internal hot-fix track
+had marked `closed`. The `closed` status meant "intentional feature, done on
+purpose" — not "matches spec". For an external reviewer `closed` reads as
+"resolved", which is misleading. The entries below reconcile that: a deliberate
+code feature that is not in the Protocol spec is a spec-divergence regardless of
+intent, and must be either removed or formalized in the spec (firewall: spec
+change with version bump + KAT). Wall-clock-derived consensus inputs cannot be
+formalized as-is ([I-3]) and must be removed from acceptance.
+
+## DEV-030 (open): genesis cohort from runtime manifest force_active, not hash-bound (EXT-GEN-02)
+
+Spec (Genesis Decree, lines 2380, 2477-2479): the genesis Active set is
+`bootstrap + genesis_active_operators`, and `genesis_active_operators` is a
+hash-bound field of `protocol_params` (enters the Genesis State Hash). Runtime
+override is forbidden; `N_SEED` defines ONLY the window-0 cohort.
+Implementation: `montana-node` builds the initial Active set from
+`manifest.force_active` (`commands/start.rs` extra_actives -> `state.rs`
+bootstrap), and never reads `genesis_active_operators`. The cohort lives in a
+runtime JSON outside the Genesis State Hash -> two nodes with different manifests
+build different node_root/account_root: split-brain at window 0.
+Closure path: build the initial Active set from `genesis_params()`
+(bootstrap + `genesis_active_operators`); manifest becomes discovery-only;
+`force_active` removed from the production manifest. For the singleton mainnet
+(`n_seed=0`) the initial set is just bootstrap. Tied to the singleton-genesis
+architecture decision. Severity: mainnet blocker ([I-3] / EXT-GEN-02).
+
+## DEV-031 (closed, commit 64489b2): quorum active predicate horizon-4 vs 2τ₂ (EXT-QRM-01)
+
+Spec ("Active node predicate", line 1259): `active(node, W) =
+(W - last_confirmation_window) <= 2 × τ₂_windows`, "Применяется в quorum".
+Implementation diverged: `active_chain_length_at` used a local
+`QUORUM_ACTIVE_HORIZON = 4` plus a `max(last_confirmation_window, start_window)`
+floor. Closed: now delegates to `mt_state::is_active(n, w, params.tau2_windows)`,
+byte-exact to spec and deterministic. The spec predicate is self-consistent
+(activation sets lcw=0; Step 3.5 sets lcw=W on cemented confirmation), so the
+horizon-4/floor workaround was unnecessary and non-conformant.
+
+## DEV-032 (open): wall-clock degraded quorum in consensus acceptance (EXT-QRM-02)
+
+Supersedes the "closed" status of DEV-021c (adaptive grace) and DEV-028
+(bootstrap degraded failsafe) for spec-conformance purposes. Those are
+deliberate fault-tolerance features, but they are NOT in the Protocol spec and
+they read local wall-clock:
+  - `peer_seen: BTreeMap<NodeId,(Instant,Duration)>`, `mark_peer_seen`/`peer_alive`
+    via `Instant::now()` + `GENESIS_FIRST_CONTACT_SECS=600` / `GENESIS_MEMBER_GRACE_SECS=90`;
+  - `live_quorum_need` over `peer_alive`; acceptance threshold
+    `need_quorum = if degraded { quorum(present_cl) } else { quorum(active_cl) }`.
+Two honest nodes with different `peer_seen` (different clocks + delivery) compute
+different `need_quorum` for the same evidence set -> different acceptance -> fork.
+This is a direct [I-3] violation: consensus acceptance must be deterministic from
+cemented state, never from `Instant`/seconds.
+Closure path (architectural decision required, firewall):
+  (a) remove the wall-clock degraded path from acceptance; rely on the
+      deterministic 2τ₂ active set (DEV-031) plus BFT margin — for fault tolerance
+      run >=4 active nodes (quorum 3-of-4 tolerates 1 fault); the singleton-grows
+      model reaches this margin via the candidate admission mechanism; OR
+  (b) formalize a deterministic fault-tolerance rule in the Protocol spec (no
+      wall-clock) with a version bump + KAT.
+The wall-clock inputs must go in either case. Severity: mainnet blocker.
+
+## DEV-027 (open, unchanged): emission at window 0 (EXT-MON-01)
+
+Already tracked above (note). The external audit re-confirms: `apply_emission`
+no-ops at `window_w == 0` while `supply_moneta(W) = EMISSION × (W+1)`. Author
+decision: spec fixes "window 0 has no emission" (-> `EMISSION × W`) or settle(1)
+pays double. Firewall: changing the spec is architect mode.
+
+## Out of this conformance pass (separate passes)
+
+- EXT-SYNC-01 (FastSync anchor self-block): not re-verified in this pass; verify before fix.
+- EXT-VPN-01/02/03, EXT-FFI-01: authorization / memory-hygiene class (security passes 16/17/24/26), not spec-conformance.
+- EXT-TEST-01 (hanging jittery_write_no_frame_duplication mock): mt-noise-pq test infra.
+- EXT-GEN-01, EXT-DOC-01: closed (conformance-gate green; commits dd4e595 / 83379e3).
