@@ -84,6 +84,19 @@ fn build_message(address_hex: &str, nonce_ms: u64) -> Vec<u8> {
     buf
 }
 
+// Constant-time byte comparison for admin tokens (avoids a timing oracle on the
+// shared secret). Length mismatch fails fast (token length is not secret).
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 fn verify_ed25519(pubkey_hex: &str, signature_hex: &str, message: &[u8]) -> bool {
     let pk_bytes = match hex::decode(pubkey_hex) {
         Ok(b) if b.len() == PUBLIC_KEY_LENGTH => b,
@@ -471,11 +484,14 @@ async fn handler_purge(
     State(app): State<AppState>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    let client_ip = headers
-        .get("x-real-ip")
+    // EXT-VPN-02 (DEV-034): admin auth via shared token, fail-closed. The previous
+    // x-real-ip gate was spoofable and was bypassed entirely on a missing header.
+    let expected = std::env::var("MT_VPN_ADMIN_TOKEN").unwrap_or_default();
+    let provided = headers
+        .get("x-admin-token")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    if client_ip != "127.0.0.1" && client_ip != "::1" && !client_ip.is_empty() {
+    if expected.is_empty() || !ct_eq(expected.as_bytes(), provided.as_bytes()) {
         return (
             StatusCode::FORBIDDEN,
             Json(serde_json::json!({"error": "forbidden"})),
@@ -550,7 +566,26 @@ async fn handler_revoke(
             .into_response();
     }
     let mut state = app.inner.lock().await;
+    // EXT-VPN-01 (DEV-033): ownership — the signer pubkey must equal the pinned
+    // pubkey of the account being revoked. Legacy unsigned accounts (no pinned
+    // pubkey) and unknown addresses cannot be revoked: no ownership proof.
+    match state
+        .accounts
+        .get(&addr)
+        .and_then(|r| r.pubkey_hex.as_deref())
+    {
+        Some(pinned) if pinned == body.pubkey.as_str() => {},
+        _ => {
+            drop(state);
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({"error": "not owner or unsigned account"})),
+            )
+                .into_response();
+        },
+    }
     let removed = state.accounts.remove(&addr).is_some();
+
     let snapshot = state.clone();
     drop(state);
     if let Err(e) = app.save(&snapshot).await {
