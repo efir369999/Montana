@@ -16,6 +16,7 @@ mt-crypto     = { path = "../mt-crypto" }
 mt-state      = { path = "../mt-state" }
 mt-account    = { path = "../mt-account" }
 mt-codec      = { path = "../mt-codec" }
+zeroize       = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }

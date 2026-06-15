@@ -12,6 +12,7 @@ use mt_crypto::{
 };
 use mt_mnemonic::{mldsa_seed_for_role, mnemonic_to_master_seed};
 use mt_state::derive_account_id;
+use zeroize::Zeroizing;
 
 use super::*;
 
@@ -39,7 +40,7 @@ pub unsafe extern "C" fn mt_mnemonic_to_master_seed(
         match mnemonic_to_master_seed(cs) {
             Ok(seed) => {
                 slice::from_raw_parts_mut(out_master_seed, MT_MASTER_SEED_LEN)
-                    .copy_from_slice(&seed);
+                    .copy_from_slice(&seed[..]);
                 MT_OK
             },
             Err(e) => match e {
@@ -62,11 +63,11 @@ pub unsafe extern "C" fn mt_mldsa_seed_for_role(
         if master_seed.is_null() || role.is_null() || out_seed.is_null() {
             return MT_ERR_NULL_PTR;
         }
-        let mut master_arr = [0u8; MT_MASTER_SEED_LEN];
+        let mut master_arr = Zeroizing::new([0u8; MT_MASTER_SEED_LEN]);
         master_arr.copy_from_slice(slice::from_raw_parts(master_seed, MT_MASTER_SEED_LEN));
         let role_bytes = slice::from_raw_parts(role, role_len);
-        let seed = mldsa_seed_for_role(&master_arr, role_bytes);
-        slice::from_raw_parts_mut(out_seed, MT_MLDSA_SEED_LEN).copy_from_slice(&seed);
+        let seed = Zeroizing::new(mldsa_seed_for_role(&master_arr, role_bytes));
+        slice::from_raw_parts_mut(out_seed, MT_MLDSA_SEED_LEN).copy_from_slice(&seed[..]);
         MT_OK
     })
 }
@@ -81,7 +82,7 @@ pub unsafe extern "C" fn mt_mldsa_keypair_from_seed(
         if seed.is_null() || out_pubkey.is_null() || out_seckey.is_null() {
             return MT_ERR_NULL_PTR;
         }
-        let mut arr = [0u8; MT_MLDSA_SEED_LEN];
+        let mut arr = Zeroizing::new([0u8; MT_MLDSA_SEED_LEN]);
         arr.copy_from_slice(slice::from_raw_parts(seed, MT_MLDSA_SEED_LEN));
         match keypair_from_seed(&arr) {
             Ok((pk, sk)) => {
@@ -123,12 +124,12 @@ pub unsafe extern "C" fn mt_account_from_mnemonic(
     out_account_id: *mut u8,
 ) -> c_int {
     guard(|| {
-        let mut master = [0u8; MT_MASTER_SEED_LEN];
+        let mut master = Zeroizing::new([0u8; MT_MASTER_SEED_LEN]);
         let rc = mt_mnemonic_to_master_seed(mnemonic_utf8, master.as_mut_ptr());
         if rc != MT_OK {
             return rc;
         }
-        let mut acc_seed = [0u8; MT_MLDSA_SEED_LEN];
+        let mut acc_seed = Zeroizing::new([0u8; MT_MLDSA_SEED_LEN]);
         let rc = mt_mldsa_seed_for_role(
             master.as_ptr(),
             mt_codec::domain::ACCOUNT_KEY.as_ptr(),

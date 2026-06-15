@@ -18,6 +18,7 @@ use mt_crypto::{
 };
 use mt_mnemonic::{entropy_to_mnemonic, mldsa_seed_for_role, mnemonic_to_master_seed};
 use mt_state::derive_account_id;
+use zeroize::Zeroizing;
 
 const MT_SUITE_MLDSA65: u16 = 0x0001;
 
@@ -87,20 +88,20 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountFromMnemon
         Ok(s) => s.into(),
         Err(_) => return null,
     };
-    let master = match mnemonic_to_master_seed(&mnemonic) {
+    let master = Zeroizing::new(match mnemonic_to_master_seed(&mnemonic) {
         Ok(s) => s,
         Err(_) => return null,
-    };
-    let acc_seed = mldsa_seed_for_role(&master, domain::ACCOUNT_KEY);
+    });
+    let acc_seed = Zeroizing::new(mldsa_seed_for_role(&master, domain::ACCOUNT_KEY));
     let (pk, sk) = match keypair_from_seed(&acc_seed) {
         Ok(kp) => kp,
         Err(_) => return null,
     };
     let account_id = derive_account_id(MT_SUITE_MLDSA65, pk.as_bytes());
 
-    let mut buf = Vec::with_capacity(
+    let mut buf = Zeroizing::new(Vec::with_capacity(
         super::MT_MLDSA_PUBKEY_SIZE + super::MT_MLDSA_SECKEY_SIZE + super::MT_ACCOUNT_ID_LEN,
-    );
+    ));
     buf.extend_from_slice(pk.as_bytes());
     buf.extend_from_slice(sk.as_bytes());
     buf.extend_from_slice(&account_id);
@@ -120,10 +121,10 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeSign<'local>(
     msg: JByteArray<'local>,
 ) -> jbyteArray {
     let null = std::ptr::null_mut();
-    let sk_bytes = match env.convert_byte_array(seckey) {
+    let sk_bytes = Zeroizing::new(match env.convert_byte_array(seckey) {
         Ok(b) => b,
         Err(_) => return null,
-    };
+    });
     let m = match env.convert_byte_array(msg) {
         Ok(b) => b,
         Err(_) => return null,
