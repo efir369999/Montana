@@ -1,6 +1,6 @@
 # Montana — Protocol Layer Specification
 
-**Version:** 35.26.0 (2026-05-29) — N_SEED multi-Active genesis cohort formalized
+**Version:** 35.26.1 (2026-06-15) — cross-reference hygiene: spec-version self-pins removed, Network cross-ref unversioned per [I-10]
 
 
 ---
@@ -2368,7 +2368,7 @@ Quantify rollout в окнах:
 - 1 000 000 accounts: `⌈log₂(10⁶)⌉ = 20 τ₂`
 - 1 000 000 000 accounts: `⌈log₂(10⁹)⌉ = 30 τ₂`
 
-**N_SEED как consensus-binding параметр Genesis Decree (v35.26.0).**
+**N_SEED как consensus-binding параметр Genesis Decree.**
 
 `N_SEED` formalized как поле Genesis Decree `genesis_active_operators` — упорядоченный список (account_pubkey, node_pubkey) пар, представляющих additional Active operators, инициализированных в Node Table / Account Table вместе с bootstrap. Reference mainnet может декларировать `N_SEED ≥ 1` для co-validator launch (multi-organization genesis cohort), сохраняя следующие инварианты:
 
@@ -4172,7 +4172,7 @@ Production: Rust.
 
 ## Сетевой уровень
 
-> **Сетевой слой выделен в отдельную спецификацию [Montana Network v1.0.0](Montana%20Network%20v1.0.0.md).** Описание слоя обширное (libp2p транспорт, IBT, Mesh Transport, sync protocols, threat model, KAT vectors) и требует независимого аудита. Все сетевые механизмы (Identity-Bound Tunnel, Transport Randomness, PeerRecord, Mesh framing, apply_mesh_frame, Final Gate M6) описаны в Montana Network спеке. Эта спецификация (Montana Protocol) описывает только state machine, криптографические примитивы, Genesis Decree, apply_proposal pipeline и операции консенсуса.
+> **Сетевой слой выделен в отдельную спецификацию [Montana Network](Montana%20Network%20v1.3.0.md).** Описание слоя обширное (libp2p транспорт, IBT, Mesh Transport, sync protocols, threat model, KAT vectors) и требует независимого аудита. Все сетевые механизмы (Identity-Bound Tunnel, Transport Randomness, PeerRecord, Mesh framing, apply_mesh_frame, Final Gate M6) описаны в Montana Network спеке. Эта спецификация (Montana Protocol) описывает только state machine, криптографические примитивы, Genesis Decree, apply_proposal pipeline и операции консенсуса.
 
 ## Эволюция протокола
 

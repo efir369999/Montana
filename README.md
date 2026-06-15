@@ -27,7 +27,7 @@ No classical Diffie-Hellman is present in the protocol layer. A passive observer
 
 The academic paper, written in the style of the Bitcoin paper and addressed to the Metzdowd Cryptography List audience, is the canonical entry point:
 
-📄 **[`Whitepaper Montana v0.1.0.md`](Whitepaper%20Montana%20v0.1.0.md)**
+📄 **[`Montana Whitepaper v0.1.0.md`](Montana%20Whitepaper%20v0.1.0.md)**
 
 The whitepaper covers, in present-tense factual form:
 
@@ -191,7 +191,7 @@ The full installer prints a 24-word recovery mnemonic for the node and a VLESS U
 ## Repository layout
 
 | Path | Contents |
-| [`Whitepaper Montana v0.1.0.md`](Whitepaper%20Montana%20v0.1.0.md) | Academic paper in the style of the Bitcoin paper. Metzdowd-list submission text |
+| [`Montana Whitepaper v0.1.0.md`](Montana%20Whitepaper%20v0.1.0.md) | Academic paper in the style of the Bitcoin paper. Metzdowd-list submission text |
 | [`Montana Protocol v35.25.1.md`](Montana%20Protocol%20v35.25.1.md) | Full protocol specification |
 | [`Montana Network v1.3.0.md`](Montana%20Network%20v1.3.0.md) | Network-layer specification (Noise_PQ XX, IBT, mesh, sync) |
 | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | Client application specification |

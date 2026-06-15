@@ -11,7 +11,7 @@ A single declaration of what Montana is and refuses to be, published in three la
 - [Русский](Manifesto%20RU.md) — голос автора
 - [中文](Manifesto%20ZH.md) — 中文版本
 
-The English version is canonical for cryptographic claims; the Russian version is canonical for the author's voice. For the academic specification of the protocol, see [Whitepaper Montana v0.1.0.md](../Whitepaper%20Montana%20v0.1.0.md) and [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
+The English version is canonical for cryptographic claims; the Russian version is canonical for the author's voice. For the academic specification of the protocol, see [Montana Whitepaper v0.1.0.md](../Montana%20Whitepaper%20v0.1.0.md) and [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
 
 The manifesto is written in the academic register of a position paper, addressed simultaneously to the general reader and the cryptographer. The pain of ordinary users with money systems is named; the architectural response is grounded in the full protocol; the technical sections (§V–§IX) are the proof that the human-facing claims are achievable, not the headline of the document.
 

@@ -1,4 +1,4 @@
-# Montana Protocol v35.26.0 — Code Conformance Report
+# Montana Protocol v35.26.1 — Code Conformance Report
 
 Date: 2026-06-12. Scope: full specification (4435 lines) against the workspace (23 crates).
 Method: consensus-critical sections verified line-by-line first-hand; remaining sections swept
