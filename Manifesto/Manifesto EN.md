@@ -136,7 +136,7 @@ The medium that fills the space between participants, with no charge for being p
 
 ---
 
-**Reference implementation:** Rust, Apache-2.0 / MIT. Twenty-three crates including `mt-timechain`, `mt-consensus`, `mt-lottery`, `mt-crypto`, `mt-net`, `mt-noise-pq`. Specification: [Whitepaper Montana.md](../Whitepaper%20Montana.md) and [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
+**Reference implementation:** Rust, Apache-2.0 / MIT. Twenty-three crates including `mt-timechain`, `mt-consensus`, `mt-lottery`, `mt-crypto`, `mt-net`, `mt-noise-pq`. Specification: [Whitepaper Montana v0.1.0.md](../Whitepaper%20Montana%20v0.1.0.md) and [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
 
 **Symbol:** **Ɉ** — Montana, the rail's protocol-level reward unit. `moneta` — the smallest indivisible unit (`1 Ɉ = 10⁹ moneta`). **Ticker:** `MONT`.
 
