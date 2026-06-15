@@ -17,4 +17,9 @@ default = []
 mt-net = { path = "../mt-net" }
 mt-codec = { path = "../mt-codec" }
 mt-crypto = { path = "../mt-crypto" }
+mt-genesis = { path = "../mt-genesis" }
 sha2 = { workspace = true }
+
+[[bin]]
+name = "conformance-gate"
+path = "src/main.rs"

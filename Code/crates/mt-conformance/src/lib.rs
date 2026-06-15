@@ -10,6 +10,7 @@
 // Все векторы извлечены из spec разделов A (envelope), B (IBT), C (per-msg),
 // D (MeshFrame), E (SF envelope), F (Bootstrap PoW target).
 
+pub mod harness;
 pub mod vectors;
 
 pub use vectors::*;

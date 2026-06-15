@@ -156,3 +156,13 @@ jobs:
           fi
           echo "PASS: reproducible build byte-identical between runs"
           cat build-output-1/release_hashes.txt
+
+  conformance_gate:
+    name: Spec Conformance Harness ([C-14] spec↔code equivalence)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: Spec Conformance Harness — release BLOCKED on spec-code drift
+        run: bash scripts/conformance-gate.sh

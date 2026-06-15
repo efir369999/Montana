@@ -1822,6 +1822,7 @@ version = "1.0.4"
 dependencies = [
  "mt-codec",
  "mt-crypto",
+ "mt-genesis",
  "mt-net",
  "sha2",
 ]
