@@ -1,6 +1,6 @@
 # Montana Reference Implementation — Audit Package
 
-**Spec target:** Montana Protocol v35.25.1 + Montana Network v1.1.0 + Montana App v3.12.0 — see [VERSION.md](VERSION.md)
+**Spec target:** Montana Protocol v35.26.1 + Montana Network v1.3.0 + Montana App v3.12.0 — see [VERSION.md](VERSION.md)
 **Last verified:** 2026-05-20 (CISO-as-a-Service 2026-05-19 response sync; MONT-001 spec patch; MONT-002 online IBT nonce + replay tracking in mt-net / mt-net-transport)
 **Audit-ready status:** **M1 + M2 + M3 + M4 + M5 + M6 + M9 layers — READY FOR EXTERNAL AUDIT**. M8 node binary remains pre-mainnet/in progress; DEV-012 multi-node proposal apply is the current mainnet blocker.
 
