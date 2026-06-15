@@ -799,3 +799,48 @@ pays double. Firewall: changing the spec is architect mode.
 - EXT-VPN-01/02/03, EXT-FFI-01: authorization / memory-hygiene class (security passes 16/17/24/26), not spec-conformance.
 - EXT-TEST-01 (hanging jittery_write_no_frame_duplication mock): mt-noise-pq test infra.
 - EXT-GEN-01, EXT-DOC-01: closed (conformance-gate green; commits dd4e595 / 83379e3).
+
+---
+
+## Security pass (External audit GPT-5 Codex 01) — closures
+
+## DEV-033 (closed, commit b375c3b): VPN revoke authorization (EXT-VPN-01)
+
+mt-vpn-balance handler_revoke verified an Ed25519 signature with the
+attacker-supplied body.pubkey, then removed the account without checking that
+body.pubkey == the account's pinned pubkey_hex. Any Ed25519 key could delete any
+address (DoS / accounting deletion). Closed: ownership check — the signer pubkey
+must equal the pinned pubkey; legacy unsigned accounts and unknown addresses
+cannot be revoked.
+
+## DEV-034 (closed, commit b375c3b): VPN admin purge auth (EXT-VPN-02)
+
+handler_purge gated on x-real-ip (spoofable; bypassed entirely on a missing
+header). Closed: fail-closed admin-token gate (MT_VPN_ADMIN_TOKEN env,
+x-admin-token header, constant-time ct_eq). Empty/unset token denies all.
+
+## DEV-035 (closed, commit bca06ba): FFI secret zeroization (EXT-FFI-01)
+
+mt-bindings C/JNI made plain copies of seed / secret-key material (master_arr,
+seeds, master, acc_seed, the pk||sk||account_id buf, sk_bytes from Java) that
+were never wiped. Closed: each secret buffer wrapped in zeroize::Zeroizing.
+
+## DEV-036 (closed, commit HEAD): hanging jittery write test (EXT-TEST-01)
+
+mt-noise-pq Jittery::poll_write returned Pending without a waker -> block_on hung.
+Closed: cx.waker().wake_by_ref() before Pending.
+
+## EXT-VPN-03 (open, policy decision): heartbeat trust boundary + public-by-code subscription
+
+Heartbeat reads client IP from proxy headers (x-real-ip / x-forwarded-for); new
+accounts may use legacy unsigned TOFU; /vpn/sub returns hardcoded VLESS UUID /
+Reality pbk / sid publicly. Per the audit this is acceptable IF the subscription
+endpoint is intentionally public. Decision required from the author: is /vpn/sub
+public-by-design (current) or owner-restricted (add signed account auth +
+per-account credentials + rotation)? Not a mechanical fix — trust-boundary policy.
+
+## EXT-SYNC-01 (open, to verify): FastSync anchor self-block
+
+Audit-sourced; not re-verified in this pass. Before fixing, confirm against
+current montana-node fastsync path (observed anchor root not persisted before the
+fast-sync return; anchor_window dropped in wire_chunk_to_sync).
