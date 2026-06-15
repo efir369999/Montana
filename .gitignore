@@ -69,3 +69,7 @@ External-Audit/critic-analysis-*.md
 
 # Internal ops/role docs — contain IPs and secret key material, never publish
 _internal-private/
+
+# Internal AI roles — symlinks to canon in _internal-private (never publish)
+/CLAUDE.md
+/CRITIC.md

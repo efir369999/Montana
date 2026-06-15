@@ -842,10 +842,16 @@ const HISTORY_BOUND: usize = 64;
 /// набора»). Лотерейный active-predicate (2τ₂, кандидатство) — отдельный.
 const QUORUM_ACTIVE_HORIZON: u64 = 4;
 
-/// Длинный grace для genesis-членов: узел из Genesis Decree ОЖИДАЕТСЯ в сети.
-/// Bootstrap не цементирует соло и не убегает, пока genesis-член поднимает
-/// связь или догоняет (молчит < этого порога). Так вес не накапливается у
-/// одного узла. Failsafe (соло) — только после реального долгого молчания.
+/// Genesis-член ОЖИДАЕТСЯ в сети (Genesis Decree). Два режима живости:
+/// - до ПЕРВОГО контакта узел презюмируется живым весь дедлайн первого
+///   контакта — bootstrap стоит и ждёт основателей, НЕ накапливая вес соло,
+///   пока они поднимают связь (которая на боевой встаёт минутами из-за
+///   фрейминг-мигов транспорта);
+/// - после первого контакта — резильентный grace (молчит < 3× своего
+///   интервала, но не меньше базового): медленный/мигающий узел не выпадает.
+/// Failsafe (соло-цементирование) — только когда genesis-член, ранее
+/// участвовавший, замолчал дольше grace (реально ушёл).
+const GENESIS_FIRST_CONTACT_SECS: u64 = 600;
 const GENESIS_MEMBER_GRACE_SECS: u64 = 90;
 
 fn bound_map<K: Ord + Copy, V>(m: &mut BTreeMap<K, V>) {
@@ -957,9 +963,10 @@ fn peer_alive(ctx: &NetCtx, node: &mt_state::NodeId) -> bool {
             let timeout = (*interval * 3).max(genesis_grace);
             Instant::now().saturating_duration_since(*last) < timeout
         },
-        // Ещё ни одной вести: genesis-член ПРЕЗЮМИРУЕТСЯ живым в течение
-        // genesis-grace со старта сессии — ждём его подключения, не убегаем.
-        None => ctx.session_start.elapsed() < genesis_grace,
+        // Ещё ни одной вести: genesis-член ПРЕЗЮМИРУЕТСЯ живым до дедлайна
+        // первого контакта — bootstrap ждёт основателей, не цементируя соло
+        // и не накапливая вес, пока они поднимают связь.
+        None => ctx.session_start.elapsed() < Duration::from_secs(GENESIS_FIRST_CONTACT_SECS),
     }
 }
 

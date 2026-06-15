@@ -3,6 +3,8 @@
 **Alejandro Montana**
 [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
 
+**Version:** 0.1.0 (2026-05-21)
+
 
 ## Abstract
 
