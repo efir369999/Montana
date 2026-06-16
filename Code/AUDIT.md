@@ -1,8 +1,8 @@
 # Montana Reference Implementation — Audit Package
 
 **Spec target:** Montana Protocol v35.26.2 + Montana Network v1.3.1 + Montana App v3.12.0 — see [VERSION.md](VERSION.md)
-**Last verified:** 2026-05-20 (CISO-as-a-Service 2026-05-19 response sync; MONT-001 spec patch; MONT-002 online IBT nonce + replay tracking in mt-net / mt-net-transport)
-**Audit-ready status:** **M1 + M2 + M3 + M4 + M5 + M6 + M9 layers — READY FOR EXTERNAL AUDIT**. M8 node binary remains pre-mainnet/in progress; DEV-012 multi-node proposal apply is the current mainnet blocker.
+**Last verified:** 2026-06-16 (external audit GPT-5 Codex 01 fully closed — all 13 findings resolved: 10 by construction [GEN-01/02, QRM-01/02, SYNC-01, MON-01, FFI-01, TEST-01, DOC-01, NOISE-RESIDUAL], 3 VPN-layer findings moot via removal of the VPN application layer; spec at Protocol v35.26.2 + Network v1.3.1; conformance-gate GREEN 33/33)
+**Audit-ready status:** **M1 + M2 + M3 + M4 + M5 + M6 + M7 + M9 layers + M8 consensus path — release-blocking findings closed.** The GPT-5 Codex 01 release-blockers (Genesis Decree consensus-binding, quorum/active determinism, FastSync anchor) are closed by construction; genesis active-set is hash-bound (no runtime injection), quorum is the deterministic 2τ₂ set (no wall-clock), FastSync persists the observed anchor root.
 
 ---
 
