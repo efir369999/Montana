@@ -735,7 +735,7 @@ intent, and must be either removed or formalized in the spec (firewall: spec
 change with version bump + KAT). Wall-clock-derived consensus inputs cannot be
 formalized as-is ([I-3]) and must be removed from acceptance.
 
-## DEV-030 (open): genesis cohort from runtime manifest force_active, not hash-bound (EXT-GEN-02)
+## DEV-030 (closed, commit 31ed1a1): genesis cohort from hash-bound params, not runtime force_active (EXT-GEN-02)
 
 Spec (Genesis Decree, lines 2380, 2477-2479): the genesis Active set is
 `bootstrap + genesis_active_operators`, and `genesis_active_operators` is a
@@ -746,7 +746,7 @@ Implementation: `montana-node` builds the initial Active set from
 bootstrap), and never reads `genesis_active_operators`. The cohort lives in a
 runtime JSON outside the Genesis State Hash -> two nodes with different manifests
 build different node_root/account_root: split-brain at window 0.
-Closure path: build the initial Active set from `genesis_params()`
+Closed: the initial Active set is built from `genesis_params()`
 (bootstrap + `genesis_active_operators`); manifest becomes discovery-only;
 `force_active` removed from the production manifest. For the singleton mainnet
 (`n_seed=0`) the initial set is just bootstrap. Tied to the singleton-genesis
