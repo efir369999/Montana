@@ -820,3 +820,14 @@ Closed: cx.waker().wake_by_ref() before Pending.
 Audit-sourced; not re-verified in this pass. Before fixing, confirm against
 current montana-node fastsync path (observed anchor root not persisted before the
 fast-sync return; anchor_window dropped in wire_chunk_to_sync).
+
+## DEV-037 (closed, commit see git log): FastSync anchor self-block (EXT-SYNC-01)
+
+Verified against current code: the lagging fast-sync branch in montana-node
+start.rs sent FastSyncRequest{anchor_window: w} and returned before recent_roots
+was populated, so FastSyncClient::finalize could not match the snapshot root for
+the anchor window — the lagging node self-blocked. Closed: persist the observed
+(w, header.state_root) into recent_roots before the fast-sync return. Deeper
+exact-anchor binding (pass requested anchor to the client, verify chunk
+anchor_window equality) is a follow-on hardening, not required to close the
+self-block.
