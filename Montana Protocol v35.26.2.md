@@ -1,6 +1,6 @@
 # Montana — Protocol Layer Specification
 
-**Version:** 35.26.1 (2026-06-15) — cross-reference hygiene: spec-version self-pins removed, Network cross-ref unversioned per [I-10]
+**Version:** 35.26.2 (2026-06-16) — supply formula corrected to `EMISSION_moneta × W` (genesis window 0 has no emission; first payout at settle(1) to the window-0 winner); EXT-MON-01 closed
 
 
 ---
@@ -220,7 +220,7 @@ Numeric value of `EMISSION_moneta` — see the Genesis Decree, the `protocol_par
 
 **Technical properties.**
 
-- Coin supply `supply_moneta(W) = EMISSION_moneta × (W + 1)` — closed-form, O(1) computable. Net change in supply per window = +EMISSION_moneta (always positive); supply grows strictly monotonically and linearly.
+- Coin supply `supply_moneta(W) = EMISSION_moneta × W` — closed-form, O(1) computable. Net change in supply per window = +EMISSION_moneta (always positive); supply grows strictly monotonically and linearly.
 - Emission is not controlled by any participant, committee, or vote.
 - Monetary policy is fully defined by the `emission_moneta` constant in the Genesis Decree and cannot be changed after genesis.
 - The real value of Ɉ is determined by market demand from the application ecosystem.
@@ -1093,17 +1093,22 @@ delta_supply за proposal = EMISSION_moneta ровно один раз
 
 O(1) проверка на каждое state transition (одно чтение константы из ProtocolParams). Глобальный инвариант `Σ balance == supply_moneta(window_index)` истинен по индукции от genesis при условии что каждый переход поддерживает per-operation invariant.
 
-`supply_moneta` — pure function от номера окна (state-поля не нужно): `supply_moneta(W) = EMISSION_moneta × (W + 1)`. Closed-form O(1), supply растёт монотонно линейно, никогда не убывает.
+`supply_moneta` — pure function от номера окна (state-поля не нужно): `supply_moneta(W) = EMISSION_moneta × W`. Closed-form O(1), supply растёт монотонно линейно, никогда не убывает.
 
 ```
 genesis state (аксиома):   window_index не определён,  Σ balance = 0
-первое окно (W = 0):       supply_moneta(0) = EMISSION_moneta = 13 × 10⁹ nɈ
-окно W (любое):            supply_moneta(W) = EMISSION_moneta × (W + 1)
+первое окно (W = 0):       supply_moneta(0) = 0 (genesis-окно без эмиссии; первая выплата — settle(1) победителю окна 0)
+окно W (любое):            supply_moneta(W) = EMISSION_moneta × W
 ```
+
+**Test vectors [I-9] `supply_moneta(W)`:**
+- typical:  `supply_moneta(20 160) = EMISSION_moneta × 20 160 = 262 080 000 000 000 nɈ`
+- boundary: `supply_moneta(1) = EMISSION_moneta = 13 000 000 000 nɈ` (первая выплата settle(1) победителю окна 0)
+- edge:     `supply_moneta(0) = 0` (genesis-окно без эмиссии); `EMISSION_moneta × u64::MAX < 2¹²⁸` — u128 не переполняется
 
 Никаких откатов cemented операций не требуется — каждое cemented локально валидно по конструкции.
 
-**τ₂ sanity check.** Дополнительная проверка раз в τ₂: пересчёт `Σ balance` по всей Account Table и сравнение с `supply_moneta(window_index) = EMISSION_moneta × (window_index + 1)`. Не load-bearing для финализации — служит для обнаружения багов реализации. Расхождение = немедленная остановка узла, дамп state для расследования.
+**τ₂ sanity check.** Дополнительная проверка раз в τ₂: пересчёт `Σ balance` по всей Account Table и сравнение с `supply_moneta(window_index) = EMISSION_moneta × window_index`. Не load-bearing для финализации — служит для обнаружения багов реализации. Расхождение = немедленная остановка узла, дамп state для расследования.
 
 ### Перевод
 
@@ -1126,7 +1131,7 @@ Account Table[operator_account].balance += r
 Публичное (верифицируемо всеми):
   Монтана:           reward_moneta(W) = EMISSION_moneta = 13 × 10⁹ nɈ
                      (см. раздел «Эмиссия»)
-  Supply audit:      supply_moneta(W) = EMISSION_moneta × (W + 1) — closed-form,
+  Supply audit:      supply_moneta(W) = EMISSION_moneta × W — closed-form,
                      pure function от номера окна, state-поля не нужно
   Winner:            winner_id в proposal header
   Все балансы:       Account Table
@@ -2278,7 +2283,7 @@ apply_proposal(state, proposal) -> state':
     operator_account = Node Table[winner_id].operator_account_id
     operator_account.balance += r
     # supply_moneta не отслеживается как state-поле; вычислимо closed-form
-    # supply_moneta(W) = EMISSION_moneta × (W + 1) от любого окна.
+    # supply_moneta(W) = EMISSION_moneta × W от любого окна.
 
   Шаг 3: обработать expiry кандидатов и selection event.
     3a. Все записи c ∈ Candidate Pool где c.expires <= current_window:
@@ -2811,7 +2816,7 @@ User-аккаунты: создаются автоматически при пе
 
 - Финальность proposal: подпись proposer_node_id на proposal header. Каждый валидатор применяет control_set + Монтана детерминированно и проверяет state_root
 - Монтана: регистрация одного окна канонического порядка (`reward_moneta(W) = EMISSION_moneta`) → победителю
-- Supply audit: суммарная эмиссия Монтаны от генезиса = `supply_moneta(W) = EMISSION_moneta × (W + 1)` — closed-form pure function, state-поля не нужно
+- Supply audit: суммарная эмиссия Монтаны от генезиса = `supply_moneta(W) = EMISSION_moneta × W` — closed-form pure function, state-поля не нужно
 - Разрешение форков: приоритет ветки с наибольшим суммарным TimeChain-доказательством
 
 TimeChain safety: компрометация значения TimeChain требует нарушения свойства последовательности SHA-256 VDF.
@@ -4260,7 +4265,7 @@ Advisory councils организуются вне протокола (репоз
 Изменения этого уровня **не являются valid update** существующей сети — это **новая сеть с новым genesis**. Honest узлы существующей сети reject такие proposals как unknown protocol, не как fork. Constitutional layer включает:
 
 - 14 действующих глобальных инвариантов ([I-1]..[I-10] + [I-14]..[I-17]; slots [I-11]/[I-12]/[I-13] reserved unused) и их операционные требования (PQ-secure crypto primitives, public financial layer, deterministic consensus state, network-bound unpredictability of seeds, bit-exact arithmetic, SSOT, state lifecycle resistance, time-based scarcity)
-- **Денежная конституция:** константная эмиссия `EMISSION_moneta = 13 × 10⁹ nɈ` за окно через `reward_moneta(W) = EMISSION_moneta`; единственная денежная константа — `protocol_params.emission_moneta`; supply растёт строго монотонно линейно (`supply_moneta(W) = EMISSION_moneta × (W + 1)`); никаких эпох, надбавок, обновлений, сжигания на уровне протокола
+- **Денежная конституция:** константная эмиссия `EMISSION_moneta = 13 × 10⁹ nɈ` за окно через `reward_moneta(W) = EMISSION_moneta`; единственная денежная константа — `protocol_params.emission_moneta`; supply растёт строго монотонно линейно (`supply_moneta(W) = EMISSION_moneta × W`); никаких эпох, надбавок, обновлений, сжигания на уровне протокола
 - **Lottery конституция:** chain_length-weighted formula с seniority_term; time-as-resource — единственный неприобретаемый ресурс веса; committee selection через VDF + sortition; canonical winner selection через cemented VDF_Reveals
 - **Open financial layer ([I-2]):** балансы, суммы переводов, отправители, получатели — публичны на уровне протокола
 - **Time-based scarcity model ([I-15]):** anti-spam, anti-bloat и Sybil защиты через канонические time-based примитивы (rate-per-identity, TTL через активность, chain_length thresholds, sequential VDF iteration count, cooldown активации, [I-8] cemented_bundle_aggregate binding)
@@ -4350,7 +4355,7 @@ Constitutional layer защищает от трёх классов угроз о
 | τ₂ (epoch boundary) | 20 160 окон | Class: Operational. τ₂_windows выбран для balance между responsiveness (шorter epochs = faster adaptation) и stability (longer epochs = reduced noise в participation_ratio measurements). Factorization 2⁶ × 3² × 5 × 7 (60 divisors) enables flexible sub-epoch division. Pin = 20 160 — middle точка band, aligned с operator maintenance cycle assumption (external calibration target, не protocol rule) |
 | D₀ (TimeChain VDF за окно) | 3.25 × 10⁸ (= 325 000 000, hex 0x135F1B40 — authoritative SSOT в Указе Генезиса → «Калибровка D₀» per [I-10]) | Class: Cryptographic/Performance. Единственный исторический quartz-замер на genesis-железе (iMac M1 2021 idle, single-thread): median SHA-256 rate 5.097280 MH/s × 60 кварцевых секунд = 305 836 793 хэшей; runtime-corrected × (60 / 56.35) = 325 000 000 учитывая VDF interleaving с consensus работой. Полная derivation methodology — Указ Генезиса. **Режим: sequential single-chain VDF.** Hardware advantage через pipelined single-thread оптимизацию ограничен ×5-10 над commodity [Pietrzak 2018 «Simple Verifiable Delay Functions», Boneh et al. 2018 CRYPTO «Verifiable Delay Functions»]. Монтана использует exclusively sequential regime: каждая итерация SHA-256 зависит от предыдущей, параллелизация архитектурно исключена |
 | base_vdf_length (VDF entry) | τ₂ (20 160 окон) | Class: Sybil resistance (combined defense). **Component** барьера: sequential VDF cost + AS diversity filter. VDF cost: 1 τ₂ canonical работы commodity / ≈ τ₂/10 на ASIC×10 — emergent ~$20-50 per candidate rent (illustrative, market dependent). AS diversity filter: attacker bounded by actually controlled AS count (typical large attacker controls 10-100 AS из global pool ~80 000). Combined defense multiplier: для 1000 Sybil candidates attacker spends $20-50k VDF rent AND должен распределить по minimum 150 distinct AS (per committee_divisor L1 requirement); combined barrier = VDF cost × (required AS count / attacker AS capacity) ≈ 10-100× stronger чем VDF alone. Unit consistency = τ₂ (1 adaptation epoch = 1 entry epoch) |
-| EMISSION_moneta (константная эмиссия за окно) | 13 × 10⁹ nɈ = 13 Ɉ/окно (const, навсегда) | Class: Economic (governance pin). **Status**: explicit governance pin без academic derivation — cost-per-operator зависит от Ɉ price discovery, которая сама функция от network adoption (circular reference). **Bounded rationale через структурное переиспользование**: pin = 13 совпадает с divisor в формуле `seniority_term = min(chain_length / 13, chain_length_snapshot)` (раздел «Лотерея»), которая использует 13 как expected lottery winners per τ₂ при D₀ + τ₂_windows calibration (derivation 1577880/120960 = 13 ≈ ratio τ₂_windows к expected committee selection rate). Sharing constant между monetary baseline и lottery formula reduces total parameter count by 1, превращая arbitrary symbolic choice в structural reuse. Pin = 13: small positive integer ≥ 1, задающий security budget operators. **Encoded arithmetic horizon**: `supply_moneta(W) = EMISSION_moneta × (W + 1)`, u128 покрывает W до ~2.6 × 10²⁸ — практически неограничен в пределах u64 окна. **Sensitivity analysis**: изменение EMISSION_moneta на ±50% меняет per-operator reward пропорционально; не влияет на security properties консенсуса (вес узла = chain_length, не баланс). Choice не влияет на bootstrap viability (early operator получает ту же ставку что late + permanent CL advantage). |
+| EMISSION_moneta (константная эмиссия за окно) | 13 × 10⁹ nɈ = 13 Ɉ/окно (const, навсегда) | Class: Economic (governance pin). **Status**: explicit governance pin без academic derivation — cost-per-operator зависит от Ɉ price discovery, которая сама функция от network adoption (circular reference). **Bounded rationale через структурное переиспользование**: pin = 13 совпадает с divisor в формуле `seniority_term = min(chain_length / 13, chain_length_snapshot)` (раздел «Лотерея»), которая использует 13 как expected lottery winners per τ₂ при D₀ + τ₂_windows calibration (derivation 1577880/120960 = 13 ≈ ratio τ₂_windows к expected committee selection rate). Sharing constant между monetary baseline и lottery formula reduces total parameter count by 1, превращая arbitrary symbolic choice в structural reuse. Pin = 13: small positive integer ≥ 1, задающий security budget operators. **Encoded arithmetic horizon**: `supply_moneta(W) = EMISSION_moneta × W`, u128 покрывает W до ~2.6 × 10²⁸ — практически неограничен в пределах u64 окна. **Sensitivity analysis**: изменение EMISSION_moneta на ±50% меняет per-operator reward пропорционально; не влияет на security properties консенсуса (вес узла = chain_length, не баланс). Choice не влияет на bootstrap viability (early operator получает ту же ставку что late + permanent CL advantage). |
 
 ### Криптографические схемы
 
