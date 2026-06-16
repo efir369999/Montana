@@ -79,30 +79,13 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         network_handle = Some(spawn_network_thread(&identity, listen_str, manifest_path)?);
     }
 
-    // Parse the genesis manifest once at startup (cheap; JSON) so that
-    // test-cohort `force_active` peers can be pre-seeded into NodeTable /
-    // AccountTable on first run. Production manifest has no such peers, so
-    // extras is empty and bootstrap behaves identically.
-    let genesis_manifest_for_bootstrap: Option<mt_genesis::GenesisManifest> = if let Some(path) =
-        args.genesis_manifest.as_ref()
-    {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| NodeError::InvalidArguments(format!("genesis-manifest {path:?}: {e}")))?;
-        Some(
-            mt_genesis::GenesisManifest::parse(&text)
-                .map_err(|e| NodeError::InvalidArguments(format!("parse manifest: {e}")))?,
-        )
-    } else {
-        None
-    };
-    let extra_actives: Vec<&mt_genesis::GenesisPeer> = genesis_manifest_for_bootstrap
-        .as_ref()
-        .map(|m| m.extra_actives())
-        .unwrap_or_default();
-    let mut state = LocalState::load_or_bootstrap(&data_dir, &identity, params, &extra_actives)?;
+    // spec, Genesis Decree: the genesis active set is built from
+    // protocol_params.genesis_active_operators (hash-bound via the Genesis State
+    // Hash), not from the runtime manifest. The manifest is discovery-only.
+    let mut state = LocalState::load_or_bootstrap(&data_dir, &identity, params)?;
     // Persist the seeded genesis state immediately so a separate `status`
-    // invocation (which loads with empty extra_actives) reads the real
-    // bootstrapped tables instead of re-bootstrapping an incomplete view.
+    // invocation reads the real bootstrapped tables instead of re-bootstrapping
+    // an incomplete view.
     if !data_dir.join("accounts.bin").exists() {
         state.save(&data_dir)?;
     }
@@ -133,13 +116,13 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         .unwrap_or(0);
 
     let is_genesis = NodeLifecycle::is_bootstrap_node(&identity, params);
-    // Genesis cohort member = the compiled bootstrap node OR a force_active peer
+    // Genesis cohort member = the compiled bootstrap node OR a genesis cohort peer
     // pre-seeded into the genesis NodeTable (state.rs seeds both as Active
     // operators). Both start Active; every other node joins via the candidate
     // SSHA + admission path.
     let is_genesis_member = is_genesis || state.nodes.contains(&my_node);
 
-    // Phase Bootstrap = первая загрузка. Genesis-член (bootstrap или force_active,
+    // Phase Bootstrap = первая загрузка. Genesis-член (bootstrap или genesis cohort,
     // уже активный в NodeTable) → сразу Active. Прочие узлы → CandidateVdf
     // с target_chain_length = τ₂ и w_start = текущее окно + 1.
     if lifecycle.phase == NodePhase::Bootstrap {
