@@ -1229,6 +1229,12 @@ fn handle_protocol_message(
                     },
                     Err(e) => eprintln!("[m7] FastSyncRequest broadcast failed: {e}"),
                 }
+                // EXT-SYNC-01: persist the observed anchor root for window w so
+                // FastSyncClient::finalize can match the incoming snapshot. The
+                // lagging node returns here, before recent_roots is populated on
+                // sequential apply (line below), so without this it self-blocks.
+                ctx.recent_roots.insert(w, header.state_root);
+                bound_map(ctx.recent_roots);
                 return Ok(());
             }
             if w != *ctx.current + 1 {
