@@ -28,7 +28,7 @@ This is intentional for v0.2 — it lets you deploy and break a Montana node end
 
 ```bash
 git clone https://github.com/efir369999/Montana.git /opt/montana && \
-sudo bash /opt/montana/Code/scripts/install-vps-full.sh
+sudo bash /opt/montana/Code/scripts/install-vps.sh
 ```
 
 What this does (≈10 minutes on a 1 vCPU VPS):
