@@ -831,3 +831,12 @@ the anchor window — the lagging node self-blocked. Closed: persist the observe
 exact-anchor binding (pass requested anchor to the client, verify chunk
 anchor_window equality) is a follow-on hardening, not required to close the
 self-block.
+
+## EXT-NOISE-RESIDUAL (closed, commits b301c03 + spec Network v1.3.1): XX signatures bind shared secrets
+
+Known residual from a prior audit: XX handshake signatures signed the transcript
+(ephemerals, KEM ciphertexts, identity pubkeys) computed before the post-decap
+shared secrets ss_i/ss_r entered the signed area, while the master key included
+them — a formal AKE proof gap. Closed: sig_r signs transcript ‖ ss_i; sig_i signs
+transcript ‖ ss_i ‖ ss_r (both construction and verification, symmetric). No wire
+change. Roundtrip/tamper/KAT/e2e/loopback pass; Network spec bumped to v1.3.1.
