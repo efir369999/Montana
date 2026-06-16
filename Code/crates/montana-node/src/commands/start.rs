@@ -272,7 +272,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // Длительность предыдущего витка — основа адаптивного liveness-grace.
     let mut last_tick_dur = Duration::from_secs(30);
     // Живость соседей по факту получения их сообщений.
-    let mut peer_seen: BTreeMap<mt_state::NodeId, (Instant, Duration)> = BTreeMap::new();
     loop {
         // Эффективное D пере-считывается каждый виток (адаптация на границе τ₂
         // происходит в едином переходе состояния settle_and_bookkeep).
@@ -291,7 +290,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     lottery_history: &mut lottery_history,
                     bc_set_history: &mut bc_set_history,
                     last_proposer_cement: &mut last_proposer_cement,
-                    peer_seen: &mut peer_seen,
                     own_bc_cache: &mut own_bc_cache,
                     pending_msgs: &mut pending_msgs,
                     fast_sync: &mut fast_sync,
@@ -300,7 +298,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     prev_proposal_hash: &mut prev_proposal_hash,
                     fast_sync_lag_threshold,
                     fallback_secs: (last_tick_dur.as_secs() * 2).max(3),
-                    session_start,
                     data_dir: &data_dir,
                     params,
                     store: &store,
@@ -541,7 +538,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // Живой-но-медленный сосед НЕ бросается (его ждут сколько нужно);
                 // выпадает из набора лишь реально замолчавший (M4-INFO-10 failsafe).
                 let mut last_notify = Instant::now();
-                let mut degraded = false;
                 loop {
                     if let Some(ref mut handle) = network_handle {
                         let mut ctx = net_ctx!();
@@ -550,10 +546,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     if current >= propose_w || STOP.load(Ordering::SeqCst) {
                         break;
                     }
-                    let (need, live_n) = {
-                        let ctx = net_ctx!();
-                        live_quorum_need(&ctx)
-                    };
+                    let need = quorum(active_chain_length_at(&state.nodes, propose_w, params));
                     let got: u64 = bc_accumulator
                         .get(&propose_w)
                         .map(|m| {
@@ -563,9 +556,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         })
                         .unwrap_or(0);
                     if got >= need {
-                        // Достигнут кворум живого набора. degraded — когда живых
-                        // меньше, чем узлов в таблице (кто-то реально замолчал).
-                        degraded = (live_n as usize) < state.nodes.len();
                         break;
                     }
                     if last_notify.elapsed() > Duration::from_secs(10) {
@@ -594,11 +584,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // Порог цементации = 67% ЖИВОГО набора (тот же, по которому
                 // ждали кворум). Билет зацементирован, если его подтвердили
                 // узлы с суммарной chain_length ≥ этого порога.
-                let (need, _live_n) = {
-                    let ctx = net_ctx!();
-                    live_quorum_need(&ctx)
-                };
-                let _ = degraded;
+                let need = quorum(active_chain_length_at(&state.nodes, propose_w, params));
                 let mut cemented = weighted_cemented_hashes(&evidence, &state.nodes, need);
                 cemented.sort();
                 let prev_w = propose_w.saturating_sub(1);
@@ -818,19 +804,6 @@ const VDF_PROGRESS_CHUNKS: u64 = 10;
 /// Глубина хранения пооконных историй (пулы, победители, наборы подтвердивших).
 const HISTORY_BOUND: usize = 64;
 
-/// Genesis-член ОЖИДАЕТСЯ в сети (Genesis Decree). Два режима живости:
-/// - до ПЕРВОГО контакта узел презюмируется живым весь дедлайн первого
-///   контакта — bootstrap стоит и ждёт основателей, НЕ накапливая вес соло,
-///   пока они поднимают связь (которая на боевой встаёт минутами из-за
-///   фрейминг-мигов транспорта);
-/// - после первого контакта — резильентный grace (молчит < 3× своего
-///   интервала, но не меньше базового): медленный/мигающий узел не выпадает.
-///
-/// Failsafe (соло-цементирование) — только когда genesis-член, ранее
-/// участвовавший, замолчал дольше grace (реально ушёл).
-const GENESIS_FIRST_CONTACT_SECS: u64 = 600;
-const GENESIS_MEMBER_GRACE_SECS: u64 = 90;
-
 fn bound_map<K: Ord + Copy, V>(m: &mut BTreeMap<K, V>) {
     while m.len() > HISTORY_BOUND {
         let k = *m.keys().next().unwrap();
@@ -866,9 +839,6 @@ struct NetCtx<'a> {
     lottery_history: &'a mut BTreeMap<u64, Vec<mt_lottery::Candidate>>,
     bc_set_history: &'a mut BTreeMap<u64, Vec<mt_state::NodeId>>,
     last_proposer_cement: &'a mut BTreeMap<mt_state::NodeId, u64>,
-    // Живость соседей: (момент последнего сообщения, наблюдаемый интервал).
-    // Интервал ≈ длительность витка соседа — медленный узел не выпадает.
-    peer_seen: &'a mut BTreeMap<mt_state::NodeId, (Instant, Duration)>,
     own_bc_cache: &'a mut BTreeMap<u64, BundledConfirmation>,
     pending_msgs: &'a mut Vec<ProtocolMessage>,
     fast_sync: &'a mut Option<mt_sync::FastSyncClient>,
@@ -876,8 +846,6 @@ struct NetCtx<'a> {
     last_cement_at: &'a mut Instant,
     prev_proposal_hash: &'a mut Hash32,
     fast_sync_lag_threshold: u64,
-    // Момент старта сессии — для презумпции живости genesis-членов на старте.
-    session_start: Instant,
     // Адаптивный таймаут перехвата ведущего (× длительности окна): по истечении
     // каждого такого интервала молчания законного ведущего роль уходит на
     // следующего запасного, терминально — на bootstrap (сеть не встаёт).
@@ -899,56 +867,6 @@ fn cba_from(history: &BTreeMap<u64, Vec<mt_state::NodeId>>, w: u64) -> Hash32 {
 
 fn cba_for(ctx: &NetCtx, w: u64) -> Hash32 {
     cba_from(ctx.bc_set_history, w)
-}
-
-/// Отметить факт получения сообщения от соседа: обновить момент и сгладить
-/// наблюдаемый интервал между его сообщениями (≈ длительность его витка).
-fn mark_peer_seen(ctx: &mut NetCtx, node: mt_state::NodeId) {
-    let now = Instant::now();
-    let prev = ctx.peer_seen.get(&node).copied();
-    let interval = match prev {
-        Some((last, ema)) => {
-            let gap = now.saturating_duration_since(last);
-            // Сглаживание: новый интервал учитывается с весом 1/2.
-            (ema / 2).saturating_add(gap / 2)
-        },
-        None => Duration::from_secs(0),
-    };
-    ctx.peer_seen.insert(node, (now, interval));
-}
-
-/// Жив ли сосед: получали от него сообщение не дольше 3× его наблюдаемого
-/// интервала (минимум 30 с). Медленный-но-работающий узел остаётся живым;
-/// реально замолчавший — выпадает из кворумного набора.
-fn peer_alive(ctx: &NetCtx, node: &mt_state::NodeId) -> bool {
-    let genesis_grace = Duration::from_secs(GENESIS_MEMBER_GRACE_SECS);
-    match ctx.peer_seen.get(node) {
-        Some((last, interval)) => {
-            // Живой пока молчит не дольше 3× своего интервала ИЛИ длинного
-            // genesis-grace — медленный/мигающий genesis-член не выпадает,
-            // bootstrap его ждёт (вес не накапливается соло).
-            let timeout = (*interval * 3).max(genesis_grace);
-            Instant::now().saturating_duration_since(*last) < timeout
-        },
-        // Ещё ни одной вести: genesis-член ПРЕЗЮМИРУЕТСЯ живым до дедлайна
-        // первого контакта — bootstrap ждёт основателей, не цементируя соло
-        // и не накапливая вес, пока они поднимают связь.
-        None => ctx.session_start.elapsed() < Duration::from_secs(GENESIS_FIRST_CONTACT_SECS),
-    }
-}
-
-/// Кворумный порог по ЖИВОМУ набору: сумма chain_length себя и живых соседей.
-/// Темп сети = медианный активный набор (спецификация «Свойство темпа сети»).
-fn live_quorum_need(ctx: &NetCtx) -> (u64, u64) {
-    let mut live_cl = 0u64;
-    let mut live_n = 0u64;
-    for node in ctx.state.nodes.iter() {
-        if node.node_id == ctx.my_node || peer_alive(ctx, &node.node_id) {
-            live_cl += node.chain_length;
-            live_n += 1;
-        }
-    }
-    (quorum(live_cl), live_n)
 }
 
 /// Законный ведущий окна w по спецификации Lookback Leadership:
@@ -1378,10 +1296,8 @@ fn handle_protocol_message(
                 return Ok(());
             };
             let active_cl = active_chain_length_at(&ctx.state.nodes, w, ctx.params);
-            // Failsafe (M4-INFO-10): конверт от bootstrap-узла принимается с
-            // порогом по присутствующим confirmer-ам (degraded mode). Конверты
-            // от любого другого ведущего — строгий 67% активной длины.
-            let degraded = header.proposer_node_id == ctx.bootstrap_node_id;
+            // Acceptance threshold is the deterministic 67% of the 2τ₂ active set
+            // (active_cl); no wall-clock and no proposer-based relaxation.
             // Проверка included_bundles (подтверждения окна w-1).
             let mut confirmers: Vec<mt_state::NodeId> = Vec::new();
             if w >= 1 {
@@ -1406,9 +1322,7 @@ fn handle_protocol_message(
                             confirmers.push(bc.node_id);
                         }
                     }
-                    if !degraded
-                        && mt_consensus::validate_bundles_threshold(sum, active_cl).is_err()
-                    {
+                    if mt_consensus::validate_bundles_threshold(sum, active_cl).is_err() {
                         eprintln!(
                             "[consensus] w={w}: included_bundles {sum} < кворума {} — skip",
                             quorum(active_cl)
@@ -1435,15 +1349,7 @@ fn handle_protocol_message(
                     ev_map.insert(bc.node_id, bc.clone());
                 }
             }
-            let present_cl: u64 = ev_map
-                .keys()
-                .filter_map(|id| ctx.state.nodes.get(id).map(|n| n.chain_length))
-                .sum();
-            let need_quorum = if degraded {
-                quorum(present_cl)
-            } else {
-                quorum(active_cl)
-            };
+            let need_quorum = quorum(active_cl);
             if w >= 1 && ev_sum < need_quorum {
                 eprintln!(
                     "[consensus] w={w}: улики цементации {ev_sum} < кворума {need_quorum} — skip"
@@ -1646,9 +1552,6 @@ fn handle_protocol_message(
                 let cba = cba_for(ctx, rw.saturating_sub(2));
                 if validate_reveal(&rec_reveal, &ctx.state.nodes, &exp_t_r, &cba, rw).is_ok() {
                     let nid = rec_reveal.node_id;
-                    if nid != ctx.my_node {
-                        mark_peer_seen(ctx, nid);
-                    }
                     ctx.reveal_pool
                         .entry(rw)
                         .or_default()
@@ -1726,9 +1629,6 @@ fn handle_protocol_message(
                     .unwrap_or(ctx.timechain.t_r);
                 if validate_bundle(&bc, &ctx.state.nodes, &expected_t_r).is_ok() {
                     let node_id = bc.node_id;
-                    if node_id != ctx.my_node {
-                        mark_peer_seen(ctx, node_id);
-                    }
                     ctx.bc_accumulator
                         .entry(bw)
                         .or_default()
