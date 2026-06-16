@@ -1,6 +1,6 @@
 # Montana — Network Layer Specification
 
-**Version:** 1.3.0 (2026-05-27)
+**Version:** 1.3.1 (2026-06-16) — Noise_PQ XX signatures bind post-decap ML-KEM-768 shared secrets (ss_i into sig_r, ss_i+ss_r into sig_i); AKE session-key binding (EXT-NOISE-RESIDUAL)
 
 **Layer:** Network — sits between Protocol (low) and App (high).
 
@@ -207,7 +207,7 @@ Wire-format and KAT vectors for the cemented Proposal envelope with `bundle_coun
 | msg2 (responder → initiator) | 7533 | `ke_pk_r` (1184 B) ‖ `ct_i` (ML-KEM-768 ct to `ke_pk_i`, 1088 B) ‖ `rs_id_pk` (ML-DSA-65 pk, 1952 B) ‖ `sig_r` (ML-DSA-65 sig, 3309 B) |
 | msg3 (initiator → responder) | 6349 | `ct_r` (ML-KEM-768 ct to `ke_pk_r`, 1088 B) ‖ `is_id_pk` (1952 B) ‖ `sig_i` (3309 B) |
 
-Transcript hash (input to both `sig_r` and `sig_i`) is the byte concatenation of msg1 plus the msg2-prefix-without-`sig_r` (for `sig_r`), or msg1 ‖ full-msg2 ‖ msg3-prefix-without-`sig_i` (for `sig_i`). Each signature input is domain-separated with `mt-noise-pq-xx-v1-sig-r` and `mt-noise-pq-xx-v1-sig-i` respectively.
+Transcript hash (input to both `sig_r` and `sig_i`) is the byte concatenation of msg1 plus the msg2-prefix-without-`sig_r` (for `sig_r`), or msg1 ‖ full-msg2 ‖ msg3-prefix-without-`sig_i` (for `sig_i`). Each signature input is domain-separated with `mt-noise-pq-xx-v1-sig-r` and `mt-noise-pq-xx-v1-sig-i` respectively. Each signature additionally binds the post-decap ML-KEM-768 shared secrets that both parties hold at signing/verification time: `sig_r` signs `transcript ‖ ss_i`, `sig_i` signs `transcript ‖ ss_i ‖ ss_r`. Identity authentication therefore covers the derived session key (AKE binding), not the transcript alone; the wire format is unchanged.
 
 Session keys are derived by domain-separated SHA-256 over the concatenation of both ML-KEM-768 shared secrets and the full transcript:
 
