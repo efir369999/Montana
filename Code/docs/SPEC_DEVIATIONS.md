@@ -716,8 +716,8 @@ After K windows since FIRST election, bootstrap fallback fires regardless of whe
 
 ## v1.2.0 Fault tolerance + lottery integrity (2026-06-13)
 
-- **DEV-021c (closed, superseded).** Фиксированный grace заменён адаптивным: liveness-grace = 3× длительности витка последовательной SHA-256 цепочки, таймаут перехвата ведущего = 2× витка. Замер — чистый виток (не вся итерация с ожиданием), иначе grace раздувался и соло-перехват не успевал.
-- **DEV-028 (closed): bootstrap degraded failsafe (M4-INFO-10).** Если кворум 67% активной длины не собран за liveness-grace, bootstrap цементирует присутствующим набором (порог = 67% присутствующих confirmer-ов); ведомый принимает конверт от bootstrap с этим порогом. Сеть продвигается при выпадении узлов — проверено 3→2→1→3: рост на двух узлах, рост на bootstrap-соло, восстановление ротации при возврате. Привилегия только у bootstrap и только в degraded; при полном онлайне — строгий 67% и честная ротация.
+- **DEV-021c (closed, superseded by DEV-032 — deterministic 2τ₂ quorum).** Фиксированный grace заменён адаптивным: liveness-grace = 3× длительности витка последовательной SHA-256 цепочки, таймаут перехвата ведущего = 2× витка. Замер — чистый виток (не вся итерация с ожиданием), иначе grace раздувался и соло-перехват не успевал.
+- **DEV-028 (closed, superseded by DEV-032 — wall-clock degraded removed): bootstrap degraded failsafe (M4-INFO-10).** Если кворум 67% активной длины не собран за liveness-grace, bootstrap цементирует присутствующим набором (порог = 67% присутствующих confirmer-ов); ведомый принимает конверт от bootstrap с этим порогом. Сеть продвигается при выпадении узлов — проверено 3→2→1→3: рост на двух узлах, рост на bootstrap-соло, восстановление ротации при возврате. Привилегия только у bootstrap и только в degraded; при полном онлайне — строгий 67% и честная ротация.
 - **DEV-029 (closed): reveal-set ripening.** На равных весах кворум цементации билета = единогласие (⌈67%×N⌉ при N равных = N). Опоздавший билет окна W-1 выкидывал розыгрыш окна в одного кандидата. Узел переиздаёт своё подтверждение окна W при получении нового билета окна W-1, набор сходится к полному у всех → единогласный кворум достигается. Проверено: кандидатов=3 на 23-28 из 30 окон (было 0/1), победители ротируются по всем узлам.
 
 **Операционное (не дефект).** Узел за NAT (мигающий канал) в degraded-режиме включается в розыгрыш только когда его билеты доходят вовремя; его выпадение не роняет сеть (bootstrap+стабильные узлы тянут). Это и есть «темп медианного активного набора» спецификации.
@@ -763,7 +763,7 @@ byte-exact to spec and deterministic. The spec predicate is self-consistent
 (activation sets lcw=0; Step 3.5 sets lcw=W on cemented confirmation), so the
 horizon-4/floor workaround was unnecessary and non-conformant.
 
-## DEV-032 (open): wall-clock degraded quorum in consensus acceptance (EXT-QRM-02)
+## DEV-032 (closed, commit adbf1be): wall-clock removed, deterministic 2τ₂ quorum (EXT-QRM-02)
 
 Supersedes the "closed" status of DEV-021c (adaptive grace) and DEV-028
 (bootstrap degraded failsafe) for spec-conformance purposes. Those are
