@@ -13,12 +13,12 @@
 //!     ke_pk_r    1184 B  — responder ephemeral ML-KEM-768 public key
 //!     ct_i       1088 B  — encap to ke_pk_i → ss_i
 //!     rs_id_pk   1952 B  — responder ML-DSA-65 identity public key
-//!     sig_r      3309 B  — responder sig over transcript through msg2
+//!     sig_r      3309 B  — responder sig over transcript through msg2 ‖ ss_i
 //!
 //! - msg3 (initiator → responder), 6349 B:
 //!     ct_r       1088 B  — encap to ke_pk_r → ss_r
 //!     is_id_pk   1952 B  — initiator ML-DSA-65 identity public key
-//!     sig_i      3309 B  — initiator sig over transcript through msg3
+//!     sig_i      3309 B  — initiator sig over transcript through msg3 ‖ ss_i ‖ ss_r
 //!
 //! Transcript = msg1 || msg2_payload_through_sig || msg3_payload_through_sig
 //!
@@ -28,6 +28,8 @@
 //!   sk_r_to_i = SHA-256("mt-noise-pq-xx-v1-r2i" || master)
 //!
 //! Identity authentication: ML-DSA-65 signatures bind both ephemerals + remote
+//! identity AND the post-decap shared secrets (ss_i into sig_r; ss_i+ss_r into
+//! sig_i) into the signed input, so authentication covers the derived session key
 //! identity into the transcript, so a MITM cannot forge either side without
 //! its private signing key.
 
@@ -195,6 +197,7 @@ pub fn responder_send_msg2(
     let sig_input: [u8; 32] = Sha256::new()
         .chain_update(SIG_DOMAIN_RESPONDER)
         .chain_update(&transcript)
+        .chain_update(ss_i.as_bytes())
         .finalize()
         .into();
     let sig_r = sign(&state.rs_id_sk, &sig_input)?;
@@ -261,6 +264,7 @@ pub fn initiator_receive_msg2(
     let sig_input: [u8; 32] = Sha256::new()
         .chain_update(SIG_DOMAIN_RESPONDER)
         .chain_update(&transcript)
+        .chain_update(ss_i.as_bytes())
         .finalize()
         .into();
     if !verify(&rs_id_pk, &sig_input, &sig_r) {
@@ -300,6 +304,8 @@ pub fn initiator_send_msg3(
     let sig_input: [u8; 32] = Sha256::new()
         .chain_update(SIG_DOMAIN_INITIATOR)
         .chain_update(&transcript_through_msg2)
+        .chain_update(ss_i.as_bytes())
+        .chain_update(ss_r_wrapped.as_bytes())
         .finalize()
         .into();
     let sig_i = sign(&is_id_sk, &sig_input)?;
@@ -357,6 +363,8 @@ pub fn responder_receive_msg3(
     let sig_input: [u8; 32] = Sha256::new()
         .chain_update(SIG_DOMAIN_INITIATOR)
         .chain_update(&transcript)
+        .chain_update(state.ss_i.as_bytes())
+        .chain_update(ss_r_wrapped.as_bytes())
         .finalize()
         .into();
     if !verify(&is_id_pk, &sig_input, &sig_i) {
