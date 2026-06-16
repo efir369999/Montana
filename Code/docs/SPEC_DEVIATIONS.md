@@ -720,7 +720,7 @@ After K windows since FIRST election, bootstrap fallback fires regardless of whe
 - **DEV-028 (closed): bootstrap degraded failsafe (M4-INFO-10).** Если кворум 67% активной длины не собран за liveness-grace, bootstrap цементирует присутствующим набором (порог = 67% присутствующих confirmer-ов); ведомый принимает конверт от bootstrap с этим порогом. Сеть продвигается при выпадении узлов — проверено 3→2→1→3: рост на двух узлах, рост на bootstrap-соло, восстановление ротации при возврате. Привилегия только у bootstrap и только в degraded; при полном онлайне — строгий 67% и честная ротация.
 - **DEV-029 (closed): reveal-set ripening.** На равных весах кворум цементации билета = единогласие (⌈67%×N⌉ при N равных = N). Опоздавший билет окна W-1 выкидывал розыгрыш окна в одного кандидата. Узел переиздаёт своё подтверждение окна W при получении нового билета окна W-1, набор сходится к полному у всех → единогласный кворум достигается. Проверено: кандидатов=3 на 23-28 из 30 окон (было 0/1), победители ротируются по всем узлам.
 
-**Операционное (не дефект).** Узел за NAT/VPN (мигающий канал) в degraded-режиме включается в розыгрыш только когда его билеты доходят вовремя; его выпадение не роняет сеть (bootstrap+стабильные узлы тянут). Это и есть «темп медианного активного набора» спецификации.
+**Операционное (не дефект).** Узел за NAT (мигающий канал) в degraded-режиме включается в розыгрыш только когда его билеты доходят вовремя; его выпадение не роняет сеть (bootstrap+стабильные узлы тянут). Это и есть «темп медианного активного набора» спецификации.
 
 ---
 
@@ -796,28 +796,13 @@ pays double. Firewall: changing the spec is architect mode.
 ## Out of this conformance pass (separate passes)
 
 - EXT-SYNC-01 (FastSync anchor self-block): not re-verified in this pass; verify before fix.
-- EXT-VPN-01/02/03, EXT-FFI-01: authorization / memory-hygiene class (security passes 16/17/24/26), not spec-conformance.
+- EXT-FFI-01: memory-hygiene class (security pass), not spec-conformance.
 - EXT-TEST-01 (hanging jittery_write_no_frame_duplication mock): mt-noise-pq test infra.
 - EXT-GEN-01, EXT-DOC-01: closed (conformance-gate green; commits dd4e595 / 83379e3).
 
 ---
 
 ## Security pass (External audit GPT-5 Codex 01) — closures
-
-## DEV-033 (closed, commit b375c3b): VPN revoke authorization (EXT-VPN-01)
-
-mt-vpn-balance handler_revoke verified an Ed25519 signature with the
-attacker-supplied body.pubkey, then removed the account without checking that
-body.pubkey == the account's pinned pubkey_hex. Any Ed25519 key could delete any
-address (DoS / accounting deletion). Closed: ownership check — the signer pubkey
-must equal the pinned pubkey; legacy unsigned accounts and unknown addresses
-cannot be revoked.
-
-## DEV-034 (closed, commit b375c3b): VPN admin purge auth (EXT-VPN-02)
-
-handler_purge gated on x-real-ip (spoofable; bypassed entirely on a missing
-header). Closed: fail-closed admin-token gate (MT_VPN_ADMIN_TOKEN env,
-x-admin-token header, constant-time ct_eq). Empty/unset token denies all.
 
 ## DEV-035 (closed, commit bca06ba): FFI secret zeroization (EXT-FFI-01)
 
@@ -829,15 +814,6 @@ were never wiped. Closed: each secret buffer wrapped in zeroize::Zeroizing.
 
 mt-noise-pq Jittery::poll_write returned Pending without a waker -> block_on hung.
 Closed: cx.waker().wake_by_ref() before Pending.
-
-## EXT-VPN-03 (open, policy decision): heartbeat trust boundary + public-by-code subscription
-
-Heartbeat reads client IP from proxy headers (x-real-ip / x-forwarded-for); new
-accounts may use legacy unsigned TOFU; /vpn/sub returns hardcoded VLESS UUID /
-Reality pbk / sid publicly. Per the audit this is acceptable IF the subscription
-endpoint is intentionally public. Decision required from the author: is /vpn/sub
-public-by-design (current) or owner-restricted (add signed account auth +
-per-account credentials + rotation)? Not a mechanical fix — trust-boundary policy.
 
 ## EXT-SYNC-01 (open, to verify): FastSync anchor self-block
 

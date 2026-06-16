@@ -45,16 +45,6 @@ curl -sk https://efir.org:8443/montana-api/peers
 After ~24 hours of cemented Proposal sync the node appears in `/api/nodes` as `Candidate`.
 After ~14 days of sequential SHA-256 chain computation plus the next selection event it transitions to `Active` and starts participating in the lottery.
 
-## Optional: VPN exit-node
-
-To also operate the node as a Reality VLESS endpoint on the same VPS:
-
-```bash
-docker compose up -d xray nginx-decoy
-```
-
-`xray` listens on :443 (TLS Reality, disguised as `googletagmanager.com`), `nginx-decoy` on :80 serves a decoy landing page.
-
 ## Network state (current)
 
 - **Cohort:** 5 nodes — `moscow` (bootstrap) + `frankfurt` + `vilnius` + `armenia` + `nicosia`

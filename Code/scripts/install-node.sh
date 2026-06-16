@@ -7,7 +7,7 @@
 #   - installs Docker if missing
 #   - fetches the canonical genesis manifest automatically (montana.quest)
 #   - auto-detects city/country from geo-IP (no IP published)
-#   - builds & runs the node-only image (no VPN)
+#   - builds & runs the node-only image
 #   - the node self-reports to the explorer API every 30s → appears in the
 #     live network at https://montana.quest/net automatically
 set -euo pipefail

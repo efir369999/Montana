@@ -34,26 +34,14 @@ This is an open invitation. Montana is a from-scratch post-quantum blockchain �
 
 ## ⚡ Quick start
 
-**Deploy node + VPN endpoint on a clean Linux VPS:**
+**Deploy a node on a clean Linux VPS:**
 
 ```bash
 git clone https://github.com/efir369999/Montana.git /opt/montana && \
-sudo bash /opt/montana/Code/scripts/install-vps-full.sh
-```
-
-**Or just the node:**
-
-```bash
 sudo bash /opt/montana/Code/scripts/install-vps.sh
 ```
 
-**Or just the VPN endpoint:**
-
-```bash
-sudo bash /opt/montana/Code/montana-vpn/install.sh
-```
-
-The full installer prints back the 24-word recovery mnemonic for the node and a VLESS URL for the VPN. Save the mnemonic immediately — it is the only backup.
+The installer prints back the 24-word recovery mnemonic for the node. Save it immediately — it is the only backup.
 
 ---
 
@@ -86,7 +74,6 @@ The full installer prints back the 24-word recovery mnemonic for the node and a 
 | [`docs/security-cards.md`](docs/security-cards.md) | Per-primitive security analysis |
 | [`docs/SPEC_DEVIATIONS.md`](docs/SPEC_DEVIATIONS.md) | Known deviations, acknowledgments, and closures |
 | [`docs/build-from-source.md`](docs/build-from-source.md) | Reproducible build instructions |
-| [`montana-vpn/README.md`](montana-vpn/README.md) | Companion VPN endpoint (xray Reality) |
 | [`../Montana Whitepaper v0.1.0.md`](../Montana Whitepaper v0.1.0.md) | Whitepaper in Satoshi style |
 | [`CLAUDE.md`](CLAUDE.md) | Architect role for code (process, not normative) |
 | [`CRITIC.md`](CRITIC.md) | Critic role for implementation review |
@@ -139,14 +126,8 @@ cargo test -p mt-net --features testing
 │   └── mt-examples                                              manual validation harness
 ├── scripts/
 │   ├── install-vps.sh         node-only installer (Linux VPS)
-│   ├── install-vps-full.sh    node + VPN, one command
 │   ├── install-local-mac.sh   node-only installer (macOS launchd)
 │   └── pre-commit.sh          local pre-commit hook
-├── montana-vpn/               companion VPN endpoint (xray Reality)
-│   ├── README.md
-│   ├── install.sh
-│   ├── config-template/
-│   └── docs/
 └── bench/                     VDF benchmark (standalone)
 ```
 

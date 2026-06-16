@@ -1,5 +1,5 @@
 #!/bin/bash
-# Montana node-only entrypoint. No VPN. The genesis manifest is mounted from the
+# Montana node-only entrypoint. The genesis manifest is mounted from the
 # host (never baked into the image), so a node's genesis is decoupled from the
 # binary and cannot silently drift between machines.
 #

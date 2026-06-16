@@ -55,8 +55,6 @@ The protocol is specified as three layered documents — each independently audi
 | 1. Protocol | [`Montana Protocol v35.25.1.md`](Montana%20Protocol%20v35.25.1.md) | State machine, crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256), sequential-delay TimeChain, lottery, Account / Node tables, Genesis Decree, `apply_proposal` pipeline, consensus operations |
 | 2. Network | [`Montana Network v1.3.0.md`](Montana%20Network%20v1.3.0.md) | libp2p transport, Noise_PQ XX (production), Identity-Bound Tunnel, transport randomness, PeerRecord, mesh transport, sync protocols, network-layer threat model, KAT vectors |
 | 3. App | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | UI, wallet, messenger (Double Ratchet PQ), channels, contacts, profile, Junona AI agent, browser, premium, application-layer economy |
-| 4. Egress | [`Montana Egress v1.0.0.md`](Montana%20Egress%20v1.0.0.md) | clearnet egress over the mesh: entry/relay/exit roles, egress directory, manual/auto country selection, two-session architecture, exit policy, threat model |
-| 5. Alliance | [`Montana VPN Alliance v1.1.0.md`](Montana%20VPN%20Alliance%20v1.1.0.md) | federation pattern: universal-key membership, mutual reachability insurance, front-light/exit-heavy load model, resilience |
 
 Layer dependency direction: Protocol (low) ← Network (mid) ← App (high). Each layer depends on layers below it; no upward dependency.
 
@@ -110,7 +108,7 @@ This is a public invitation. Every primitive, every consensus rule, every byte o
 
 ## Quick start
 
-**One command — joins the Montana fleet (node + VPN endpoint + orchestrator registration) on a clean Ubuntu/Debian VPS:**
+**One command — joins the Montana mesh (consensus node) on a clean Ubuntu/Debian VPS:**
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/efir369999/Montana/main/install.sh | sudo bash
@@ -120,17 +118,13 @@ The installer:
 - Wipes any prior native systemd install (idempotent re-runs supported)
 - Installs Docker
 - Brings up `montana-node` container (`ghcr.io/efir369999/montana-node:latest`) — joins the 5-node TimeChain mesh via embedded `genesis-manifest.json`, listens P2P on `:8444`
-- Brings up `xray` Reality endpoint on `:443` using the **shared universal `pbk` / `sid`** that all Montana VPN endpoints serve, with a per-host UUID
-- Brings up `nginx-decoy` on `:80` (camouflage landing page)
 - Auto-detects country / city / coords via `ip-api.com`
-- POSTs `/register` to the Moscow orchestrator (built-in admin token); orchestrator either registers the node directly, or auto-provisions a cascade front via Frankfurt if the IP is in a blocked CIDR
+- POSTs `/register` to the Moscow orchestrator (built-in admin token)
 - Prints the 24-word recovery mnemonic
-
-The new endpoint appears in **https://montana.quest/vpn/sub** within ~5 minutes (systemd timer on Moscow rebuilds the subscription from the registry).
 
 ---
 
-**Montana node only (no VPN), pre-built image — for operators who only want consensus participation:**
+**Pre-built image — for operators who only want consensus participation:**
 
 ```bash
 docker volume create montana-data
@@ -148,28 +142,15 @@ The container dials the 5-node bootstrap mesh, generates a 24-word mnemonic on f
 docker exec montana-node cat /var/lib/montana/mnemonic.txt
 ```
 
-See **[`Code/docker/runtime/QUICKSTART.md`](Code/docker/runtime/QUICKSTART.md)** for verification, build-from-source fallback, and optional VPN exit-node bring-up.
+See **[`Code/docker/runtime/QUICKSTART.md`](Code/docker/runtime/QUICKSTART.md)** for verification and build-from-source fallback.
 
-**Full VPS install (Montana node + Xray Reality VPN, one command):**
-
-```bash
-git clone https://github.com/efir369999/Montana.git /opt/montana && \
-sudo bash /opt/montana/Code/scripts/install-vps-full.sh
-```
-
-**Node only (build from source on the VPS):**
+**Node install (build from source on the VPS):**
 
 ```bash
 sudo bash /opt/montana/Code/scripts/install-vps.sh
 ```
 
-**VPN endpoint only:**
-
-```bash
-sudo bash /opt/montana/Code/montana-vpn/install.sh
-```
-
-The full installer prints a 24-word recovery mnemonic for the node and a VLESS URL for the VPN. Save the mnemonic immediately — it is the only backup.
+The installer prints a 24-word recovery mnemonic for the node. Save it immediately — it is the only backup.
 
 ---
 
@@ -201,8 +182,6 @@ The full installer prints a 24-word recovery mnemonic for the node and a VLESS U
 | [`Code/AUDIT.md`](Code/AUDIT.md) | Audit package for external firm engagement |
 | [`Code/ROADMAP.md`](Code/ROADMAP.md) | Nine milestones — current status and remaining work |
 | [`Code/docs/SPEC_DEVIATIONS.md`](Code/docs/SPEC_DEVIATIONS.md) | Known deviations, acknowledgments, and closures |
-| [`Code/montana-vpn/`](Code/montana-vpn/) | Reality-VPN endpoint (optional, alongside the node) |
-| [`Code/scripts/install-vps-full.sh`](Code/scripts/install-vps-full.sh) | Node + VPN one-command installer |
 | [`SECURITY.md`](SECURITY.md) | Security policy — how to report vulnerabilities |
 
 ---

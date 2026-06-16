@@ -3123,7 +3123,7 @@ boundary / edge" per critical type как в Gate 0.5 [I-9] требовании
 | **Integrity** | Сообщение не модифицировано в пути; modification обнаруживается |
 | **Availability** | Узел остаётся reachable для honest peers; consensus state продолжает прогрессировать |
 | **Unlinkability** | Внешний наблюдатель не может связать operation X с originating identity / IP узла отправителя |
-| **Identifier unlinkability (transport)** | Wire-format Noise_PQ XX соединения не содержит долгоживущего идентификатора в plaintext-части — passive observer не может коррелировать две TCP-сессии одного клиента ни через application restart, ни через смену IP / VPN / сети. Детальный разбор: [`External-Audit/transport-identifier-leakage.md`](External-Audit/transport-identifier-leakage.md). |
+| **Identifier unlinkability (transport)** | Wire-format Noise_PQ XX соединения не содержит долгоживущего идентификатора в plaintext-части — passive observer не может коррелировать две TCP-сессии одного клиента ни через application restart, ни через смену IP / сети. Детальный разбор: [`External-Audit/transport-identifier-leakage.md`](External-Audit/transport-identifier-leakage.md). |
 
 #### Coverage matrix
 

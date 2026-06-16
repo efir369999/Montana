@@ -8,14 +8,12 @@
   H-4: bundles per cement ≥ 1 (always); ≥ ceil(N_SEED/2) если honest mesh
   H-5: chain_length growing for ALL nodes (fairness)
   H-6: candidate_pool empty на genesis cohort (только если в режиме force_active)
-  H-7: VPN sub HTTP 200
 
 Записывает результаты в /var/log/montana-health.json + alerts в /var/log/montana-health-alerts.log
 """
 import json, time, sys, urllib.request, socket, os
 
 EXPLORER_URL = os.environ.get("MT_EXPLORER", "http://127.0.0.1:5011/api")
-VPN_URL = "https://montana.quest/vpn/sub"
 LOG_JSON = "/var/log/montana-health.json"
 LOG_ALERTS = "/var/log/montana-health-alerts.log"
 GAP_THRESHOLD = 50
@@ -43,13 +41,6 @@ def tcp_check(host, port):
     except Exception:
         return False
 
-def vpn_check():
-    try:
-        with urllib.request.urlopen(VPN_URL, timeout=5) as r:
-            return r.status == 200
-    except Exception:
-        return False
-
 def alert(severity, msg):
     line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} [{severity}] {msg}"
     try:
@@ -69,11 +60,6 @@ def check():
         if not ok:
             alert("WARN", f"H-1 peer {label} TCP {host}:{port} unreachable")
     report["checks"]["H-1_peers_reachable"] = peer_state
-    # H-7: VPN
-    vpn_ok = vpn_check()
-    report["checks"]["H-7_vpn"] = vpn_ok
-    if not vpn_ok:
-        alert("CRIT", "H-7 VPN sub down (https://montana.quest/vpn/sub != 200)")
     # H-2..H-6 via explorer
     status = fetch_json("/status")
     consensus = fetch_json("/consensus")

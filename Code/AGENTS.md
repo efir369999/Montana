@@ -40,7 +40,6 @@ What this does (≈10 minutes on a 1 vCPU VPS):
 5. **Generates 24-word recovery mnemonic and prints it once** — save it immediately, no second chance
 6. Installs systemd unit with hardening (`User=montana`, `NoNewPrivileges`, `ProtectSystem=strict`)
 7. Starts `montana-node.service`
-8. Installs xray Reality VPN endpoint as a separate systemd service (optional, runs alongside the node — see [`montana-vpn/README.md`](montana-vpn/README.md))
 
 After install:
 
@@ -48,18 +47,6 @@ After install:
 systemctl status montana-node            # is it running
 journalctl -u montana-node -f            # live logs (one line per ~60s window)
 montana-node status --data-dir /var/lib/montana    # phase, balance, current_window
-```
-
-### Just the node, no VPN
-
-```bash
-sudo bash /opt/montana/Code/scripts/install-vps.sh
-```
-
-### Just the VPN, no node
-
-```bash
-sudo bash /opt/montana/Code/montana-vpn/install.sh
 ```
 
 ### macOS (Apple Silicon)
@@ -314,7 +301,6 @@ No NDA. No engagement contract. Public review by default.
 ## Contact
 
 - GitHub Issues: https://github.com/efir369999/Montana/issues
-- Mastodon (announcements only, no support): see `montana-vpn/MASTODON_ANNOUNCEMENT.md`
 - No email, no Discord, no Telegram — public on-record review only
 
 ---
