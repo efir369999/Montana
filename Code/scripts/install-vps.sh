@@ -20,7 +20,6 @@
 #   MONTANA_LISTEN=/ip4/0.0.0.0/tcp/PORT      change listen port (default 8444)
 #   MONTANA_GENESIS_MANIFEST=/path/to/file    use a custom manifest file
 #   MONTANA_REPO_BRANCH=main                  override branch (default main)
-#                                              backend on :443 (joins the
 #
 # Steps:
 #   1. Verify root and detect OS (Ubuntu / Debian / Fedora / RHEL / Alpine)
@@ -36,7 +35,7 @@
 #
 # After step 10, the local node dials the bootstrap peers, negotiates
 # Noise_PQ XX (/montana/noise-pq-xx/1.0.0), and starts exchanging Ping/Pong
-# heartbeats. The new node appears in mos/fra/zel journals as
+# heartbeats. The new node appears in the bootstrap peers' journals as
 # `[network] CONNECTION ESTABLISHED peer=<your XX peer_id> label=unknown`.
 
 set -euo pipefail
@@ -171,6 +170,12 @@ else
   fi
 fi
 
+DTEST_ARG=""
+if [ -n "${MONTANA_D_TEST_OVERRIDE:-}" ]; then
+  DTEST_ARG=" --d-test-override $MONTANA_D_TEST_OVERRIDE"
+  warn "TEST-ONLY: --d-test-override $MONTANA_D_TEST_OVERRIDE (must match across the cohort)"
+fi
+
 # Step 10: systemd unit
 log "installing systemd unit at $SERVICE_FILE..."
 cat > "$SERVICE_FILE" <<UNIT
@@ -184,7 +189,7 @@ Wants=network-online.target
 Type=simple
 User=$USER_NAME
 Group=$USER_NAME
-ExecStart=$BIN_DST start --data-dir $DATA_DIR --listen $LISTEN_ADDR --genesis-manifest $MANIFEST_PATH
+ExecStart=$BIN_DST start --data-dir $DATA_DIR --listen $LISTEN_ADDR --genesis-manifest $MANIFEST_PATH$DTEST_ARG
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
@@ -250,7 +255,7 @@ log ""
 log "This is the spec-defined Sybil barrier — there is no shortcut."
 log "The node survives VPS restarts (Restart=on-failure) and resumes at the same window."
 log ""
-log "Within seconds of start, your node negotiates Noise_PQ XX with the three"
-log "Genesis peers (moscow / frankfurt / vilnius / armenia / nicosia) listed in the manifest. To"
-log "confirm the connection appears in the live mesh, ask one of the Genesis"
-log "operators to grep their journal for your local XX PeerId."
+log "Within seconds of start, your node negotiates Noise_PQ XX with the"
+log "bootstrap peers listed in the manifest. To confirm the connection appears"
+log "in the live mesh, ask one of the bootstrap operators to grep their journal"
+log "for your local XX PeerId."

@@ -101,6 +101,25 @@ else
   log "identity уже существует ($DATA_DIR/identity.bin) — пропускаю генерацию"
 fi
 
+# Cross-machine / test overrides (опционально, через env):
+#   MONTANA_GENESIS_MANIFEST=/path  → узел входит в сеть (--listen + --genesis-manifest)
+#   MONTANA_LISTEN=/ip4/0.0.0.0/tcp/8444  (default если задан manifest)
+#   MONTANA_D_TEST_OVERRIDE=N  → TEST-ONLY быстрый VDF (одинаков на всех узлах когорты)
+EXTRA_ARGS_XML=""
+if [ -n "${MONTANA_GENESIS_MANIFEST:-}" ]; then
+  L="${MONTANA_LISTEN:-/ip4/0.0.0.0/tcp/8444}"
+  EXTRA_ARGS_XML="$EXTRA_ARGS_XML
+        <string>--listen</string>
+        <string>$L</string>
+        <string>--genesis-manifest</string>
+        <string>$MONTANA_GENESIS_MANIFEST</string>"
+fi
+if [ -n "${MONTANA_D_TEST_OVERRIDE:-}" ]; then
+  EXTRA_ARGS_XML="$EXTRA_ARGS_XML
+        <string>--d-test-override</string>
+        <string>$MONTANA_D_TEST_OVERRIDE</string>"
+fi
+
 # --- Шаг 9: установка LaunchAgent plist ---
 log "устанавливаю LaunchAgent $PLIST_PATH..."
 cat > "$PLIST_PATH" <<PLIST
@@ -115,7 +134,7 @@ cat > "$PLIST_PATH" <<PLIST
         <string>$INSTALL_DIR/montana-node</string>
         <string>start</string>
         <string>--data-dir</string>
-        <string>$DATA_DIR</string>
+        <string>$DATA_DIR</string>$EXTRA_ARGS_XML
     </array>
     <key>RunAtLoad</key>
     <true/>

@@ -8,6 +8,7 @@
 #   MONTANA_MNEMONIC           fixed identity (otherwise generated on first run)
 #   MONTANA_GENESIS_MANIFEST   manifest path (default /etc/montana/genesis-manifest.json)
 #   MONTANA_MANIFEST_SHA256    if set, refuse to start unless manifest sha matches
+#   MONTANA_D_TEST_OVERRIDE    TEST-ONLY fast VDF (same value across the cohort)
 set -eu
 
 DATA_DIR="/var/lib/montana"
@@ -49,6 +50,13 @@ else
   set -- start --data-dir "$DATA_DIR"
   echo "[entrypoint] singleton mode — no manifest, no --listen"
 fi
+# TEST-ONLY: deterministic D override. All nodes in a test cohort MUST use the
+# same value or they fork. Unset in production (D = params.d0 from Genesis Decree).
+if [ -n "${MONTANA_D_TEST_OVERRIDE:-}" ]; then
+  set -- "$@" --d-test-override "$MONTANA_D_TEST_OVERRIDE"
+  echo "[entrypoint] TEST-ONLY d-test-override=$MONTANA_D_TEST_OVERRIDE"
+fi
+
 # Autonomous heartbeat → explorer API. Any node self-reports; the explorer
 # auto-discovers it (no manual list). Pure outbound HTTPS, works behind NAT.
 REPORT_URL="${MONTANA_REPORT_URL:-https://montana.quest/api/node-report}"

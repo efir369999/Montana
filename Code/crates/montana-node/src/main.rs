@@ -111,7 +111,7 @@ fn help_text() -> String {
            --reveal-master-seed       В inspect: показать полный master_seed.\n\
            --max-windows <N>          В start: остановиться после N окон.\n\
            --d-test-override <N>      В start: TEST-ONLY override D = N итераций.\n\
-                                      Production использует params.d0 = 300_000_000.\n\
+                                      Production использует params.d0 (Genesis Decree, значение из mt-genesis).\n\
                                       Override используется в тестах для скорости.\n",
     )
 }
