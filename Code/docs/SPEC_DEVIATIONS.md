@@ -840,3 +840,49 @@ shared secrets ss_i/ss_r entered the signed area, while the master key included
 them — a formal AKE proof gap. Closed: sig_r signs transcript ‖ ss_i; sig_i signs
 transcript ‖ ss_i ‖ ss_r (both construction and verification, symmetric). No wire
 change. Roundtrip/tamper/KAT/e2e/loopback pass; Network spec bumped to v1.3.1.
+
+## DEV-038 (closed): `inspect` printed legacy Ed25519 peer_id, not the Noise_PQ XX network peer_id
+
+**Crate:** montana-node · **File:** crates/montana-node/src/commands/inspect.rs
+**Severity:** средний (operational — broke manifest assembly)
+
+`montana-node inspect` printed only `libp2p_peer_id` = `identity.libp2p_peer_id()`
+(a legacy Ed25519 multihash, `12D3KooW…`). The production Noise_PQ XX transport
+identifies peers by `derive_peer_id(node_pk)` — a SHA-256 multihash of the
+ML-DSA-65 node public key (`Qm…`). An operator building a `genesis-manifest`
+from `inspect` output pinned the wrong peer_id → every dial failed `WrongPeerId`.
+Closed: `inspect` now prints `network_peer_id` (the Qm value used by the transport,
+labelled "укажите в genesis-manifest") and marks `libp2p_peer_id` as legacy/unused.
+
+## DEV-039 (mitigated): fast-sync join "deadzone" for lag in [2, threshold]
+
+**Crate:** montana-node · **File:** crates/montana-node/src/commands/start.rs
+**Severity:** средний (join latency; self-heals, not a liveness break)
+
+A node behind the cemented chain by N windows where `2 ≤ N ≤ FAST_SYNC_LAG_THRESHOLD`
+makes no progress: sequential apply requires `w == current+1` (the producer does
+not rebroadcast skipped windows), and fast-sync triggers only at `N > threshold`.
+The node stalls until its lag grows past the threshold, then fast-syncs and catches
+up. Observed live (3-node test cohort: candidates waited until ~1000 windows behind
+before syncing). Mitigated: lowered `FAST_SYNC_LAG_THRESHOLD` 1000 → 64, so sync
+latency is bounded to ≤64 windows; `MONTANA_FASTSYNC_LAG_THRESHOLD` env override
+remains. Proper fix (a lightweight proposal-range catch-up request for sub-threshold
+gaps, so the node fetches the few missing envelopes instead of waiting or
+full-state fast-syncing) is a follow-on.
+
+## DEV-040 (documented): fast-sync `StateRootUnmatched` under fast block production
+
+**Crate:** montana-node / mt-sync · **File:** crates/mt-sync/src/client.rs (finalize)
+**Severity:** низкий (test-cadence artifact; not reproducible at production cadence)
+
+`FastSyncClient::finalize` accepts a downloaded snapshot only if its recomputed
+state_root matches a root the client has independently observed (recent_roots).
+When the producer advances during the request round-trip, it serves a snapshot at
+window `w' > requested anchor w`; a far-behind client has not yet seen `w'`'s
+cemented root, so finalize rejects with `StateRootUnmatched` and retries. At
+production cadence (~1 window/minute) the producer advances ≈0 windows per
+round-trip and the served window's root is already in recent_roots → match. The
+strict root check is correct (rejecting unverified state is the safe behaviour);
+the follow-on hardening noted in DEV-037 (bind the exact requested anchor so the
+server serves state AS OF `w`, and verify chunk `anchor_window == w`) removes the
+race entirely.

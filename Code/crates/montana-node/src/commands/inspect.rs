@@ -53,7 +53,16 @@ pub fn run(args: InspectArgs) -> Result<(), NodeError> {
     );
     println!();
     println!("--- libp2p transport identity (M8 cross-machine) ---");
-    println!("libp2p_peer_id   : {}", identity.libp2p_peer_id());
+    match mt_net_transport::derive_peer_id(&identity.node_pk) {
+        Ok(pid) => println!(
+            "network_peer_id  : {pid}  (Noise_PQ XX — укажите в genesis-manifest)"
+        ),
+        Err(e) => println!("network_peer_id  : <ошибка вывода: {e}>"),
+    }
+    println!(
+        "libp2p_peer_id   : {}  (legacy Ed25519, транспортом Noise_PQ XX не используется)",
+        identity.libp2p_peer_id()
+    );
 
     if args.reveal_master_seed {
         println!();

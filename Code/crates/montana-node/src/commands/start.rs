@@ -39,7 +39,7 @@ extern "C" fn shutdown_handler(_: libc::c_int) {
 // Network spec — not consensus-critical, may vary between implementations).
 // Replay costs ~6 min / 1000 windows on 1 vCPU (mt-sync lib doc); beyond this
 // lag snapshot delivery is bandwidth-bound and cheaper than apply_proposal loop.
-const FAST_SYNC_LAG_THRESHOLD: u64 = 1000;
+const FAST_SYNC_LAG_THRESHOLD: u64 = 64;
 
 // Operational override of the fast-sync lag threshold via env. The threshold is
 // network-layer (not consensus); operators tune it for deployment/observation.
