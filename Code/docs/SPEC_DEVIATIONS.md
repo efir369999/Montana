@@ -905,7 +905,7 @@ Closed: cleanup_orphan_tmp now removes only **stale** `.tmp` (>60s old) — an i
 temp of a concurrent writer is sub-second old and is left untouched, while genuinely
 orphaned temps from a crashed write are still reclaimed.
 
-## DEV-042 (open finding): `panic!` on state_root divergence instead of reject+resync
+## DEV-042 (closed): transactional apply replaces `panic!` on state_root divergence
 
 **Crate:** montana-node · **File:** crates/montana-node/src/commands/start.rs:1411
 **Severity:** блокер mainnet (liveness — one divergence halts an all-quorum cohort)
@@ -920,7 +920,9 @@ trigger does not occur, but the fatal `panic!` remains a latent liveness hazard 
 class: one signed/divergent object must never crash a node). Fix deferred — consensus
 state-transition change requiring careful design + tests.
 
-## DEV-043 (open finding): wall-clock in fallback-proposer election is non-deterministic [I-3]
+
+**Closed:** `settle_and_bookkeep` now applies the proposal/expiry/selection to **clones** of the account/node/candidate tables, computes `post_root`, and commits (swaps the clones into live state + does timechain/history/current/disk bookkeeping) only when `post_root == expected_root`. On mismatch it returns `Ok(None)` without mutating real state or disk; the acceptor logs and rejects the window (no panic), and the node recovers the authoritative state via fast-sync as its lag grows past the threshold. The proposer path passes `expected_root = None` (it is authoritative) and commits unconditionally. One divergent or malformed envelope can no longer crash a node or halt an all-quorum cohort.
+## DEV-043 (open, mitigated): wall-clock in fallback-proposer election is non-deterministic [I-3]
 
 **Crate:** montana-node · **File:** crates/montana-node/src/commands/start.rs (expected_proposer)
 **Severity:** средний (masked at spec cadence; can diverge proposer choice on node absence)
@@ -934,4 +936,4 @@ the margins absorb jitter and the legitimate proposer (winner of w-2 lottery, fu
 deterministic) is used, so the race does not trigger with all nodes healthy. The
 fallback path nonetheless violates [I-3] determinism; a deterministic tie-break for
 fallback depth (e.g. derived from cemented state, not wall-clock) is the proper fix.
-Fix deferred — touches consensus leadership; design review required.
+Mitigated by DEV-042: a divergence triggered by this race is now rejected and resynced instead of crashing the node. Full deterministic fix (fallback depth derived from cemented state / header-declared depth verification rather than per-node wall-clock) touches consensus leadership and is deferred to a deliberate spec+code change; it does not trigger at spec cadence with homogeneous nodes.

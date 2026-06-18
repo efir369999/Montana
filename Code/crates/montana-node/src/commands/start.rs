@@ -643,7 +643,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         &confirmers,
                         candidates_prev.clone(),
                         cemented.len() as u64,
+                        None,
                     )?
+                    .expect("режим ведущего: expected_root=None всегда коммитит")
                 };
                 let recomputed = compute_state_root(
                     &state.nodes.root(),
@@ -1042,22 +1044,26 @@ fn settle_and_bookkeep(
     confirmers: &[mt_state::NodeId],
     candidates_w_minus_1: Vec<mt_lottery::Candidate>,
     cemented_reveal_count: u64,
-) -> Result<Hash32, NodeError> {
+    expected_root: Option<Hash32>,
+) -> Result<Option<Hash32>, NodeError> {
+    // DEV-042: переход применяется на КЛОНАХ таблиц; реальное состояние, history
+    // и диск мутируются только если post_root совпал с expected_root. При
+    // расхождении узел НЕ паникует — возвращает Ok(None), окно отклоняется,
+    // состояние восстанавливается через fast-sync. Один расходящийся конверт
+    // не убивает узел и не валит сеть.
+    let mut accounts = ctx.state.accounts.clone();
+    let mut nodes = ctx.state.nodes.clone();
+    let mut candidates = ctx.state.candidates.clone();
     let settle = ProposalSettle {
         window_w: settled_w,
         winner_id,
         cemented_confirmers: confirmers.to_vec(),
     };
-    let post_root = apply_proposal(
-        &mut ctx.state.accounts,
-        &mut ctx.state.nodes,
-        &ctx.state.candidates,
-        &settle,
-        ctx.params,
-    );
-    let _ = apply_candidate_expiry(&mut ctx.state.candidates, settled_w);
+    let post_root = apply_proposal(&mut accounts, &mut nodes, &candidates, &settle, ctx.params);
+    let _ = apply_candidate_expiry(&mut candidates, settled_w);
+    let mut activated_count = 0usize;
     if is_selection_window(settled_w, ctx.params) {
-        let active = ctx.state.nodes.len() as u64;
+        let active = nodes.len() as u64;
         let cba = cba_for(ctx, settled_w.saturating_sub(2));
         let t_r_s = ctx
             .t_r_history
@@ -1065,21 +1071,27 @@ fn settle_and_bookkeep(
             .copied()
             .unwrap_or(ctx.timechain.t_r);
         let activated = apply_selection_event(
-            &mut ctx.state.candidates,
-            &mut ctx.state.nodes,
-            &mut ctx.state.accounts,
+            &mut candidates,
+            &mut nodes,
+            &mut accounts,
             &t_r_s,
             &cba,
             active,
             settled_w,
             ctx.params,
         );
-        if !activated.is_empty() {
-            println!(
-                "[selection W={settled_w}] активировано {} узл(ов)",
-                activated.len()
-            );
+        activated_count = activated.len();
+    }
+    if let Some(exp) = expected_root {
+        if post_root != exp {
+            return Ok(None);
         }
+    }
+    ctx.state.accounts = accounts;
+    ctx.state.nodes = nodes;
+    ctx.state.candidates = candidates;
+    if activated_count > 0 {
+        println!("[selection W={settled_w}] активировано {activated_count} узл(ов)");
     }
     ctx.timechain.tau2_reveal_count = ctx
         .timechain
@@ -1128,7 +1140,7 @@ fn settle_and_bookkeep(
     ctx.store
         .save_meta_last_cemented(settled_w)
         .map_err(|e| NodeError::InvalidArguments(format!("save_meta_last_cemented: {e:?}")))?;
-    Ok(post_root)
+    Ok(Some(post_root))
 }
 
 /// Обработка одного входящего протокольного сообщения. Вызывается из
@@ -1398,21 +1410,22 @@ fn handle_protocol_message(
                     cemented.len()
                 );
             }
-            // Применение единым переходом состояния.
-            let post_root = settle_and_bookkeep(
+            // Применение единым переходом состояния (транзакционно, DEV-042).
+            if settle_and_bookkeep(
                 ctx,
                 w,
                 header.winner_id,
                 &confirmers,
                 candidates_prev,
                 cemented.len() as u64,
-            )?;
-            if post_root != header.state_root {
-                panic!(
-                    "расхождение state_root в окне {w}: конверт {:02x?}.. ≠ локально {:02x?}..",
-                    &header.state_root[..4],
-                    &post_root[..4]
+                Some(header.state_root),
+            )?
+            .is_none()
+            {
+                eprintln!(
+                    "[consensus] w={w}: расхождение state_root — окно отклонено, восстановление через fast-sync"
                 );
+                return Ok(());
             }
             ctx.recent_roots.insert(w, header.state_root);
             bound_map(ctx.recent_roots);
