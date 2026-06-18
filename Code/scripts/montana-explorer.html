@@ -65,7 +65,7 @@ tr:hover { background:var(--hl); }
   <div>
     <h2 style="margin-left:0">Genesis Manifest</h2>
     <table id="genesis-table"><thead><tr>
-      <th>Label</th><th>Address</th><th>force_active</th>
+      <th>Label</th><th>Address</th><th>Role</th>
     </tr></thead><tbody></tbody></table>
   </div>
   <div>
@@ -178,7 +178,7 @@ async function refresh() {
     genesisBody.innerHTML = genesis.peers.map(p => `<tr>
       <td><span class="label-chip ok">${p.label}</span></td>
       <td class="mono">${p.multiaddr}</td>
-      <td>${p.force_active ? '<span class="label-chip ok">yes</span>' : '<span class="label-chip">bootstrap</span>'}</td>
+      <td><span class="label-chip">discovery</span></td>
     </tr>`).join('');
   }
 

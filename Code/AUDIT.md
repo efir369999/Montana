@@ -92,7 +92,7 @@ cd "<repo-root>" && wc -l crates/mt-crypto/src/lib.rs crates/mt-crypto-native/sr
 | Crate | Path | Lines | Scope | Audit findings |
 |-------|------|-------|-------|----------------|
 | `mt-merkle` | [crates/mt-merkle/src/lib.rs](crates/mt-merkle/src/lib.rs) | 474 | Sparse Merkle Tree (depth 256), `empty_internal()` precomputed cache (OnceLock), `leaf_hash` / `internal_hash` (SHA-256 domain-separated via mt-codec::domain), `SparseMerkleTree::insert/root` via `BTreeMap` for canonical iteration order, `verify_proof` for inclusion and absence proofs. **0 unsafe blocks. 0 panic!. 0 f32/f64. 0 SystemTime/RNG. BTreeMap, not HashMap.** | Pass 1-12 clean (manual scan); 10 automated determinism invariants |
-| `mt-genesis` | [crates/mt-genesis/src/lib.rs](crates/mt-genesis/src/lib.rs) | **353** | Genesis Decree + `ProtocolParams` SSOT (4094B encoded), `genesis_app_id()` (SHA-256 domain-separated), `genesis_params()` via `OnceLock` (singleton, thread-safe), `compute_genesis_state_hash()`. Const `emission_moneta = 13 × 10⁹ nɈ` per spec v34+. **0 unsafe. 0 panic. Read-only constants + deterministic hash only.** | Pass 1-12 clean; automated determinism invariants |
+| `mt-genesis` | [crates/mt-genesis/src/lib.rs](crates/mt-genesis/src/lib.rs) | **353** | Genesis Decree + `ProtocolParams` SSOT (4108B encoded), `genesis_app_id()` (SHA-256 domain-separated), `genesis_params()` via `OnceLock` (singleton, thread-safe), `compute_genesis_state_hash()`. Const `emission_moneta = 13 × 10⁹ nɈ` per spec v34+. **0 unsafe. 0 panic. Read-only constants + deterministic hash only.** | Pass 1-12 clean; automated determinism invariants |
 | `mt-state` | [crates/mt-state/src/lib.rs](crates/mt-state/src/lib.rs) | **647** | AccountTable (2059B records) / NodeTable (2098B) / CandidatePool (2082B) via `BTreeMap<id, Record>` + `SparseMerkleTree`, `derive_account_id` / `derive_node_id` (SHA-256 domain-separated), `compute_state_root` (SHA-256 of node_root ‖ candidate_root ‖ account_root), `is_active` predicate. **0 unsafe. 0 panic! 0 HashMap (BTreeMap canonical sort). 0 f64.** | Pass 1-12 clean; automated determinism invariants |
 | `mt-timechain` | [crates/mt-timechain/src/lib.rs](crates/mt-timechain/src/lib.rs) | 347 | TimeChain VDF (`vdf_step` = SHA-256^d, `vdf_verify` re-computes), `next_d` Adaptive D via participation-ratio feedback (integer permille per [I-9]), `cemented_bundle_aggregate(W, node_ids)` per [I-8] Network-Bound Unpredictability (3 branches: genesis 0×32, empty marker, sorted node_ids hash). **0 unsafe. 0 panic. 0 HashMap. 0 f64. All integer arithmetic per [I-9].** | Pass 1-12 clean; 19 automated determinism invariants |
 
@@ -229,7 +229,7 @@ Verified per critic audit (commit `9387900`):
 | NodeRecord size | 2098B | `NODE_RECORD_SIZE = 2098` | ✅ |
 | CandidateRecord size | 2082B | `CANDIDATE_RECORD_SIZE = 2082` | ✅ |
 | ProposalHeader size | 3722B | `PROPOSAL_HEADER_SIZE = 3722` | ✅ |
-| ProtocolParams size | 4094B (spec v34) | `PARAMS_ENCODED_SIZE = 4094` | ✅ |
+| ProtocolParams size | 4108B (genesis+network fields, EXT-GEN-01) | `PARAMS_ENCODED_SIZE = 4108` | ✅ |
 | Sparse Merkle Tree depth | 256 | `TREE_DEPTH = 256` | ✅ |
 | Emission pin | 13 Ɉ const per window | `emission_moneta = 13_000_000_000` | ✅ |
 | Domain registry sync (32 domains) | spec list | code mt-codec const list | ✅ |

@@ -248,7 +248,9 @@ def api_genesis():
     try:
         with open(MANIFEST_PATH) as f:
             m = json.load(f)
-        n_seed = sum(1 for p in m.get("peers", []) if p.get("force_active"))
+        # Singleton reference: consensus starts with genesis_active_operators empty
+        # (protocol_params.n_seed = 0). Manifest peers are discovery-only metadata.
+        n_seed = 0
         return {
             "network_name": m.get("network_name"),
             "peer_count": len(m.get("peers", [])),
@@ -256,7 +258,7 @@ def api_genesis():
             "peers": [
                 {
                     "label": p["label"], "multiaddr": p["multiaddr"], "peer_id": p["peer_id"],
-                    "force_active": p.get("force_active", False),
+
                     "node_id_hex": p.get("node_id_hex"),
                     "account_id_hex": p.get("account_id_hex"),
                 }

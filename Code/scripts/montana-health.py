@@ -7,7 +7,7 @@
   H-3: gap между proposer и followers ≤ 50 окон (после catchup)
   H-4: bundles per cement ≥ 1 (always); ≥ ceil(N_SEED/2) если honest mesh
   H-5: chain_length growing for ALL nodes (fairness)
-  H-6: candidate_pool empty на genesis cohort (только если в режиме force_active)
+  H-6: candidate_pool empty на singleton genesis (n_seed=0, genesis_active_operators empty)
 
 Записывает результаты в /var/log/montana-health.json + alerts в /var/log/montana-health-alerts.log
 """
