@@ -173,6 +173,7 @@ fn parse_init(args: &[String]) -> Result<init::InitArgs, NodeError> {
 fn parse_inspect(args: &[String]) -> Result<inspect::InspectArgs, NodeError> {
     let mut data_dir: Option<PathBuf> = None;
     let mut reveal_master_seed = false;
+    let mut export_pubkeys = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -182,6 +183,10 @@ fn parse_inspect(args: &[String]) -> Result<inspect::InspectArgs, NodeError> {
             },
             "--reveal-master-seed" => {
                 reveal_master_seed = true;
+                i += 1;
+            },
+            "--export-pubkeys" => {
+                export_pubkeys = true;
                 i += 1;
             },
             other => {
@@ -194,6 +199,7 @@ fn parse_inspect(args: &[String]) -> Result<inspect::InspectArgs, NodeError> {
     Ok(inspect::InspectArgs {
         data_dir,
         reveal_master_seed,
+        export_pubkeys,
     })
 }
 

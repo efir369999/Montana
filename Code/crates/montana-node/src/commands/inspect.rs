@@ -5,6 +5,7 @@ use crate::identity::{default_data_dir, identity_path, load_identity, NodeError}
 pub struct InspectArgs {
     pub data_dir: Option<PathBuf>,
     pub reveal_master_seed: bool,
+    pub export_pubkeys: bool,
 }
 
 pub fn run(args: InspectArgs) -> Result<(), NodeError> {
@@ -61,6 +62,20 @@ pub fn run(args: InspectArgs) -> Result<(), NodeError> {
         "libp2p_peer_id   : {}  (legacy Ed25519, транспортом Noise_PQ XX не используется)",
         identity.libp2p_peer_id()
     );
+
+    if args.export_pubkeys {
+        // Full ML-DSA-65 public keys for genesis_active_operators baking.
+        // account_pk first, node_pk second — both 1952 bytes hex.
+        println!();
+        println!(
+            "account_pk_hex   : {}",
+            hex_lower(identity.account_pk.as_bytes())
+        );
+        println!(
+            "node_pk_hex      : {}",
+            hex_lower(identity.node_pk.as_bytes())
+        );
+    }
 
     if args.reveal_master_seed {
         println!();
