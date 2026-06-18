@@ -2832,7 +2832,7 @@ TimeChain liveness: задержка продвижения TimeChain невоз
     1. Если `N.operator_account_id` существует в Account Table — установить `Account Table[N.operator_account_id].is_node_operator = 0` (operator-аккаунт освобождается от привязки к узлу; аккаунты в лотерее не участвуют — см. раздел «Аккаунты не участвуют в лотерее»)
     2. Удалить запись N из Node Table
     3. Пересчитать node_root
-- Supply audit (sanity check): Σ balance(account) для всех аккаунтов == `supply_moneta(current_window) = EMISSION_moneta × (current_window + 1)` (closed-form, supply растёт строго монотонно линейно)
+- Supply audit (sanity check): Σ balance(account) для всех аккаунтов == `supply_moneta(current_window) = EMISSION_moneta × current_window` (closed-form, supply растёт строго монотонно линейно)
 - Криптографическая амнезия: подписанные proposals сохраняются навсегда — верифицируемая цепочка state commitments. Proposals доказывают что конкретное состояние было закоммичено proposer-узлом; восстановление содержимого состояния требует snapshot или архива
 - Пересчёт параметра D через participation-ratio feedback
 
