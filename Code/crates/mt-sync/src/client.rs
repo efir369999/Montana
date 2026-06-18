@@ -1,14 +1,15 @@
 //! FastSync client — receiver-side reassembly and verification.
 //!
 //! A follower joining a long-running mesh assembles the snapshot streamed by a
-//! peer, reconstructs the Sparse Merkle `state_root`, and accepts it only if
-//! that root byte-equals one of the cemented bootstrap `state_root`s the
-//! follower has independently observed via Proposal propagation. The canonical
-//! proposer advances every window, so the snapshot a peer streams reflects its
-//! current head rather than the window the follower requested; matching the
-//! reconstructed root against the set of recently observed bootstrap roots
-//! keeps the integrity gate robust to that skew while still rejecting any
-//! forged state for which the follower holds no bootstrap Proposal.
+//! peer and reconstructs the Sparse Merkle `state_root`. Every chunk carries the
+//! `anchor_window` the serving peer streamed the snapshot at (its current head).
+//! All chunks of one session MUST carry the same `anchor_window`; a chunk with a
+//! divergent anchor is rejected (no frankenstein state assembled from mixed
+//! heads). On finalize the follower looks up exactly `recent_roots[anchor_window]`
+//! — the cemented `state_root` it has independently observed at that window via
+//! Proposal propagation — and accepts only on a byte-exact match. The peer head
+//! is authoritative for which window to verify against; the follower never scans
+//! its whole observed-root set for an opportunistic match.
 
 use crate::response::FastSyncChunk;
 use crate::snapshot::{Hash32, Snapshot, SnapshotError, TypedTables};
@@ -25,6 +26,8 @@ pub enum FastSyncClientError {
     Incomplete { received: u32, total: u32 },
     Build(SnapshotError),
     StateRootUnmatched,
+    AnchorMismatch { expected: u64, actual: u64 },
+    AnchorMissing { anchor: u64 },
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -37,6 +40,7 @@ pub struct FastSyncClient {
     total_chunks: Option<u32>,
     received: BTreeSet<u32>,
     snapshot: Snapshot,
+    anchor: Option<u64>,
 }
 
 impl Default for FastSyncClient {
@@ -51,6 +55,7 @@ impl FastSyncClient {
             total_chunks: None,
             received: BTreeSet::new(),
             snapshot: Snapshot::new(0),
+            anchor: None,
         }
     }
 
@@ -67,6 +72,16 @@ impl FastSyncClient {
                 return Err(FastSyncClientError::TotalChunksMismatch {
                     expected: t,
                     actual: chunk.total_chunks,
+                });
+            },
+            Some(_) => {},
+        }
+        match self.anchor {
+            None => self.anchor = Some(chunk.anchor_window),
+            Some(a) if a != chunk.anchor_window => {
+                return Err(FastSyncClientError::AnchorMismatch {
+                    expected: a,
+                    actual: chunk.anchor_window,
                 });
             },
             Some(_) => {},
@@ -121,9 +136,14 @@ impl FastSyncClient {
             &tables.candidates.root(),
             &tables.accounts.root(),
         );
-        match recent_roots.iter().find(|(_, r)| **r == root) {
-            Some((&window, _)) => Ok((window, tables)),
-            None => Err(FastSyncClientError::StateRootUnmatched),
+        let anchor = self.anchor.ok_or(FastSyncClientError::StateRootUnmatched)?;
+        let expected = recent_roots
+            .get(&anchor)
+            .ok_or(FastSyncClientError::AnchorMissing { anchor })?;
+        if root == *expected {
+            Ok((anchor, tables))
+        } else {
+            Err(FastSyncClientError::StateRootUnmatched)
         }
     }
 }
@@ -171,11 +191,18 @@ mod tests {
         m
     }
 
+    const ANCHOR: u64 = 75_850;
+
     fn chunk(idx: u32, total: u32, recs: Vec<Vec<u8>>) -> FastSyncChunk {
+        chunk_at(idx, total, ANCHOR, recs)
+    }
+
+    fn chunk_at(idx: u32, total: u32, anchor: u64, recs: Vec<Vec<u8>>) -> FastSyncChunk {
         FastSyncChunk {
             chunk_index: idx,
             total_chunks: total,
             table_id: FastSyncTableId::Account,
+            anchor_window: anchor,
             records: recs,
         }
     }
@@ -213,23 +240,57 @@ mod tests {
             c.accept_chunk(chunk(1, 3, vec![r1])).unwrap(),
             AcceptOutcome::Complete
         );
-        let (window, tables) = c.finalize(&roots_map(9, root)).expect("finalize");
-        assert_eq!(window, 9);
+        let (window, tables) = c.finalize(&roots_map(ANCHOR, root)).expect("finalize");
+        assert_eq!(window, ANCHOR);
         assert_eq!(tables.accounts.len(), 3);
     }
 
     #[test]
-    fn matches_any_root_in_recent_set() {
+    fn finalize_binds_to_exact_anchor_window() {
         let recs = vec![acct_bytes(0x44)];
         let root = root_of(&recs);
+        // Decoys at other windows must NOT be matched: only recent_roots[ANCHOR]
+        // (the peer-head the chunks were streamed at) is authoritative.
         let mut m = BTreeMap::new();
         m.insert(40u64, [0xAAu8; 32]);
-        m.insert(41u64, root);
+        m.insert(ANCHOR, root);
         m.insert(42u64, [0xBBu8; 32]);
         let mut c = FastSyncClient::new();
         c.accept_chunk(chunk(0, 1, recs)).unwrap();
         let (window, _) = c.finalize(&m).expect("finalize");
-        assert_eq!(window, 41);
+        assert_eq!(window, ANCHOR);
+    }
+
+    #[test]
+    fn finalize_rejects_when_anchor_window_not_observed() {
+        // Reconstructed root is present in recent_roots, but at a DIFFERENT window
+        // than the chunk anchor. Exact-anchor binding rejects (no scan-all match).
+        let recs = vec![acct_bytes(0x44)];
+        let root = root_of(&recs);
+        let mut m = BTreeMap::new();
+        m.insert(41u64, root); // root exists, but at window 41, not ANCHOR
+        let mut c = FastSyncClient::new();
+        c.accept_chunk(chunk(0, 1, recs)).unwrap();
+        let err = c.finalize(&m).err().unwrap();
+        assert_eq!(err, FastSyncClientError::AnchorMissing { anchor: ANCHOR });
+    }
+
+    #[test]
+    fn mixed_anchor_chunks_rejected() {
+        let r0 = acct_bytes(0x01);
+        let r1 = acct_bytes(0x02);
+        let mut c = FastSyncClient::new();
+        c.accept_chunk(chunk_at(0, 2, ANCHOR, vec![r0])).unwrap();
+        let err = c
+            .accept_chunk(chunk_at(1, 2, ANCHOR + 1, vec![r1]))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            FastSyncClientError::AnchorMismatch {
+                expected: ANCHOR,
+                actual: ANCHOR + 1
+            }
+        );
     }
 
     #[test]
@@ -240,7 +301,7 @@ mod tests {
         bad[0][0] ^= 0xFF;
         let mut c = FastSyncClient::new();
         c.accept_chunk(chunk(0, 1, bad)).unwrap();
-        let err = c.finalize(&roots_map(1, root)).err().unwrap();
+        let err = c.finalize(&roots_map(ANCHOR, root)).err().unwrap();
         assert_eq!(err, FastSyncClientError::StateRootUnmatched);
     }
 
@@ -250,7 +311,7 @@ mod tests {
         let mut c = FastSyncClient::new();
         c.accept_chunk(chunk(0, 1, recs)).unwrap();
         let err = c.finalize(&BTreeMap::new()).err().unwrap();
-        assert_eq!(err, FastSyncClientError::StateRootUnmatched);
+        assert_eq!(err, FastSyncClientError::AnchorMissing { anchor: ANCHOR });
     }
 
     #[test]

@@ -818,11 +818,12 @@ were never wiped. Closed: each secret buffer wrapped in zeroize::Zeroizing.
 mt-noise-pq Jittery::poll_write returned Pending without a waker -> block_on hung.
 Closed: cx.waker().wake_by_ref() before Pending.
 
-## EXT-SYNC-01 (open, to verify): FastSync anchor self-block
+## EXT-SYNC-01 (closed): FastSync anchor self-block
 
-Audit-sourced; not re-verified in this pass. Before fixing, confirm against
-current montana-node fastsync path (observed anchor root not persisted before the
-fast-sync return; anchor_window dropped in wire_chunk_to_sync).
+Self-block closed in DEV-037 (observed anchor root persisted before fast-sync
+return). The exact-anchor binding residual flagged by the GPT-5 Codex 02 re-audit
+(REAUDIT-03) is closed in DEV-044 below: single-anchor-per-session +
+recent_roots[anchor_window] byte-exact match.
 
 ## DEV-037 (closed, commit see git log): FastSync anchor self-block (EXT-SYNC-01)
 
@@ -834,6 +835,41 @@ the anchor window — the lagging node self-blocked. Closed: persist the observe
 exact-anchor binding (pass requested anchor to the client, verify chunk
 anchor_window equality) is a follow-on hardening, not required to close the
 self-block.
+
+## DEV-044 (closed): FastSync exact-anchor binding (EXT-SYNC-01 residual, REAUDIT-03)
+
+**Crate:** `mt-sync`, `montana-node`, spec `Montana Network`
+**Spec section:** «Sync protocols → FastSyncResponse» / «State root verification»
+**What the re-audit found:** DEV-018 added `anchor_window` to the wire and a
+stale-peer discard filter, and DEV-037 closed the self-block, but `FastSyncClient::
+finalize` still scanned the whole `recent_roots` set for ANY root match
+(`recent_roots.iter().find(|(_, r)| **r == root)`), and `wire_chunk_to_sync`
+dropped `anchor_window` so the mt-sync layer could not reject chunks assembled
+from mixed anchors. Code comments (payloads.rs DEV-018) and the prose claimed
+exact-anchor binding; the implementation did "any observed recent root". One
+story across spec, code, comments and tests was missing (REAUDIT-03).
+**What the code does (after fix):**
+  1. `mt_sync::FastSyncChunk` gains `anchor_window`; `wire_chunk_to_sync` carries it.
+  2. `FastSyncClient` records the session anchor from the first chunk; a chunk with
+     a divergent `anchor_window` is rejected (`AnchorMismatch`) — no frankenstein
+     state from mixed heads.
+  3. `finalize` looks up exactly `recent_roots[anchor_window]` and accepts only on a
+     byte-exact match; missing observed root at the anchor → `AnchorMissing`. The
+     scan-all path is removed.
+  4. Spec: FastSyncResponse chunk layout gains `anchor_window 8B`; verification text
+     and test vector C-0x41 (21 B header / 85 B total) updated; Network spec bumped
+     to v1.4.0 (wire change).
+**Decision (architect):** FastSync is exact-anchor against the peer-head
+`anchor_window` reported in the response — not the originally requested window and
+not any observed root. This is the practical model (server serves its current
+head, no historical-snapshot retention) and the strict-integrity model (follower
+accepts only a root it independently observed as cemented at exactly that window).
+**Severity:** medium (integrity/consistency; not a direct production break — the
+honest path already converged, but mixed-anchor reassembly was not rejected early
+and the comments/spec/code disagreed).
+**Closure cost:** ~80 lines across mt-sync (struct + accept_chunk + finalize +
+tests), montana-node fastsync.rs, mt-net wire, and the Network spec.
+**Status:** closed (this session).
 
 ## EXT-NOISE-RESIDUAL (closed, commits b301c03 + spec Network v1.3.1): XX signatures bind shared secrets
 

@@ -40,6 +40,7 @@ pub struct FastSyncChunk {
     pub chunk_index: u32,
     pub total_chunks: u32,
     pub table_id: FastSyncTableId,
+    pub anchor_window: u64,
     pub records: Vec<Vec<u8>>,
 }
 
@@ -49,6 +50,7 @@ impl FastSyncChunk {
         write_u32(buf, self.total_chunks);
         buf.push(self.table_id as u8);
         write_u32(buf, self.records.len() as u32);
+        buf.extend_from_slice(&self.anchor_window.to_le_bytes());
         for r in &self.records {
             write_bytes(buf, r);
         }
@@ -58,7 +60,7 @@ impl FastSyncChunk {
         input: &[u8],
         record_size: usize,
     ) -> Result<FastSyncChunk, FastSyncResponseError> {
-        if input.len() < 13 {
+        if input.len() < 21 {
             return Err(FastSyncResponseError::HeaderTooShort);
         }
         let chunk_index = u32::from_le_bytes(input[0..4].try_into().unwrap());
@@ -66,7 +68,8 @@ impl FastSyncChunk {
         let table_id = FastSyncTableId::from_u8(input[8])
             .ok_or(FastSyncResponseError::UnknownTableId(input[8]))?;
         let record_count = u32::from_le_bytes(input[9..13].try_into().unwrap()) as usize;
-        let body = &input[13..];
+        let anchor_window = u64::from_le_bytes(input[13..21].try_into().unwrap());
+        let body = &input[21..];
         let expected_body = record_count.checked_mul(record_size).ok_or(
             FastSyncResponseError::RecordCountOverflow {
                 count: record_count,
@@ -87,6 +90,7 @@ impl FastSyncChunk {
             chunk_index,
             total_chunks,
             table_id,
+            anchor_window,
             records,
         })
     }
@@ -115,6 +119,7 @@ mod tests {
             chunk_index: 0,
             total_chunks: 1,
             table_id: FastSyncTableId::Account,
+            anchor_window: 75_850,
             records: vec![vec![0xAB; 2059]],
         };
         let mut buf = Vec::new();
@@ -133,6 +138,7 @@ mod tests {
             chunk_index: 3,
             total_chunks: 12,
             table_id: FastSyncTableId::Account,
+            anchor_window: 9,
             records,
         };
         let mut buf = Vec::new();
@@ -148,6 +154,7 @@ mod tests {
             chunk_index: 0,
             total_chunks: 1,
             table_id: FastSyncTableId::Account,
+            anchor_window: 0,
             records: vec![],
         }
         .encode(&mut buf);
@@ -165,6 +172,7 @@ mod tests {
             chunk_index: 0,
             total_chunks: 1,
             table_id: FastSyncTableId::Account,
+            anchor_window: 0,
             records: vec![vec![0u8; 100]],
         }
         .encode(&mut buf);

@@ -5,7 +5,7 @@
 #        `kat <name> <value>`. Order of `field` = canonical encode order.
 
 spec_version = 35.26.2
-network_version = 1.3.1
+network_version = 1.4.0
 
 # protocol_params canonical layout (little-endian, fixed-length fields)
 field d0 8 325000000

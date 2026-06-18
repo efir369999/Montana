@@ -43,6 +43,7 @@ pub fn wire_chunk_to_sync(wire: FastSyncResponseChunk) -> Result<FastSyncChunk, 
         chunk_index: wire.chunk_index,
         total_chunks: wire.total_chunks,
         table_id,
+        anchor_window: wire.anchor_window,
         records,
     })
 }

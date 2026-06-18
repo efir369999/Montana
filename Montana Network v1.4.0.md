@@ -1,6 +1,6 @@
 # Montana — Network Layer Specification
 
-**Version:** 1.3.1 (2026-06-16) — Noise_PQ XX signatures bind post-decap ML-KEM-768 shared secrets (ss_i into sig_r, ss_i+ss_r into sig_i); AKE session-key binding (EXT-NOISE-RESIDUAL)
+**Version:** 1.4.0 (2026-06-18) — FastSyncResponse chunk carries anchor_window; receiver binds reconstructed Merkle root to recent_roots[anchor_window] byte-exact (peer-head exact-anchor), single-anchor-per-session (REAUDIT-03)
 
 **Layer:** Network — sits between Protocol (low) and App (high).
 
@@ -1054,10 +1054,11 @@ FastSyncResponse chunk:
   total_chunks     4B    <- u32 little-endian, общее число chunks для текущего запроса
   table_id         1B    <- u8: 0x01 Account, 0x02 Node, 0x03 Candidate, 0x04 Proposals
   record_count     4B    <- u32 little-endian, записей в этом chunk
+  anchor_window    8B    <- u64 little-endian, окно head-а отдающего пира, на котором собран снапшот
   records          ?     <- record_count × serialize(record) по canonical encoding
 ```
 
-Response состоит из N chunks (с одним request_id). Получатель собирает по chunk_index. После получения всех total_chunks — reconstructs Merkle root и проверяет против proposal_W.
+Response состоит из N chunks (с одним request_id). Получатель собирает по chunk_index. Все chunks одной сессии обязаны нести одинаковый `anchor_window` (head отдающего пира); chunk с расходящимся anchor отвергается. После получения всех total_chunks получатель восстанавливает Merkle root и сверяет его побайтово ровно с `recent_roots[anchor_window]` — cemented `state_root`, который получатель независимо наблюдал через распространение Proposal на окне `anchor_window`. Совпадение принимается, иначе snapshot отвергается. Получатель не сканирует весь набор наблюдённых roots в поисках произвольного совпадения — авторитетно ровно окно `anchor_window` из ответа.
 
 **Connection lifecycle.**
 
@@ -2875,10 +2876,11 @@ Vector C-0x41 (FastSyncResponse — single chunk)
     total_chunks       = 1 (u32 LE)
     table_id           = 0x01 (Account)
     record_count       = 1
+    anchor_window      = 0 (u64 LE)
     records            = 1 × AccountRecord byte-encoded (см. AccountRecord
                          layout)
-  Expected output (hex, 77 B):
-    header (13 B): 00 00 00 00 01 00 00 00 01 01 00 00 00
+  Expected output (hex, 85 B):
+    header (21 B): 00 00 00 00 01 00 00 00 01 01 00 00 00 00 00 00 00 00 00 00 00
     records (64 B): byte_repeat(0x55, 64)
   (mt-net::tests::test_vectors::vector_c_0x41_fastsync_response_chunk)
 
