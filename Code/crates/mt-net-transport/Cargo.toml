@@ -22,8 +22,8 @@ mt-crypto = { path = "../mt-crypto" }
 mt-noise-pq = { path = "../mt-noise-pq" }
 sha2 = "0.10"
 multihash = "0.19"
-libp2p = { version = "=0.56.0", default-features = false, features = ["tcp", "tls", "noise", "yamux", "macros", "tokio", "request-response"] }
-tokio = { version = "=1.40.0", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+libp2p = { version = "=0.56.0", default-features = false, features = ["tcp", "yamux", "macros", "tokio", "request-response"] }
+tokio = { version = "=1.44.2", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
 futures = "=0.3.31"
 async-trait = "=0.1.83"
 
@@ -35,5 +35,5 @@ thiserror = "=1.0.69"
 
 [dev-dependencies]
 tokio-util = { version = "0.7", features = ["compat"] }
-tokio = { version = "=1.40.0", features = ["rt-multi-thread", "macros", "test-util"] }
+tokio = { version = "=1.44.2", features = ["rt-multi-thread", "macros", "test-util"] }
 futures = { version = "=0.3.31", features = ["std"] }

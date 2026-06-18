@@ -1,0 +1,23 @@
+# cargo-audit configuration — release dependency gate.
+#
+# The advisories ignored below are present ONLY as lockfile metadata of the
+# `libp2p` facade crate (=0.56.0), which declares dns / mdns / quic / tls / upnp
+# as OPTIONAL dependencies. With `default-features = false` and our feature set
+# (tcp, yamux, request-response, macros, tokio, ed25519) NONE of these optional
+# sub-crates are compiled into any Montana binary. Proof:
+#   cargo tree -i hickory-proto --target all  -> nothing to print
+#   cargo tree -i time          --target all  -> nothing to print
+#   cargo tree -i libp2p-tls    --target all  -> nothing to print
+# Production transport is TCP -> Noise_PQ XX -> Yamux (custom upgrade), so the
+# classical TLS/QUIC/DNS/mDNS code paths are never reachable at runtime.
+#
+# These are tracked as lockfile-hygiene items, not runtime exposure. Each must
+# be re-reviewed if the libp2p facade is ever replaced by granular sub-crates
+# or if a discovery feature (mdns/dns) is enabled.
+[advisories]
+ignore = [
+    "RUSTSEC-2026-0118", # hickory-proto: NSEC3 loop  — via optional libp2p-mdns, not compiled
+    "RUSTSEC-2026-0119", # hickory-proto: encode DoS   — via optional libp2p-mdns, not compiled
+    "RUSTSEC-2026-0009", # time: stack exhaustion      — via optional libp2p-tls/quic cert chain, not compiled
+    "RUSTSEC-2024-0436", # paste: unmaintained         — transitive proc-macro, no known vuln
+]
