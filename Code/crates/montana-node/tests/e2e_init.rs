@@ -58,6 +58,7 @@ fn init_then_inspect_terminal_ids_match() {
     inspect_run(InspectArgs {
         data_dir: Some(dir),
         reveal_master_seed: false,
+        export_pubkeys: false,
     })
     .expect("inspect");
 }

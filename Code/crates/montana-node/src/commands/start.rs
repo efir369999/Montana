@@ -61,6 +61,10 @@ pub struct StartArgs {
     /// Путь к genesis-manifest.json с peer list для bootstrap connectivity.
     /// При наличии `--listen` обязателен.
     pub genesis_manifest: Option<PathBuf>,
+    /// Включить candidate-флоу (регистрация → Active через лотерею). По
+    /// умолчанию выключено: новые узлы только синкаются и шлют heartbeat
+    /// (наблюдатели), консенсус фиксирован на genesis-операторах. «пока».
+    pub enable_candidate: bool,
 }
 
 pub fn run(args: StartArgs) -> Result<(), NodeError> {
@@ -128,7 +132,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     if lifecycle.phase == NodePhase::Bootstrap {
         if is_genesis_member {
             lifecycle.phase = NodePhase::Active;
-        } else {
+        } else if args.enable_candidate {
             lifecycle.phase = NodePhase::CandidateVdf;
             lifecycle.target_chain_length = params.tau2_windows;
             lifecycle.w_start = current.saturating_add(1);
@@ -137,6 +141,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             // canonical seed для chain старта; на каждом окне ticks через
             // vdf_step_chunked в Active phase code path ниже.
             lifecycle.candidate_endpoint = timechain.t_r;
+        } else {
+            // Candidates disabled («пока»): non-genesis node is a pure observer —
+            // Registered is a no-op phase in the consensus loop, so the node only
+            // fast-syncs the canonical chain and emits heartbeats. No VDF ticking,
+            // no NodeRegistration. Flip with --enable-candidate to rejoin admission.
+            lifecycle.phase = NodePhase::Registered;
         }
         save_lifecycle(&data_dir, &lifecycle)?;
     }

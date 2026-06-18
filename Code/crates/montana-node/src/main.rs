@@ -243,6 +243,7 @@ fn parse_time(args: &[String]) -> Result<time::TimeArgs, NodeError> {
 
 fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
     let mut data_dir: Option<PathBuf> = None;
+    let mut enable_candidate = false;
     let mut max_windows: Option<u64> = None;
     let mut d_test_override: Option<u64> = None;
     let mut listen_multiaddr: Option<String> = None;
@@ -270,6 +271,10 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
                 );
                 i += 2;
             },
+            "--enable-candidate" => {
+                enable_candidate = true;
+                i += 1;
+            },
             "--listen" => {
                 listen_multiaddr = Some(expect_value(args, i, "--listen")?.to_string());
                 i += 2;
@@ -293,6 +298,7 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
         ));
     }
     Ok(start::StartArgs {
+        enable_candidate,
         data_dir,
         max_windows,
         d_test_override,

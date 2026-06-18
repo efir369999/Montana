@@ -225,7 +225,7 @@ pub fn build_ledger(
 
     // 3. KAT cross-check (encoded size KAT vs actual code encode length).
     for (name, kat_v) in &contract.kats {
-        if name == "params_encoded_size_nseed0" {
+        if name == "params_encoded_size" {
             let ok = *kat_v as usize == actual;
             rows.push(LedgerRow {
                 spec_id: format!("kat.{}", name),

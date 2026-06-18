@@ -31,10 +31,10 @@ field max_protocol_payload_bytes 4 1048576
 field max_sf_ciphertext_bytes 4 65536
 field bootstrap_account_pubkey 1952 -
 field bootstrap_node_pubkey 1952 -
-field n_seed 2 0
-field genesis_active_operators 0 -
+field n_seed 2 2
+field genesis_active_operators 7808 -
 field genesis_content_app_id 32 -
 field genesis_content_data_hash 32 -
 
-# Derived KAT: canonical_encode(protocol_params) length for reference singleton (n_seed=0)
-kat params_encoded_size_nseed0 4108
+# Derived KAT: canonical_encode(protocol_params) length for the unified 3-node genesis (n_seed=2)
+kat params_encoded_size 11916

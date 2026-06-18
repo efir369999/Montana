@@ -682,7 +682,8 @@ pub fn build_genesis_state(params: &ProtocolParams) -> GenesisState {
         operator_account_id: account_id,
         start_window: 0,
         chain_length: 1, // spec: invariant chain_length ≥ 1
-        chain_length_snapshot: 0,
+        // spec "N_SEED как consensus-binding": all genesis records snapshot=1
+        chain_length_snapshot: 1,
         chain_length_checkpoints: [0u64; 6],
         last_confirmation_window: 0,
     };
@@ -691,6 +692,45 @@ pub fn build_genesis_state(params: &ProtocolParams) -> GenesisState {
     account_table.insert(account);
     let mut node_table = NodeTable::new();
     node_table.insert(node);
+
+    // N_SEED cohort: additional Active operators baked into protocol_params
+    // (hash-bound via the Genesis State Hash). Seeded byte-exact identically to
+    // the montana-node runtime LocalState::bootstrap so genesis_state_root from
+    // this function equals the runtime state_root (no genesis fork on non-empty
+    // N_SEED). suite = GENESIS_SUITE_ID for every baked operator.
+    for (account_pubkey, node_pubkey) in &params.genesis_active_operators {
+        let extra_account_id = derive_account_id(GENESIS_SUITE_ID, account_pubkey);
+        let extra_node_id = derive_node_id(node_pubkey);
+        // spec 2384: N_SEED operator records identical to bootstrap, incl.
+        // frontier_hash = SHA-256("mt-genesis" || account_id).
+        let extra_frontier = hash(domain::GENESIS, &[&extra_account_id]);
+        account_table.insert(AccountRecord {
+            account_id: extra_account_id,
+            balance: 0,
+            suite_id: GENESIS_SUITE_ID,
+            is_node_operator: true,
+            frontier_hash: extra_frontier,
+            op_height: 0,
+            account_chain_length: 0,
+            account_chain_length_snapshot: 0,
+            current_pubkey: *account_pubkey,
+            creation_window: 0,
+            last_op_window: 0,
+            last_activation_window: 0,
+        });
+        node_table.insert(NodeRecord {
+            node_id: extra_node_id,
+            node_pubkey: *node_pubkey,
+            suite_id: GENESIS_SUITE_ID,
+            operator_account_id: extra_account_id,
+            start_window: 0,
+            chain_length: 1,
+            chain_length_snapshot: 1,
+            chain_length_checkpoints: [0; 6],
+            last_confirmation_window: 0,
+        });
+    }
+
     let candidate_pool = CandidatePool::new();
 
     GenesisState {
@@ -2427,12 +2467,33 @@ mod tests {
     // ================== Phase F: Genesis state ==================
 
     #[test]
-    fn genesis_state_has_one_account_one_node_empty_candidates() {
+    fn genesis_state_cohort_is_bootstrap_plus_nseed_operators() {
         let p = mt_genesis::genesis_params();
         let g = build_genesis_state(p);
-        assert_eq!(g.account_table.len(), 1);
-        assert_eq!(g.node_table.len(), 1);
+        // Unified genesis: 1 bootstrap + every baked genesis_active_operator,
+        // all Active node operators; candidates empty.
+        let expected = 1 + p.genesis_active_operators.len();
+        assert_eq!(g.account_table.len(), expected);
+        assert_eq!(g.node_table.len(), expected);
         assert_eq!(g.candidate_pool.len(), 0);
+        assert_eq!(p.n_seed as usize, p.genesis_active_operators.len());
+    }
+
+    #[test]
+    fn genesis_state_seeds_each_baked_operator() {
+        let p = mt_genesis::genesis_params();
+        let g = build_genesis_state(p);
+        for (account_pubkey, node_pubkey) in &p.genesis_active_operators {
+            let aid = derive_account_id(GENESIS_SUITE_ID, account_pubkey);
+            let nid = derive_node_id(node_pubkey);
+            let a = g.account_table.get(&aid).expect("operator account seeded");
+            assert!(a.is_node_operator);
+            assert_eq!(a.balance, 0);
+            assert_eq!(&a.current_pubkey, account_pubkey);
+            let n = g.node_table.get(&nid).expect("operator node seeded");
+            assert_eq!(n.chain_length, 1);
+            assert_eq!(&n.node_pubkey, node_pubkey);
+        }
     }
 
     #[test]
@@ -2488,7 +2549,7 @@ mod tests {
         assert_eq!(node.operator_account_id, account_id);
         assert_eq!(node.start_window, 0);
         assert_eq!(node.last_confirmation_window, 0);
-        assert_eq!(node.chain_length_snapshot, 0);
+        assert_eq!(node.chain_length_snapshot, 1);
         assert_eq!(node.chain_length_checkpoints, [0u64; 6]);
     }
 
