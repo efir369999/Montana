@@ -1,3 +1,4 @@
+#![allow(deprecated)] // exercises the deprecated legacy XK libp2p path on purpose
 //! End-to-end test of the libp2p upgrade trait impls for Noise_PQ over real
 //! TCP. Exercises the exact upgrade machinery a libp2p SwarmBuilder would
 //! invoke when negotiating `/montana/noise-pq/1.0.0`.

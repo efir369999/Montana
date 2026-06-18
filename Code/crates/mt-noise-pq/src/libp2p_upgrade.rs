@@ -1,3 +1,4 @@
+#![allow(deprecated)] // this module IS the legacy XK path; external users still get the warning
 //! libp2p custom upgrade integration for the Noise_PQ handshake.
 //!
 //! This module implements the `libp2p::core::upgrade::UpgradeInfo` +
@@ -45,6 +46,9 @@ pub struct NoisePqRemoteIdentity {
 /// Initiator-side configuration: knows the responder's static ML-KEM-768
 /// public key (from the IBT directory / GenesisManifest), supplies its own
 /// static ML-DSA-65 identity keypair for transcript signing.
+#[deprecated(
+    note = "non-production legacy XK path; use xx_handshake / NoisePqXxConfig (Noise_PQ XX)"
+)]
 pub struct NoisePqInitiatorConfig {
     pub remote_static_kem_pk: MlkemPublicKey,
     pub local_id_pk: MtPublicKey,
@@ -54,6 +58,9 @@ pub struct NoisePqInitiatorConfig {
 /// Responder-side configuration: holds the local static ML-KEM-768 keypair
 /// (used to decapsulate the initiator's first message) and the local
 /// ML-DSA-65 identity keypair for signing the transcript.
+#[deprecated(
+    note = "non-production legacy XK path; use xx_handshake / NoisePqXxConfig (Noise_PQ XX)"
+)]
 pub struct NoisePqResponderConfig {
     pub local_static_kem_sk: MlkemSecretKey,
     pub local_id_pk: MtPublicKey,

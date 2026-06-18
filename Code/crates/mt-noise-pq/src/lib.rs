@@ -40,6 +40,9 @@
 //! [`tests::tamper_detection_msg2`]; KAT byte-exact vectors are written
 //! in `tests/handshake_kat.rs`.
 
+/// NON-PRODUCTION. Legacy XK-pattern libp2p upgrade (initiator pre-knows the
+/// responder static ML-KEM key). Production transport uses [`xx_libp2p_upgrade`]
+/// (Noise_PQ XX, post-decap shared-secret signature binding per Network v1.4.0).
 pub mod libp2p_upgrade;
 pub mod stream;
 pub mod xx_handshake;

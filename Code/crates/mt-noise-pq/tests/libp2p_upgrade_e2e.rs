@@ -1,3 +1,4 @@
+#![allow(deprecated)] // exercises the deprecated legacy XK libp2p path on purpose
 //! End-to-end test of the libp2p-style upgrade scaffolding: initiator and
 //! responder use `initiator_drive` / `responder_drive` which mirror the
 //! shape that `libp2p::core::upgrade::{Inbound,Outbound}ConnectionUpgrade`

@@ -1,3 +1,4 @@
+#![allow(deprecated)] // exercises the deprecated legacy XK libp2p path on purpose
 //! libp2p custom upgrade for the Noise_PQ post-quantum handshake.
 //!
 //! Wraps mt_noise_pq's drive functions in the libp2p UpgradeInfo +
@@ -49,9 +50,15 @@ pub fn derive_peer_id(ml_dsa_pk: &MtPublicKey) -> Result<PeerId, UpgradeError> {
 /// Local newtype wrapper around `NoisePqInitiatorConfig` enabling libp2p
 /// upgrade-trait impls. Required because both the trait and the wrapped
 /// config type are foreign to this crate.
+#[deprecated(
+    note = "non-production legacy path; use xx_noise_pq_upgrade::NoisePqXxConfig (Noise_PQ XX)"
+)]
 pub struct NoisePqInitiatorUpgrade(pub NoisePqInitiatorConfig);
 
 /// Local newtype wrapper around `NoisePqResponderConfig` for the inbound side.
+#[deprecated(
+    note = "non-production legacy path; use xx_noise_pq_upgrade::NoisePqXxConfig (Noise_PQ XX)"
+)]
 pub struct NoisePqResponderUpgrade(pub NoisePqResponderConfig);
 
 impl UpgradeInfo for NoisePqInitiatorUpgrade {
