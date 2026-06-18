@@ -1638,10 +1638,12 @@ version = "1.0.4"
 name = "mt-conformance"
 version = "1.0.4"
 dependencies = [
+ "mt-account",
  "mt-codec",
  "mt-crypto",
  "mt-genesis",
  "mt-net",
+ "mt-state",
  "sha2",
 ]
 

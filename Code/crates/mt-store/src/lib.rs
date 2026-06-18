@@ -671,26 +671,43 @@ mod tests {
     // write_atomic) cleanup при FsStore::open. Без cleanup multiple crashes
     // → накопление tmp в root + proposals/.
     #[test]
-    fn open_cleans_orphan_tmp_files() {
+    fn open_cleans_aged_orphan_tmp_but_keeps_fresh() {
+        use std::time::{Duration, SystemTime};
         let p = tmp_dir("orphan_tmp");
         // Pre-create directories + simulated orphan .tmp от crashed write
         fs::create_dir_all(&p).unwrap();
         fs::create_dir_all(p.join("proposals")).unwrap();
         let orphan_root = p.join("accounts.bin.tmp");
         let orphan_proposal = p.join("proposals").join("00000000000000000042.bin.tmp");
+        let fresh_tmp = p.join("nodes.bin.tmp");
         let normal_file = p.join("accounts.bin");
         fs::write(&orphan_root, b"crashed-write").unwrap();
         fs::write(&orphan_proposal, b"crashed-write").unwrap();
+        fs::write(&fresh_tmp, b"in-flight-write").unwrap();
         fs::write(&normal_file, b"valid").unwrap();
-        assert!(orphan_root.exists());
-        assert!(orphan_proposal.exists());
 
-        // open() должен cleanup .tmp но НЕ трогать non-tmp
+        // DEV-041: cleanup removes ONLY .tmp older than 60s (in-flight writes of a
+        // live node must survive a concurrent `status` open). Age the two orphans
+        // past the guard; leave fresh_tmp new.
+        let aged = SystemTime::now() - Duration::from_secs(120);
+        for f in [&orphan_root, &orphan_proposal] {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(f)
+                .unwrap()
+                .set_modified(aged)
+                .unwrap();
+        }
+
         let _store = FsStore::open(&p).unwrap();
-        assert!(!orphan_root.exists(), "orphan root .tmp not cleaned");
+        assert!(!orphan_root.exists(), "aged orphan root .tmp not cleaned");
         assert!(
             !orphan_proposal.exists(),
-            "orphan proposal .tmp not cleaned"
+            "aged orphan proposal .tmp not cleaned"
+        );
+        assert!(
+            fresh_tmp.exists(),
+            "fresh in-flight .tmp must survive the 60s age-guard (DEV-041)"
         );
         assert!(normal_file.exists(), "non-tmp file mistakenly removed");
 
