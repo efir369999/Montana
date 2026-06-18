@@ -886,3 +886,52 @@ strict root check is correct (rejecting unverified state is the safe behaviour);
 the follow-on hardening noted in DEV-037 (bind the exact requested anchor so the
 server serves state AS OF `w`, and verify chunk `anchor_window == w`) removes the
 race entirely.
+
+## DEV-041 (closed): concurrent `FsStore::open` deletes a live node's in-flight `.tmp` → node death
+
+**Crate:** mt-store · **File:** crates/mt-store/src/lib.rs (cleanup_orphan_tmp)
+**Severity:** блокер mainnet (liveness — any external `status` poll can kill a running node)
+
+`FsStore::open` called `cleanup_orphan_tmp` which removed **every** `*.tmp` in the data
+dir + proposals/. `write_atomic` writes `<name>.tmp` then `fs::rename(tmp, final)`.
+When a second process opens the same data dir concurrently (the explorer collector or
+a heartbeat running `montana-node status`, both call `FsStore::open`), its cleanup
+deleted the running node's just-written `accounts.bin.tmp` in the window between the
+node's `fs::write(tmp)` and `fs::rename(tmp → final)` → the rename failed with
+`Io(NotFound)` → `save accounts` errored → the node exited. Observed: Mac node in the
+3-node spec cohort died after ~5 windows from `save accounts: No such file or
+directory`; root cause is the 30s status-poll racing the per-window write_atomic.
+Closed: cleanup_orphan_tmp now removes only **stale** `.tmp` (>60s old) — an in-flight
+temp of a concurrent writer is sub-second old and is left untouched, while genuinely
+orphaned temps from a crashed write are still reclaimed.
+
+## DEV-042 (open finding): `panic!` on state_root divergence instead of reject+resync
+
+**Crate:** montana-node · **File:** crates/montana-node/src/commands/start.rs:1411
+**Severity:** блокер mainnet (liveness — one divergence halts an all-quorum cohort)
+
+When applying a cemented proposal, the node recomputes the post-state root and, on
+mismatch with `header.state_root`, calls `panic!` → the node dies. `settle_and_bookkeep`
+mutates state in place before the check, so a clean fix needs transactional apply
+(snapshot + rollback, or apply-on-clone then commit) followed by reject + fast-sync
+recovery, not process death. Surfaced under non-spec fast cadence (D=400k) where the
+fallback-proposer race (DEV-043) produced a transient divergence; at spec cadence the
+trigger does not occur, but the fatal `panic!` remains a latent liveness hazard (Gate 13
+class: one signed/divergent object must never crash a node). Fix deferred — consensus
+state-transition change requiring careful design + tests.
+
+## DEV-043 (open finding): wall-clock in fallback-proposer election is non-deterministic [I-3]
+
+**Crate:** montana-node · **File:** crates/montana-node/src/commands/start.rs (expected_proposer)
+**Severity:** средний (masked at spec cadence; can diverge proposer choice on node absence)
+
+The fallback-proposer cascade depth uses `silence = last_cement_at.elapsed()` and
+`fallback_secs = 2 × last_tick_dur`, both wall-clock and per-node. Under fast cadence
+or network jitter the per-node `silence/fallback_secs` ratio differs by more than the
+±1 depth tolerance (exp_now/exp_next), so nodes accept different proposers → apply
+different proposals → state divergence. At spec cadence (~60s/window, fallback ~120s)
+the margins absorb jitter and the legitimate proposer (winner of w-2 lottery, fully
+deterministic) is used, so the race does not trigger with all nodes healthy. The
+fallback path nonetheless violates [I-3] determinism; a deterministic tie-break for
+fallback depth (e.g. derived from cemented state, not wall-clock) is the proper fix.
+Fix deferred — touches consensus leadership; design review required.

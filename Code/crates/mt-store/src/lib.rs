@@ -64,7 +64,21 @@ impl FsStore {
                         .map(|e| e == "tmp")
                         .unwrap_or(false)
                 {
-                    let _ = fs::remove_file(&path);
+                    // DEV-041: удалять ТОЛЬКО устаревшие .tmp (>60с). In-flight
+                    // write_atomic temp живого узла младше секунды; конкурентный
+                    // FsStore::open (status / collector на том же data dir) НЕ
+                    // должен его сносить между fs::write и fs::rename — иначе
+                    // rename падает NotFound и узел умирает.
+                    let stale = entry
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .ok()
+                        .and_then(|t| t.elapsed().ok())
+                        .map(|age| age.as_secs() > 60)
+                        .unwrap_or(false);
+                    if stale {
+                        let _ = fs::remove_file(&path);
+                    }
                 }
             }
         }
