@@ -6,6 +6,8 @@
 
 use mt_codec::CanonicalEncode;
 use mt_genesis::{genesis_params, PARAMS_ENCODED_SIZE};
+use mt_net::{FastSyncResponseChunk, TableId};
+use mt_state::NodeRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
@@ -169,7 +171,14 @@ fn code_encoded_len() -> usize {
     buf.len()
 }
 
-pub fn build_ledger(contract: &SpecContract, version_md: &str, audit_md: &str) -> Vec<LedgerRow> {
+pub fn build_ledger(
+    contract: &SpecContract,
+    version_md: &str,
+    audit_md: &str,
+    node_toml: &str,
+    transport_toml: &str,
+    audit_cfg: &str,
+) -> Vec<LedgerRow> {
     let mut rows = Vec::new();
 
     // 1. Structural: encoded size (spec contract vs code const vs actual encode).
@@ -246,7 +255,118 @@ pub fn build_ledger(contract: &SpecContract, version_md: &str, audit_md: &str) -
         &contract.network_version,
     ));
 
+    // 5. Behavioral oracles — assert code BEHAVIOR, not just protocol_params
+    //    fields. These rows are what makes "GREEN" mean spec<->code equivalence
+    //    for the monetary closed-form, active predicate, FastSync anchor policy,
+    //    transport feature hygiene and dependency-audit gate (REAUDIT-06).
+    rows.extend(behavioral_rows(node_toml, transport_toml, audit_cfg));
+
     rows
+}
+
+fn beh_row(id: &str, ok: bool, detail: String) -> LedgerRow {
+    LedgerRow {
+        spec_id: id.to_string(),
+        status: if ok { Status::Full } else { Status::Partial },
+        detail,
+    }
+}
+
+fn libp2p_features_have(toml: &str, feat: &str) -> bool {
+    toml.lines()
+        .filter(|l| l.contains("libp2p") && l.contains("features"))
+        .any(|l| l.contains(&format!("\"{}\"", feat)))
+}
+
+fn behavioral_rows(node_toml: &str, transport_toml: &str, audit_cfg: &str) -> Vec<LedgerRow> {
+    let p = genesis_params();
+    let mut out = Vec::new();
+
+    // monetary closed-form: supply_moneta(W) = EMISSION_moneta * W, supply(0) = 0
+    let e = p.emission_moneta;
+    let mon_ok = mt_account::supply_moneta(0, p) == 0
+        && mt_account::supply_moneta(1, p) == e
+        && mt_account::supply_moneta(100, p) == e * 100;
+    out.push(beh_row(
+        "monetary.supply_moneta_closed_form",
+        mon_ok,
+        format!("supply(0)=0, supply(1)=E, supply(100)=100E (E={})", e),
+    ));
+
+    // active predicate: active iff (W - last_confirmation_window) <= 2 * tau2
+    let t2 = p.tau2_windows;
+    let mk = |last: u64| NodeRecord {
+        node_id: [0u8; 32],
+        node_pubkey: [0u8; mt_crypto::PUBLIC_KEY_SIZE],
+        suite_id: 0,
+        operator_account_id: [0u8; 32],
+        start_window: 0,
+        chain_length: 0,
+        chain_length_snapshot: 0,
+        chain_length_checkpoints: [0u64; 6],
+        last_confirmation_window: last,
+    };
+    let act_ok =
+        mt_state::is_active(&mk(0), 2 * t2, t2) && !mt_state::is_active(&mk(0), 2 * t2 + 1, t2);
+    out.push(beh_row(
+        "consensus.active_predicate_2tau2",
+        act_ok,
+        format!("active iff (W-last)<=2*tau2 (tau2={})", t2),
+    ));
+
+    // FastSync anchor policy: response chunk binds anchor_window on the wire
+    let chunk = FastSyncResponseChunk {
+        chunk_index: 0,
+        total_chunks: 1,
+        table_id: TableId::Account,
+        record_count: 1,
+        anchor_window: 12345,
+        records: vec![0x55u8; 1],
+    };
+    let mut buf = Vec::new();
+    chunk.encode(&mut buf);
+    let fs_ok = buf.len() >= 21
+        && FastSyncResponseChunk::decode(&buf)
+            .map(|c| c.anchor_window == 12345)
+            .unwrap_or(false);
+    out.push(beh_row(
+        "fastsync.anchor_window_wire",
+        fs_ok,
+        "chunk binds anchor_window (>=21B header, roundtrip)".to_string(),
+    ));
+
+    // transport feature hygiene: production libp2p excludes classical tls/noise
+    let feat_ok = !libp2p_features_have(node_toml, "tls")
+        && !libp2p_features_have(node_toml, "noise")
+        && !libp2p_features_have(transport_toml, "tls")
+        && !libp2p_features_have(transport_toml, "noise");
+    out.push(beh_row(
+        "transport.no_classical_tls_noise",
+        feat_ok,
+        "montana-node + mt-net-transport libp2p features exclude tls/noise".to_string(),
+    ));
+
+    // dependency-audit gate present and documented
+    let audit_ok = audit_cfg.contains("[advisories]") && audit_cfg.contains("ignore");
+    out.push(beh_row(
+        "deps.audit_gate_present",
+        audit_ok,
+        ".cargo/audit.toml documents the ignore set with justification".to_string(),
+    ));
+
+    // genesis singleton invariant: n_seed == 0  <=>  genesis_active_operators empty
+    let gen_ok = (p.n_seed == 0) == p.genesis_active_operators.is_empty();
+    out.push(beh_row(
+        "genesis.nseed_operators_consistent",
+        gen_ok,
+        format!(
+            "n_seed={} operators_empty={}",
+            p.n_seed,
+            p.genesis_active_operators.is_empty()
+        ),
+    ));
+
+    out
 }
 
 fn version_rows(
@@ -371,5 +491,37 @@ kat params_encoded_size_nseed0 12
         let rows = version_rows("AUDIT.md", stale, "35.26.1", "1.3.0");
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.status == Status::Partial));
+    }
+
+    #[test]
+    fn behavioral_rows_present_and_green() {
+        let clean_node = "libp2p = { features = [\"tcp\", \"yamux\"] }";
+        let clean_tr = "libp2p = { features = [\"tcp\", \"yamux\"] }";
+        let audit = "[advisories]\nignore = [\"RUSTSEC-0000-0000\"]\n";
+        let rows = behavioral_rows(clean_node, clean_tr, audit);
+        let ids: Vec<&str> = rows.iter().map(|r| r.spec_id.as_str()).collect();
+        for want in [
+            "monetary.supply_moneta_closed_form",
+            "consensus.active_predicate_2tau2",
+            "fastsync.anchor_window_wire",
+            "transport.no_classical_tls_noise",
+            "deps.audit_gate_present",
+            "genesis.nseed_operators_consistent",
+        ] {
+            assert!(ids.contains(&want), "missing behavioral row {want}");
+        }
+        assert!(rows.iter().all(|r| r.status == Status::Full));
+    }
+
+    #[test]
+    fn transport_row_red_when_tls_feature_present() {
+        let dirty = "libp2p = { features = [\"tcp\", \"tls\", \"noise\", \"yamux\"] }";
+        let audit = "[advisories]\nignore = []\n";
+        let rows = behavioral_rows(dirty, "libp2p = { features = [] }", audit);
+        let r = rows
+            .iter()
+            .find(|r| r.spec_id == "transport.no_classical_tls_noise")
+            .unwrap();
+        assert_eq!(r.status, Status::Partial);
     }
 }

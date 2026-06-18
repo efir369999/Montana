@@ -8,6 +8,9 @@ use mt_conformance::harness::{
 const CONTRACT: &str = include_str!("../../../conformance/spec-v35.26.2.contract");
 const VERSION_MD: &str = include_str!("../../../VERSION.md");
 const AUDIT_MD: &str = include_str!("../../../AUDIT.md");
+const NODE_TOML: &str = include_str!("../../montana-node/Cargo.toml");
+const TRANSPORT_TOML: &str = include_str!("../../mt-net-transport/Cargo.toml");
+const AUDIT_CFG: &str = include_str!("../../../.cargo/audit.toml");
 
 fn main() {
     let contract = match parse_contract(CONTRACT) {
@@ -18,7 +21,14 @@ fn main() {
         },
     };
 
-    let rows = build_ledger(&contract, VERSION_MD, AUDIT_MD);
+    let rows = build_ledger(
+        &contract,
+        VERSION_MD,
+        AUDIT_MD,
+        NODE_TOML,
+        TRANSPORT_TOML,
+        AUDIT_CFG,
+    );
 
     println!(
         "Spec Conformance Ledger — contract spec v{} / network v{}",
