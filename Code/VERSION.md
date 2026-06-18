@@ -1,8 +1,8 @@
 # Version
 
-**Implementation:** `1.0.4` (mainnet — Build 27 / v1.0.4 all-in-one (build sha tracked in git log, not pinned here per [C-1]); DEV-017..023c hot-fix track closed: peer t_r_history, fast-sync chunk anchor_window, peer-quorum 30s grace, Reveal pipeline + winner determination, DEV-022/023 rotation disabled pending DEV-021b drain refactor)
+**Implementation:** `1.1.0` (mainnet — unified 3-node N_SEED genesis cohort (lauterbourg bootstrap + nicosia + mac operators, n_seed=2); non-empty-N_SEED genesis-fork fixed via single-source build_genesis_state; candidates disabled by default (observers sync+heartbeat, --enable-candidate to re-arm); GPT-5 Codex 02 audit closed (REAUDIT-01..06). build sha tracked in git log per [C-1])
 **Spec target:** Montana Protocol v35.26.2 + Montana Network v1.4.0 + Montana App v3.12.0 (2026-06-15)
-**Release tag:** v1.0.4 (2026-05-30) — first hot-fix track; bootstrap-only proposer baseline; Helsinki node decommissioned; genesis manifest lists 5 discovery peers (moscow + frankfurt + vilnius + armenia + nicosia) — discovery metadata only, not consensus-active operators
+**Release tag:** v1.1.0 (2026-06-18) — unified mainnet genesis: 3 Active operators baked hash-bound into protocol_params (PARAMS_ENCODED_SIZE 4108 -> 11916); one-command Docker install; conformance-gate GREEN 39/39
 **Cohort:** singleton bootstrap on mainnet — protocol_params.n_seed = 0, genesis_active_operators empty; consensus starts from one bootstrap proposer (hash-bound in Genesis State Hash). The 5 manifest nodes are discovery peers only.
 **Spec paths:**
 - Protocol: `../Montana Protocol v35.26.2.md`

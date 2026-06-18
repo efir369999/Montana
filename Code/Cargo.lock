@@ -1576,7 +1576,7 @@ dependencies = [
 
 [[package]]
 name = "montana-node"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "futures",
  "getrandom 0.2.15",
@@ -1604,7 +1604,7 @@ dependencies = [
 
 [[package]]
 name = "mt-account"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1616,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "mt-bindings"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "getrandom 0.2.15",
  "hex",
@@ -1632,11 +1632,11 @@ dependencies = [
 
 [[package]]
 name = "mt-codec"
-version = "1.0.4"
+version = "1.1.0"
 
 [[package]]
 name = "mt-conformance"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-account",
  "mt-codec",
@@ -1649,7 +1649,7 @@ dependencies = [
 
 [[package]]
 name = "mt-consensus"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1659,7 +1659,7 @@ dependencies = [
 
 [[package]]
 name = "mt-crypto"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "getrandom 0.2.15",
  "libc",
@@ -1670,7 +1670,7 @@ dependencies = [
 
 [[package]]
 name = "mt-crypto-native"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "cc",
  "libc",
@@ -1681,7 +1681,7 @@ dependencies = [
 
 [[package]]
 name = "mt-entry"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1691,7 +1691,7 @@ dependencies = [
 
 [[package]]
 name = "mt-examples"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-account",
  "mt-codec",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "mt-genesis"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1715,7 +1715,7 @@ dependencies = [
 
 [[package]]
 name = "mt-lottery"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1724,7 +1724,7 @@ dependencies = [
 
 [[package]]
 name = "mt-merkle"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1732,7 +1732,7 @@ dependencies = [
 
 [[package]]
 name = "mt-mnemonic"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1741,7 +1741,7 @@ dependencies = [
 
 [[package]]
 name = "mt-net"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "getrandom 0.2.15",
  "mt-codec",
@@ -1751,7 +1751,7 @@ dependencies = [
 
 [[package]]
 name = "mt-net-transport"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -1785,7 +1785,7 @@ dependencies = [
 
 [[package]]
 name = "mt-state"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1794,7 +1794,7 @@ dependencies = [
 
 [[package]]
 name = "mt-store"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-consensus",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "mt-sync"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
@@ -1814,7 +1814,7 @@ dependencies = [
 
 [[package]]
 name = "mt-timechain"
-version = "1.0.4"
+version = "1.1.0"
 dependencies = [
  "mt-codec",
  "mt-crypto",
