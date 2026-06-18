@@ -26,8 +26,15 @@ rm -rf "$WORKDIR"; git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$WORKDIR"
 
 echo "[3/6] fetching canonical genesis manifest"
 mkdir -p /etc/montana
-curl -fsSL "$MANIFEST_URL" -o /etc/montana/genesis-manifest.json
-echo "    manifest sha256=$(sha256sum /etc/montana/genesis-manifest.json | cut -c1-16)"
+JOIN_MODE=0
+if curl -fsSL --max-time 15 "$MANIFEST_URL" -o /etc/montana/genesis-manifest.json 2>/dev/null \
+   && [ -s /etc/montana/genesis-manifest.json ]; then
+  JOIN_MODE=1
+  echo "    manifest sha256=$(sha256sum /etc/montana/genesis-manifest.json | cut -c1-16) — JOIN mode"
+else
+  rm -f /etc/montana/genesis-manifest.json
+  echo "    manifest unavailable ($MANIFEST_URL) — starting in SINGLETON mode (still a full node)"
+fi
 
 echo "[4/6] auto-detecting location (city/country from geo-IP)"
 GEO="$(curl -fsSL --max-time 6 'http://ip-api.com/json?fields=city,countryCode,isp,org' 2>/dev/null || echo '{}')"
@@ -37,15 +44,19 @@ ALIAS="${MONTANA_ALIAS:-$(printf '%s' "${CITY:-node}" | tr 'A-Z ' 'a-z-' )}"
 [ -n "$CITY" ] || CITY="$ALIAS"
 echo "    alias=$ALIAS city=$CITY country=$CC"
 
-echo "[5/6] building node image"
-docker build -t "$IMAGE" -f "$WORKDIR/Code/docker/runtime/Dockerfile.node" "$WORKDIR" >/dev/null
+echo "[5/6] building node image (first build ~5-10 min, shows progress)"
+docker build -t "$IMAGE" -f "$WORKDIR/Code/docker/runtime/Dockerfile.node" "$WORKDIR"
 
-echo "[6/6] starting node (joins network + self-reports to explorer)"
+echo "[6/6] starting node"
 docker rm -f montana-node 2>/dev/null || true
+MANIFEST_MOUNT=()
+[ "$JOIN_MODE" = "1" ] && MANIFEST_MOUNT=(-v /etc/montana/genesis-manifest.json:/etc/montana/genesis-manifest.json:ro)
 docker run -d --name montana-node --network host --restart unless-stopped \
   -v montana-data:/var/lib/montana \
-  -v /etc/montana/genesis-manifest.json:/etc/montana/genesis-manifest.json:ro \
+  "${MANIFEST_MOUNT[@]}" \
   -e MONTANA_ALIAS="$ALIAS" -e MONTANA_LABEL="$CITY" -e MONTANA_COUNTRY="$CC" \
   "$IMAGE"
-echo "== done. live in ~1 min at https://montana.quest/net =="
-echo "logs: docker logs -f montana-node"
+[ "$JOIN_MODE" = "1" ] && echo "== done (JOIN). live in ~1 min at https://montana.quest/net ==" \
+                       || echo "== done (SINGLETON). node runs its own genesis chain =="
+echo "save your recovery mnemonic:  docker exec montana-node cat /var/lib/montana/mnemonic.txt"
+echo "logs:  docker logs -f montana-node"
