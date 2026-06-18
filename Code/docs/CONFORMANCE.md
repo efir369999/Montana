@@ -30,7 +30,7 @@ network.
 
 - DEV-024: cemented_bundle_aggregate hashes confirmer node_ids; spec text says ML-DSA-65 signatures (grinding-resistance gap). Author decision required: amend spec or regenerate primitive + KATs.
 - DEV-026: proposer equivocation handled first-valid-wins (quorum-protected); spec asks reject-both.
-- DEV-027: genesis window 0 carries no settle ⇒ supply(W) = EMISSION × W (spec closed-form says ×(W+1)). Author decision: spec wording or double payment at settle(1).
+- DEV-027 (closed): genesis window 0 carries no settle ⇒ supply(W) = EMISSION × W. Spec v35.26.2 closed-form aligned to × W (supply_moneta(0)=0); code helper/tests/status updated. No residual deviation.
 - DEV-010/011/016: acknowledged operator choices (genesis bootstrap detection, hardware D calibration for the genesis node, manifest-seeded cohort).
 
 ## Operational notes (spec math, not defects)

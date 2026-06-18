@@ -130,7 +130,7 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
     );
     let total_supply = supply_moneta(current_window, params);
     println!(
-        "supply (closed-form) : {} nɈ ({} Ɉ) = emission × (W+1)",
+        "supply (closed-form) : {} nɈ ({} Ɉ) = emission × W",
         total_supply,
         total_supply / 1_000_000_000
     );

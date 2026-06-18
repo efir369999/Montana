@@ -487,7 +487,7 @@ fn cmd_anchor() -> bool {
 fn cmd_emission_schedule(windows: &[u64]) -> bool {
     print_section("EMISSION SCHEDULE — reward + supply ledger");
     print_note(
-        "spec, раздел \"Эмиссия\": reward_moneta = EMISSION_moneta = 13 Ɉ const per window. supply_moneta(W) = (W+1) × EMISSION_moneta.",
+        "spec, раздел \"Эмиссия\": reward_moneta = EMISSION_moneta = 13 Ɉ const per window. supply_moneta(W) = W × EMISSION_moneta.",
     );
 
     let params = genesis_params();
@@ -498,7 +498,7 @@ fn cmd_emission_schedule(windows: &[u64]) -> bool {
     print_subsection("Schedule");
     for &w in windows {
         let supply = supply_moneta(w, params);
-        let expected = u128::from(w + 1) * reward;
+        let expected = u128::from(w) * reward;
         let ok = supply == expected;
         print_kv(
             &format!("W = {w:8}"),

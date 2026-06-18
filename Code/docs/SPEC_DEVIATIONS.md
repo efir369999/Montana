@@ -710,7 +710,7 @@ After K windows since FIRST election, bootstrap fallback fires regardless of whe
 
 ## DEV-027 (closed): supply formula corrected to EMISSION_moneta × W (EXT-MON-01, spec v35.26.2)
 
-Окно 0 — генезис (не settle-ится предложением); первая выплата — settle(1) победителю окна 0 (первопоселенец, генезисное правило). Фактический supply(W) = EMISSION × W. Формула спецификации EMISSION × (W+1) считает выплату окна 0. Решение автора: либо спецификация фиксирует «окно 0 без эмиссии», либо settle(1) выплачивает двойную (окна 0 и 1). Текущее поведение — без эмиссии за окно 0.
+Окно 0 — генезис без эмиссии (`apply_emission` no-op при `window_w == 0`); первая выплата — settle(1) победителю окна 0. Spec v35.26.2 фиксирует closed-form `supply_moneta(W) = EMISSION_moneta × W`, `supply_moneta(0) = 0` (раздел «Эмиссия» + supply-audit bullet самосогласованы). Helper `supply_moneta`, юнит-тесты mt-account, `determinism_invariants`, `status.rs`, `m3_account.rs`, AUDIT.md приведены к × W (REAUDIT-01, GPT-5 Codex 02). Расхождение helper↔state устранено: и state-transition (no-op при W=0), и closed-form дают EMISSION × W. Status: закрыто.
 
 ---
 
@@ -786,12 +786,15 @@ Closure path (architectural decision required, firewall):
       wall-clock) with a version bump + KAT.
 The wall-clock inputs must go in either case. Severity: mainnet blocker.
 
-## DEV-027 (open, unchanged): emission at window 0 (EXT-MON-01)
+## DEV-027 (closed, GPT-5 Codex 02 round): emission at window 0 (EXT-MON-01)
 
-Already tracked above (note). The external audit re-confirms: `apply_emission`
-no-ops at `window_w == 0` while `supply_moneta(W) = EMISSION × (W+1)`. Author
-decision: spec fixes "window 0 has no emission" (-> `EMISSION × W`) or settle(1)
-pays double. Firewall: changing the spec is architect mode.
+Resolved. Spec v35.26.2 fixes "window 0 has no emission": closed-form is
+`supply_moneta(W) = EMISSION_moneta × W`, `supply_moneta(0) = 0`. The stale
+supply-audit duplicate that still read `× (current_window + 1)` was removed
+(spec self-consistency, [I-10]). Code helper `supply_moneta`, unit tests,
+`determinism_invariants`, `status.rs` and `m3_account.rs` aligned to `× W`.
+State transition (`apply_emission` no-op at W=0) and closed-form now agree.
+See the closed entry above.
 
 ## Out of this conformance pass (separate passes)
 

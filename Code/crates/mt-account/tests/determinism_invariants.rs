@@ -316,9 +316,9 @@ fn reward_moneta_returns_emission_const() {
 }
 
 #[test]
-fn supply_moneta_window_zero_is_emission() {
+fn supply_moneta_window_zero_is_zero() {
     let p = mt_genesis::genesis_params();
-    assert_eq!(supply_moneta(0, p), p.emission_moneta);
+    assert_eq!(supply_moneta(0, p), 0);
 }
 
 #[test]
@@ -329,8 +329,8 @@ fn supply_moneta_grows_linearly() {
     let s100 = supply_moneta(100, p);
     assert!(s0 < s10);
     assert!(s10 < s100);
-    assert_eq!(s10, p.emission_moneta * 11);
-    assert_eq!(s100, p.emission_moneta * 101);
+    assert_eq!(s10, p.emission_moneta * 10);
+    assert_eq!(s100, p.emission_moneta * 100);
 }
 
 // ---------- apply_proposal determinism ----------

@@ -520,10 +520,10 @@ pub fn reward_moneta(params: &ProtocolParams) -> u128 {
     params.emission_moneta
 }
 
-/// Total emitted supply over windows [0, window] inclusive — closed-form.
-/// `supply_moneta(W) = EMISSION_moneta × (W + 1)`.
+/// Total emitted supply over windows [1, window] — closed-form (window 0 has no emission).
+/// `supply_moneta(W) = EMISSION_moneta × W` (supply_moneta(0) = 0; first payout settle(1)).
 pub fn supply_moneta(window: u64, params: &ProtocolParams) -> u128 {
-    params.emission_moneta * (u128::from(window) + 1)
+    params.emission_moneta * u128::from(window)
 }
 
 // spec: "State transition → apply_proposal" steps 2, 3.5, 3.6, 4.
@@ -1916,16 +1916,16 @@ mod tests {
     #[test]
     fn supply_moneta_window_zero() {
         let p = mt_genesis::genesis_params();
-        assert_eq!(supply_moneta(0, p), EMISSION);
+        assert_eq!(supply_moneta(0, p), 0);
     }
 
     #[test]
     fn supply_moneta_grows_linearly() {
         let p = mt_genesis::genesis_params();
-        assert_eq!(supply_moneta(0, p), EMISSION);
-        assert_eq!(supply_moneta(1, p), EMISSION * 2);
-        assert_eq!(supply_moneta(100, p), EMISSION * 101);
-        assert_eq!(supply_moneta(1_000_000, p), EMISSION * 1_000_001);
+        assert_eq!(supply_moneta(0, p), 0);
+        assert_eq!(supply_moneta(1, p), EMISSION);
+        assert_eq!(supply_moneta(100, p), EMISSION * 100);
+        assert_eq!(supply_moneta(1_000_000, p), EMISSION * 1_000_000);
     }
 
     #[test]
@@ -1933,7 +1933,7 @@ mod tests {
         let p = mt_genesis::genesis_params();
         for &w in &[0u64, 1, 10, 100, 1000, 524_160] {
             let mut expected: u128 = 0;
-            for _ in 0..=w {
+            for _ in 1..=w {
                 expected += reward_moneta(p);
             }
             assert_eq!(supply_moneta(w, p), expected, "mismatch at W={w}");
