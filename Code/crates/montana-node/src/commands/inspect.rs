@@ -54,9 +54,7 @@ pub fn run(args: InspectArgs) -> Result<(), NodeError> {
     println!();
     println!("--- libp2p transport identity (M8 cross-machine) ---");
     match mt_net_transport::derive_peer_id(&identity.node_pk) {
-        Ok(pid) => println!(
-            "network_peer_id  : {pid}  (Noise_PQ XX — укажите в genesis-manifest)"
-        ),
+        Ok(pid) => println!("network_peer_id  : {pid}  (Noise_PQ XX — укажите в genesis-manifest)"),
         Err(e) => println!("network_peer_id  : <ошибка вывода: {e}>"),
     }
     println!(
