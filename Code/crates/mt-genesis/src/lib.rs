@@ -142,8 +142,11 @@ pub fn genesis_params() -> &'static ProtocolParams {
         participation_dead_zone_high: 95,
         d_adjustment_rate_num: 3,
         d_adjustment_rate_den: 100,
-        vdf_entry_windows: 20_160,
-        selection_interval: 336,
+        // TEST CONFIG (devnet, spec 2387): кандидат входит за 1 окно.
+        // БОЕВОЙ = 20_160 (= τ₂). Развязано от tau2_windows в required_vdf_length.
+        vdf_entry_windows: 1,
+        // TEST CONFIG: приём в Active каждое окно. БОЕВОЙ = 336.
+        selection_interval: 1,
         admission_divisor: 130,
         candidate_expiry_windows: 60_480,
         adaptive_vdf_threshold: 1,
