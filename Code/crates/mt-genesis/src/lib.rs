@@ -16,9 +16,12 @@ use mt_crypto::{hash, Hash32, PUBLIC_KEY_SIZE};
 // d0(8) + reserved(8) + tau2(8) + emission(16) + target_zero(32) + quorum_num(1)
 // + quorum_den(1) + dead_zone(2+2) + d_adj(2+2) + vdf_entry(8) + sel_interval(8)
 // + admission_divisor(8) + cand_expiry(8) + adapt_thr(2) + adapt_mult(2) + pruning(8)
-// 4108 bytes for n_seed=0; mainnet n_seed=2 adds 2×(account_pk+node_pk)=2×3904
-// = 11916 bytes total (unified 3-node genesis cohort).
-pub const PARAMS_ENCODED_SIZE: usize = 11916;
+// + pow(4) + max_payload(4) + max_sf(4) + bootstrap_account_pk(1952)
+// + bootstrap_node_pk(1952) + n_seed(2) + app_id(32) + content_hash(32)
+// = 4108 bytes for the reference singleton (n_seed=0, empty
+// genesis_active_operators per spec "0 для reference singleton"). Each baked
+// N_SEED operator would add 2×1952=3904 bytes.
+pub const PARAMS_ENCODED_SIZE: usize = 4108;
 
 // === Genesis Ceremony 2026-05-02 — финализированные значения ===
 //
@@ -35,19 +38,6 @@ pub const BOOTSTRAP_ACCOUNT_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
 /// 1952 байта ML-DSA-65 публичного ключа Moscow consensus node.
 pub const BOOTSTRAP_NODE_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
     include_bytes!("../include/bootstrap-node-pk.bin");
-
-// Genesis N_SEED cohort operators (sorted by account_pubkey, deduped). Active
-// from genesis, hash-bound into the Genesis State Hash. bootstrap (lauterbourg)
-// + these = the unified mainnet active set. Order is canonical (op-0 < op-1 by
-// account_pubkey byte order) — it fixes canonical_encode(protocol_params).
-pub const GENESIS_OP0_ACCOUNT_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
-    include_bytes!("../include/genesis-op-0-account-pk.bin");
-pub const GENESIS_OP0_NODE_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
-    include_bytes!("../include/genesis-op-0-node-pk.bin");
-pub const GENESIS_OP1_ACCOUNT_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
-    include_bytes!("../include/genesis-op-1-account-pk.bin");
-pub const GENESIS_OP1_NODE_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
-    include_bytes!("../include/genesis-op-1-node-pk.bin");
 
 /// 32 байта initial VDF target. SHA-256("mt-genesis" || account_pk || node_pk
 /// || "montana-genesis-mainnet-2026-06-11").
@@ -164,17 +154,13 @@ pub fn genesis_params() -> &'static ProtocolParams {
         max_sf_ciphertext_bytes: 65_536,
         bootstrap_account_pubkey: *BOOTSTRAP_ACCOUNT_PUBKEY_BYTES,
         bootstrap_node_pubkey: *BOOTSTRAP_NODE_PUBKEY_BYTES,
-        n_seed: 2,
-        genesis_active_operators: vec![
-            (
-                *GENESIS_OP0_ACCOUNT_PUBKEY_BYTES,
-                *GENESIS_OP0_NODE_PUBKEY_BYTES,
-            ),
-            (
-                *GENESIS_OP1_ACCOUNT_PUBKEY_BYTES,
-                *GENESIS_OP1_NODE_PUBKEY_BYTES,
-            ),
-        ],
+        // spec "N_SEED ... 0 для reference singleton": the reference mainnet is
+        // a singleton genesis — bootstrap is the sole genesis Active operator
+        // (sole canonical proposer, quorum=1, singleton-cementing). Every other
+        // operator joins post-genesis via the standard CandidateVdf → Registered
+        // → Active admission path.
+        n_seed: 0,
+        genesis_active_operators: vec![],
         genesis_content_app_id: genesis_app_id(),
         genesis_content_data_hash: GENESIS_CONTENT_DATA_HASH_BYTES,
     })
@@ -217,7 +203,7 @@ mod tests {
         let mut buf = Vec::new();
         genesis_params().encode(&mut buf);
         assert_eq!(buf.len(), PARAMS_ENCODED_SIZE);
-        assert_eq!(PARAMS_ENCODED_SIZE, 11916);
+        assert_eq!(PARAMS_ENCODED_SIZE, 4108);
     }
 
     #[test]
@@ -243,10 +229,10 @@ mod tests {
         assert_eq!(p.bootstrap_pow_difficulty, 65_536);
         assert_eq!(p.max_protocol_payload_bytes, 1_048_576);
         assert_eq!(p.max_sf_ciphertext_bytes, 65_536);
-        // Unified mainnet genesis: 2 baked operators (mac, nicosia) + lauterbourg
-        // bootstrap = 3-node Active cohort. n_seed == operator count.
-        assert_eq!(p.n_seed, 2);
-        assert_eq!(p.genesis_active_operators.len(), 2);
+        // Reference singleton genesis: bootstrap is the sole genesis Active
+        // operator; n_seed == 0 and genesis_active_operators is empty.
+        assert_eq!(p.n_seed, 0);
+        assert_eq!(p.genesis_active_operators.len(), 0);
         assert_eq!(p.n_seed as usize, p.genesis_active_operators.len());
     }
 
