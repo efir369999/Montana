@@ -128,7 +128,7 @@ cargo test -p mt-net --features testing
 │   ├── install-vps.sh         node-only installer (Linux VPS)
 │   ├── install-local-mac.sh   node-only installer (macOS launchd)
 │   └── pre-commit.sh          local pre-commit hook
-└── bench/                     VDF benchmark (standalone)
+└── bench/                     SSHA benchmark (standalone)
 ```
 
 ## License

@@ -20,7 +20,7 @@ impl LocalState {
     // Автоматический genesis vs candidate fork per spec Genesis Decree:
     // - genesis узел (identity.node_pk == params.bootstrap_node_pubkey либо
     //   placeholder zeros — pre-ceremony local mode): operator-аккаунт +
-    //   NodeRecord для self напрямую (DEV-010, активация без Candidate VDF).
+    //   NodeRecord для self напрямую (DEV-010, активация без Candidate SSHA).
     // - candidate узел: пустой NodeTable; узел появится в state только после
     //   apply_selection_event на ближайшем W % selection_interval == 0.
     //   Operator account создаётся в обоих случаях (нужен для подписания

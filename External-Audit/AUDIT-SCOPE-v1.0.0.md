@@ -33,11 +33,11 @@ These items are the explicit external-audit asks accompanying the mainnet announ
 ### 1.2 Sequential SHA-256 delay function reduction
 
 **Files.**
-- [`Code/crates/mt-timechain/src/lib.rs`](../Code/crates/mt-timechain/src/lib.rs) — `vdf_step`, `next_d`, `cemented_bundle_aggregate`.
+- [`Code/crates/mt-timechain/src/lib.rs`](../Code/crates/mt-timechain/src/lib.rs) — `ssha_step`, `next_d`, `cemented_bundle_aggregate`.
 - [`Whitepaper Montana.md`](../Whitepaper%20Montana.md) — §5 attack-class subsections + §13 cryptographic primitives table.
 
 **Audit asks.**
-- The implementation is explicitly **not** a VDF in the Boneh / Pietrzak / Wesolowski sense — no proof of correct evaluation. What is the reduction from the cementing rule to the unforgeability of `t_r(W)` under the asymmetry between proposer and verifier?
+- The implementation is explicitly **not** a SSHA in the Boneh / Pietrzak / Wesolowski sense — no proof of correct evaluation. What is the reduction from the cementing rule to the unforgeability of `t_r(W)` under the asymmetry between proposer and verifier?
 - Lookback leadership rule (`cemented_bundle_aggregate(W − 2)` as the seed for endpoint computation): is the two-window lookback sufficient against grinding when the proposer has hardware advantage ×K over a verifier?
 
 ### 1.3 Constant-time review of `mt-crypto-native`

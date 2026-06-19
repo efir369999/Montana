@@ -1,5 +1,5 @@
 // Automated determinism invariants для mt-lottery.
-// M4 audit prep — node lottery / VDF reveal / bundled confirmation /
+// M4 audit prep — node lottery / SSHA reveal / bundled confirmation /
 // winner determination. Любое non-determinism = consensus fork.
 // Invariants ловят regression если refactor ломает byte-exact encode,
 // op_hash R2, weighted_ticket monotonicity, либо argmin canonical rule.
@@ -8,7 +8,7 @@ use mt_crypto::{Hash32, Signature, SIGNATURE_SIZE};
 use mt_lottery::{
     bundle_hash, compute_endpoint, determine_winner, is_cemented, ln_q64, log2_q64, lottery_weight,
     quorum, reveal_hash, seniority_term, sorted_candidates_for_fallback, weighted_ticket_node,
-    BundleError, BundledConfirmation, Candidate, RevealError, VdfReveal, BUNDLE_FIXED_OVERHEAD,
+    BundleError, BundledConfirmation, Candidate, RevealError, SshaReveal, BUNDLE_FIXED_OVERHEAD,
     REVEAL_SIZE, WINNER_CLASS_NODE,
 };
 use mt_state::NodeId;
@@ -26,8 +26,8 @@ fn sample_bundle(node_id: NodeId, ops: Vec<Hash32>, reveals: Vec<Hash32>) -> Bun
     }
 }
 
-fn sample_reveal(node_id: NodeId) -> VdfReveal {
-    VdfReveal {
+fn sample_reveal(node_id: NodeId) -> SshaReveal {
+    SshaReveal {
         node_id,
         window_index: 42,
         endpoint: [0xCD; 32],
@@ -89,7 +89,7 @@ fn reveal_hash_deterministic_and_stable_under_signature() {
 
 #[test]
 fn reveal_hash_distinct_from_bundle_hash() {
-    // Domain separator различает: "mt-bundle" vs "mt-vdf-reveal".
+    // Domain separator различает: "mt-bundle" vs "mt-ssha-reveal".
     let bc = sample_bundle([0x01; 32], vec![], vec![]);
     let r = sample_reveal([0x01; 32]);
     // (Совпадение возможно теоретически, но крайне маловероятно.)

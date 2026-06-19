@@ -432,7 +432,7 @@ fn cmd_hash() -> bool {
         ("mt-nodereg", domain::NODEREG),
         ("mt-proposal", domain::PROPOSAL),
         ("mt-bundle", domain::BUNDLE),
-        ("mt-vdf-reveal", domain::VDF_REVEAL),
+        ("mt-ssha-reveal", domain::SSHA_REVEAL),
     ];
     let mut outputs: Vec<Hash32> = Vec::new();
     for (name, d) in class_domains {
@@ -460,9 +460,9 @@ fn cmd_hash() -> bool {
         ("mt-nodereg", domain::NODEREG),
         ("mt-proposal", domain::PROPOSAL),
         ("mt-bundle", domain::BUNDLE),
-        ("mt-vdf-reveal", domain::VDF_REVEAL),
+        ("mt-ssha-reveal", domain::SSHA_REVEAL),
         ("mt-account", domain::ACCOUNT),
-        ("mt-candidate-vdf-init", domain::CANDIDATE_VDF_INIT),
+        ("mt-candidate-ssha-init", domain::CANDIDATE_SSHA_INIT),
         ("mt-merkle-leaf", domain::MERKLE_LEAF),
         ("mt-merkle-node", domain::MERKLE_NODE),
         ("mt-state-root", domain::STATE_ROOT),

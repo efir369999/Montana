@@ -6,7 +6,7 @@
 // независимая reference implementation. См. scripts/oracle_python_sha256.py.
 
 use mt_crypto::PUBLIC_KEY_SIZE;
-use mt_entry::{candidate_vdf_init, nr_sort_key, selection_sort_key};
+use mt_entry::{candidate_ssha_init, nr_sort_key, selection_sort_key};
 use mt_state::NodeId;
 
 fn fixed(byte: u8, len: usize) -> Vec<u8> {
@@ -14,22 +14,22 @@ fn fixed(byte: u8, len: usize) -> Vec<u8> {
 }
 
 #[test]
-fn oracle_candidate_vdf_init_matches_python_hashlib() {
+fn oracle_candidate_ssha_init_matches_python_hashlib() {
     // Inputs: t_r = [0x11; 32], cba = [0x22; 32], node_id = [0x33; 32]
     let t_r: [u8; 32] = fixed(0x11, 32).try_into().unwrap();
     let cba: [u8; 32] = fixed(0x22, 32).try_into().unwrap();
     let node_id: NodeId = fixed(0x33, 32).try_into().unwrap();
 
     // Expected from python3 scripts/oracle_python_sha256.py:
-    //   candidate_vdf_init(t_r=11..,cba=22..,node_id=33..)
+    //   candidate_ssha_init(t_r=11..,cba=22..,node_id=33..)
     //   = 8ab91f2efddae1eea93ef611d1a3958225ca5a0e5028b99bcd4b6ad5b5bce13f
     let expected_hex = "8ab91f2efddae1eea93ef611d1a3958225ca5a0e5028b99bcd4b6ad5b5bce13f";
     let expected = hex_to_bytes(expected_hex);
 
-    let actual = candidate_vdf_init(&t_r, &cba, &node_id);
+    let actual = candidate_ssha_init(&t_r, &cba, &node_id);
     assert_eq!(
         actual, expected,
-        "candidate_vdf_init output расходится с Python hashlib oracle"
+        "candidate_ssha_init output расходится с Python hashlib oracle"
     );
 }
 

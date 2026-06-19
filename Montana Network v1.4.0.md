@@ -184,7 +184,7 @@ Protocol steps per window `W`:
 
 The singleton-cementing path (a single confirmer, used today on the genesis cohort while `chain_length` is dominated by the bootstrap proposer) is the special case of the protocol above with `bundle_count = 1`; the 3722-byte header-only envelope handles that special case. Operational regimes with non-bootstrap operators accumulating `chain_length` require the extended length-prefixed schema and validation of `bundle_count ≥ 1`.
 
-T_r consistency requirement. The follower's `compute_endpoint` requires the canonical `T_r(W)`. Two implementation paths are viable: (i) followers tick the VDF locally in lockstep with wall-clock and cache the per-window `T_r` history during catch-up; (ii) the proposer extends the cemented Proposal envelope with `T_r(W)` (32 B) so followers do not need to compute it locally. Path (ii) is the cleaner architectural choice; it adds 32 B per envelope and removes any drift hazard for followers whose VDF tick is behind the cemented head.
+T_r consistency requirement. The follower's `compute_endpoint` requires the canonical `T_r(W)`. Two implementation paths are viable: (i) followers tick the SSHA locally in lockstep with wall-clock and cache the per-window `T_r` history during catch-up; (ii) the proposer extends the cemented Proposal envelope with `T_r(W)` (32 B) so followers do not need to compute it locally. Path (ii) is the cleaner architectural choice; it adds 32 B per envelope and removes any drift hazard for followers whose SSHA tick is behind the cemented head.
 
 Wire-format and KAT vectors for the cemented Proposal envelope with `bundle_count ≥ 2` are normatively specified in the Network spec section above. Cross-implementation conformance binding for the schema is tracked under milestone M9.
 
@@ -497,7 +497,7 @@ Fluff:
 |--------|-------|---------|
 | UserObject (Transfer Mode A/B, Anchor, ChangeKey, CloseAccount) | Stem → fluff | Hide sender IP |
 | ControlObject (NodeRegistration) | Stem → fluff | Hide the registering candidate's IP |
-| VDF Reveal | Direct gossip (no stem) | node_id is public in the reveal, anonymity is impossible; IP is hidden by Transport Obfuscation (Noise_PQ XX over TCP/8444 with uniform framing) |
+| SSHA Reveal | Direct gossip (no stem) | node_id is public in the reveal, anonymity is impossible; IP is hidden by Transport Obfuscation (Noise_PQ XX over TCP/8444 with uniform framing) |
 | Confirmation | Stem → fluff | Hide which node confirmed first |
 
 **Properties:**
@@ -1013,7 +1013,7 @@ Envelope всегда 14 байт header + payload. Поскольку IBT unifo
 | 0x04 | Anchor | one-way gossip | Anchor объект |
 | 0x10 | NodeRegistration | one-way gossip | NodeRegistration объект |
 | 0x20 | BundledConfirmation | one-way gossip | BundledConfirmation объект |
-| 0x21 | VDF_Reveal | one-way gossip | VDF_Reveal объект |
+| 0x21 | SSHA_Reveal | one-way gossip | SSHA_Reveal объект |
 | 0x22 | Proposal | one-way gossip | Proposal объект |
 | 0x40 | FastSyncRequest | request | `{anchor_window: u64, resume_offset: u64}` |
 | 0x41 | FastSyncResponse | response | chunked snapshot data (см. ниже) |
@@ -2349,11 +2349,11 @@ Status:                             закрыто (с открытым sub-find
   A. Consensus objects (gossip) — 7 кодов
      Коды:        0x01 Transfer | 0x03 ChangeKey | 0x04 Anchor |
                   0x10 NodeRegistration | 0x20 BundledConfirmation |
-                  0x21 VDF_Reveal | 0x22 Proposal
+                  0x21 SSHA_Reveal | 0x22 Proposal
      Создатель:   user / node — подписывает соответствующим keypair
      Проверяет:   получатель проверяет подпись + структурные инварианты
                   (см. карточки этих объектов в основной части спеки —
-                  «Account — содержимое блока», «Proposal», «VDF Reveal
+                  «Account — содержимое блока», «Proposal», «SSHA Reveal
                   и лотерея», «Регистрация окна», и т.д.)
      Lifecycle:   объекты cemented через consensus path; envelope
                   ephemeral
@@ -2466,7 +2466,7 @@ Global invariant check (агрегированно по категориям):
                                               B-F не вводят crypto)
   [I-8] Network-bound unpredictability:  per object категория A — см. их
                                               карточки в основной спеке
-                                              (Proposal, VDF_Reveal, и т.д.)
+                                              (Proposal, SSHA_Reveal, и т.д.)
   [I-9] Bit-exact deterministic:         yes для всех 18 кодов — закрытие
                                               через binding KAT vectors
                                               (план II.3, conformance status
@@ -2854,8 +2854,8 @@ Vector C-0x20 (BundledConfirmation)
   Input payload: см. spec «Confirmations» BundledConfirmation layout
   Expected output: TBD-A: C-0x20
 
-Vector C-0x21 (VDF_Reveal)
-  Input payload: см. spec «Валидация VDF_Reveal» layout
+Vector C-0x21 (SSHA_Reveal)
+  Input payload: см. spec «Валидация SSHA_Reveal» layout
   Expected output: TBD-A: C-0x21
 
 Vector C-0x22 (Proposal)

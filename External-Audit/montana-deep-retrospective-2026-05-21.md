@@ -7,9 +7,9 @@ Generated 2026-05-21T19:40:02Z on Moscow orchestrator.
 | Node | Phase | current_window | uptime since | CPU 1-min load |
 |------|-------|----------------|--------------|----------------|
 | moscow | Active | 75849 | Thu 2026-05-21 22:24:54 MSK |  3.97 |
-| frankfurt | CandidateVdf | 75847 | Thu 2026-05-21 19:29:17 UTC |  1.22 |
-| helsinki | CandidateVdf | 75787 | Thu 2026-05-21 22:24:15 EEST |  7.68 |
-| armenia | CandidateVdf | 75845 | Thu 2026-05-21 23:26:36 +04 |  1.26 |
+| frankfurt | CandidateSsha | 75847 | Thu 2026-05-21 19:29:17 UTC |  1.22 |
+| helsinki | CandidateSsha | 75787 | Thu 2026-05-21 22:24:15 EEST |  7.68 |
+| armenia | CandidateSsha | 75845 | Thu 2026-05-21 23:26:36 +04 |  1.26 |
 
 ## 2. Heartbeat health (last 1 hour)
 
@@ -108,7 +108,7 @@ Last 3 records (one line per poll):
 
 ```
 0,"closed_5m":0
-0},{"label":"armenia","host":"yerevan","active":"active","window":75845,"phase":"CandidateVdf","D":325000000,"hb_5m":2204,"err_5m":0
+0},{"label":"armenia","host":"yerevan","active":"active","window":75845,"phase":"CandidateSsha","D":325000000,"hb_5m":2204,"err_5m":0
 0,"closed_5m":4}]}
 ```
 

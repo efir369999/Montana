@@ -9,19 +9,19 @@ use mt_consensus::{proposal_hash, ProposalHeader};
 use mt_crypto::{sign, Hash32, Signature, SIGNATURE_SIZE};
 use mt_entry::{
     apply_candidate_expiry, apply_noderegistrations_batch, apply_selection_event,
-    candidate_vdf_init, is_selection_window, nodereg_hash, validate_noderegistration,
+    candidate_ssha_init, is_selection_window, nodereg_hash, validate_noderegistration,
     NodeRegistration,
 };
 use mt_genesis::genesis_params;
 use mt_lottery::{
     bundle_hash, compute_endpoint, quorum, reveal_hash, validate_bundle, validate_reveal,
-    weighted_ticket_node, BundledConfirmation, VdfReveal,
+    weighted_ticket_node, BundledConfirmation, SshaReveal,
 };
 use mt_merkle::{empty_internal, SparseMerkleTree, TREE_DEPTH};
 use mt_net::{MsgType, ProtocolMessage};
 use mt_state::compute_state_root;
 use mt_store::FsStore;
-use mt_timechain::{cemented_bundle_aggregate, next_d, vdf_step};
+use mt_timechain::{cemented_bundle_aggregate, next_d, ssha_step};
 
 use crate::clock::{load_current_window, save_current_window};
 use crate::identity::{default_data_dir, load_identity, NodeError};
@@ -127,24 +127,24 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     let is_genesis_member = is_genesis || state.nodes.contains(&my_node);
 
     // Phase Bootstrap = первая загрузка. Genesis-член (bootstrap или genesis cohort,
-    // уже активный в NodeTable) → сразу Active. Прочие узлы → CandidateVdf
+    // уже активный в NodeTable) → сразу Active. Прочие узлы → CandidateSsha
     // с target_chain_length = τ₂ и w_start = текущее окно + 1.
     if lifecycle.phase == NodePhase::Bootstrap {
         if is_genesis_member {
             lifecycle.phase = NodePhase::Active;
         } else if args.enable_candidate {
-            lifecycle.phase = NodePhase::CandidateVdf;
-            lifecycle.target_chain_length = params.vdf_entry_windows;
+            lifecycle.phase = NodePhase::CandidateSsha;
+            lifecycle.target_chain_length = params.ssha_entry_windows;
             lifecycle.w_start = current.saturating_add(1);
             lifecycle.candidate_progress = 0;
             // candidate_endpoint начинается с T_r текущего timechain — это
             // canonical seed для chain старта; на каждом окне ticks через
-            // vdf_step_chunked в Active phase code path ниже.
+            // ssha_step_chunked в Active phase code path ниже.
             lifecycle.candidate_endpoint = timechain.t_r;
         } else {
             // Candidates disabled («пока»): non-genesis node is a pure observer —
             // Registered is a no-op phase in the consensus loop, so the node only
-            // fast-syncs the canonical chain and emits heartbeats. No VDF ticking,
+            // fast-syncs the canonical chain and emits heartbeats. No SSHA ticking,
             // no NodeRegistration. Flip with --enable-candidate to rejoin admission.
             lifecycle.phase = NodePhase::Registered;
         }
@@ -173,7 +173,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     } else {
         println!("stop_at          : Ctrl-C");
     }
-    if lifecycle.phase == NodePhase::CandidateVdf {
+    if lifecycle.phase == NodePhase::CandidateSsha {
         let remaining = lifecycle
             .target_chain_length
             .saturating_sub(lifecycle.candidate_progress);
@@ -210,11 +210,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // Active node can compute proposer_W = winner_{W-2} for its own window decisions.
     // Genesis bootstrap rule: proposer_0 и proposer_1 = bootstrap-узел.
     let mut winner_history: BTreeMap<u64, mt_state::NodeId> = BTreeMap::new();
-    // DEV-020: per-window reveal pool, keyed by (window_index → (node_id → VdfReveal)).
-    // Все Active узлы публикуют собственный Reveal каждое окно через MsgType::VdfReveal.
+    // DEV-020: per-window reveal pool, keyed by (window_index → (node_id → SshaReveal)).
+    // Все Active узлы публикуют собственный Reveal каждое окно через MsgType::SshaReveal.
     // Proposer на cement-time собирает cemented Reveal-ы (те, чей reveal_hash вошёл в
     // 67% chain_length BC) и вычисляет winner = argmin(weighted_ticket_node) per spec.
-    let mut reveal_pool: BTreeMap<u64, BTreeMap<mt_state::NodeId, VdfReveal>> = BTreeMap::new();
+    let mut reveal_pool: BTreeMap<u64, BTreeMap<mt_state::NodeId, SshaReveal>> = BTreeMap::new();
 
     // DEV-012 multi-confirmer: per-window accumulator of BCs from Active peers.
     // Keyed by window then node_id so duplicates from same node deduplicate.
@@ -344,7 +344,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             // параллельно — вычитка сети между порциями витка.
             let tick_seed = timechain.t_r;
             let tick_t0 = Instant::now();
-            let next_t_r = vdf_step_chunked(
+            let next_t_r = ssha_step_chunked(
                 &tick_seed,
                 effective_d,
                 "TimeChain SSHA",
@@ -380,7 +380,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         }
 
         // Каждый Active узел публикует артефакты окна от канонических часов:
-        // билет (VDF_Reveal) окна next_window + подтверждение
+        // билет (SSHA_Reveal) окна next_window + подтверждение
         // (BundledConfirmation) с хэшами билетов предыдущего окна. Билет окна
         // next_window цементируется уликами окна next_window+1, поэтому
         // публикация уместна и тогда, когда часы продвинул конверт из сети.
@@ -411,9 +411,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         }
 
         match lifecycle.phase {
-            NodePhase::Bootstrap => unreachable!("Bootstrap → CandidateVdf transition выше"),
-            NodePhase::CandidateVdf => {
-                lifecycle.candidate_endpoint = vdf_step_chunked(
+            NodePhase::Bootstrap => unreachable!("Bootstrap → CandidateSsha transition выше"),
+            NodePhase::CandidateSsha => {
+                lifecycle.candidate_endpoint = ssha_step_chunked(
                     &lifecycle.candidate_endpoint,
                     effective_d,
                     "Candidate SSHA",
@@ -429,7 +429,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     let cba_w_start_minus_2 =
                         cba_from(&bc_set_history, lifecycle.w_start.saturating_sub(2));
                     let proof_endpoint =
-                        candidate_vdf_init(&timechain.t_r, &cba_w_start_minus_2, &my_node);
+                        candidate_ssha_init(&timechain.t_r, &cba_w_start_minus_2, &my_node);
 
                     let mut nr = NodeRegistration {
                         suite_id: identity.suite_id as u16,
@@ -437,7 +437,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         operator_account_id: my_account,
                         proof_endpoint,
                         w_start: lifecycle.w_start,
-                        vdf_chain_length: lifecycle.candidate_progress,
+                        ssha_chain_length: lifecycle.candidate_progress,
                         signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
                     };
                     let mut scope = Vec::new();
@@ -478,7 +478,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     lifecycle.registration_window = next_window;
                     lifecycle.phase = NodePhase::Registered;
                     println!(
-                        "[register W={next_window}] nodereg_hash={} | vdf_chain_length={}",
+                        "[register W={next_window}] nodereg_hash={} | ssha_chain_length={}",
                         hex16(&lifecycle.nodereg_hash),
                         lifecycle.candidate_progress
                     );
@@ -802,14 +802,14 @@ fn install_shutdown_handlers() {
     }
 }
 
-// Декомпозиция vdf_step(prev, d) на chunks с прогрессом в stdout.
+// Декомпозиция ssha_step(prev, d) на chunks с прогрессом в stdout.
 // Корректность byte-exact: SHA-256^d ассоциативно по composition,
-// vdf_step(vdf_step(x, a), b) = vdf_step(x, a + b) для a + b = d.
+// ssha_step(ssha_step(x, a), b) = ssha_step(x, a + b) для a + b = d.
 //
 // Boundaries вычисляются как (d × i) / N — точно делит D на N равных
 // долей даже при D не кратном N (последняя chunk может быть на 1 итерацию
 // больше из-за rounding, но проценты в выводе всегда точно 10, 20, …, 100).
-const VDF_PROGRESS_CHUNKS: u64 = 10;
+const SSHA_PROGRESS_CHUNKS: u64 = 10;
 
 /// Тайм-аут молчания ведущего: после стольких секунд без цементирования
 /// каскад запасных сдвигается на одну позицию (спецификация «Fallback cascade»).
@@ -845,7 +845,7 @@ struct NetCtx<'a> {
     timechain: &'a mut TimeChainState,
     recent_roots: &'a mut BTreeMap<u64, Hash32>,
     t_r_history: &'a mut BTreeMap<u64, Hash32>,
-    reveal_pool: &'a mut BTreeMap<u64, BTreeMap<mt_state::NodeId, VdfReveal>>,
+    reveal_pool: &'a mut BTreeMap<u64, BTreeMap<mt_state::NodeId, SshaReveal>>,
     bc_accumulator: &'a mut BTreeMap<u64, BTreeMap<mt_state::NodeId, BundledConfirmation>>,
     winner_history: &'a mut BTreeMap<u64, mt_state::NodeId>,
     lottery_history: &'a mut BTreeMap<u64, Vec<mt_lottery::Candidate>>,
@@ -1017,7 +1017,7 @@ fn weighted_cemented_hashes(
 /// Отсортированный список кандидатов розыгрыша окна w из локального пула,
 /// ограниченный данным набором зацементированных хэшей.
 fn candidates_from_pool(
-    pool: Option<&BTreeMap<mt_state::NodeId, VdfReveal>>,
+    pool: Option<&BTreeMap<mt_state::NodeId, SshaReveal>>,
     cemented: &[Hash32],
     nodes: &mt_state::NodeTable,
 ) -> Vec<mt_lottery::Candidate> {
@@ -1563,8 +1563,8 @@ fn handle_protocol_message(
                 }
             }
         },
-        MsgType::VdfReveal => {
-            if let Ok((rec_reveal, _)) = VdfReveal::decode(&msg.payload) {
+        MsgType::SshaReveal => {
+            if let Ok((rec_reveal, _)) = SshaReveal::decode(&msg.payload) {
                 let rw = rec_reveal.window_index;
                 if !ctx.t_r_history.contains_key(&rw) && rw > ctx.timechain.last_window {
                     // Часы этого окна нам ещё неизвестны — отложить до своего витка.
@@ -1702,13 +1702,13 @@ fn handle_protocol_message(
 }
 
 /// Публикация артефактов окна w от собственных канонических часов:
-/// билет розыгрыша (VDF_Reveal) окна w и подтверждение (BundledConfirmation)
+/// билет розыгрыша (SSHA_Reveal) окна w и подтверждение (BundledConfirmation)
 /// окна w с хэшами билетов окна w-1 — спецификация «Confirmations»:
-/// «Bundle содержит операции текущего окна W и VDF_Reveals предыдущего окна W-1».
+/// «Bundle содержит операции текущего окна W и SSHA_Reveals предыдущего окна W-1».
 #[allow(clippy::too_many_arguments)]
 fn publish_window_artifacts(
     state: &LocalState,
-    reveal_pool: &mut BTreeMap<u64, BTreeMap<mt_state::NodeId, VdfReveal>>,
+    reveal_pool: &mut BTreeMap<u64, BTreeMap<mt_state::NodeId, SshaReveal>>,
     bc_accumulator: &mut BTreeMap<u64, BTreeMap<mt_state::NodeId, BundledConfirmation>>,
     own_bc_cache: &mut BTreeMap<u64, BundledConfirmation>,
     bc_set_history: &BTreeMap<u64, Vec<mt_state::NodeId>>,
@@ -1722,7 +1722,7 @@ fn publish_window_artifacts(
     let cba = cba_from(bc_set_history, w.saturating_sub(2));
     let endpoint = compute_endpoint(t_r_w, &cba, &my_node, w);
     // Спецификация: «Если weighted_ticket_node < target — узел кандидат и
-    // публикует VDF_Reveal». Подтверждение окна публикуется всегда.
+    // публикует SSHA_Reveal». Подтверждение окна публикуется всегда.
     let is_candidate = state
         .nodes
         .get(&my_node)
@@ -1731,7 +1731,7 @@ fn publish_window_artifacts(
             weighted_ticket_node(&endpoint, n.chain_length, snapshot) < lottery_target
         })
         .unwrap_or(false);
-    let mut reveal = VdfReveal {
+    let mut reveal = SshaReveal {
         node_id: my_node,
         window_index: w,
         endpoint,
@@ -1751,7 +1751,7 @@ fn publish_window_artifacts(
         if let Some(tx) = broadcast_tx {
             let mut payload = Vec::new();
             reveal.encode(&mut payload);
-            let _ = tx.send(ProtocolMessage::new(MsgType::VdfReveal, w, payload));
+            let _ = tx.send(ProtocolMessage::new(MsgType::SshaReveal, w, payload));
         }
     } else {
         eprintln!("[lottery] окно {w}: взвешенный билет выше цели — не кандидат");
@@ -1814,7 +1814,7 @@ fn drain_network(ctx: &mut NetCtx, handle: &mut NetworkHandle) -> Result<(), Nod
     Ok(())
 }
 
-fn vdf_step_chunked<F: FnMut()>(
+fn ssha_step_chunked<F: FnMut()>(
     prev: &Hash32,
     d: u64,
     label: &str,
@@ -1828,15 +1828,15 @@ fn vdf_step_chunked<F: FnMut()>(
     let chunk_start = Instant::now();
     let mut prev_boundary: u64 = 0;
     use std::io::Write;
-    for i in 1..=VDF_PROGRESS_CHUNKS {
+    for i in 1..=SSHA_PROGRESS_CHUNKS {
         // Boundary распределяет D ровно: (d × i) / N (overflow безопасен:
         // d ≤ 2^32 typical, × N=10 ≤ 2^36).
-        let boundary = d.saturating_mul(i) / VDF_PROGRESS_CHUNKS;
+        let boundary = d.saturating_mul(i) / SSHA_PROGRESS_CHUNKS;
         let this_chunk = boundary - prev_boundary;
-        current = vdf_step(&current, this_chunk);
+        current = ssha_step(&current, this_chunk);
         prev_boundary = boundary;
         on_chunk();
-        let percent = (i * 100) / VDF_PROGRESS_CHUNKS;
+        let percent = (i * 100) / SSHA_PROGRESS_CHUNKS;
         let bar = progress_bar(boundary, d, 30);
         let elapsed = chunk_start.elapsed().as_secs_f64();
         let line = format!(
@@ -1851,7 +1851,7 @@ fn vdf_step_chunked<F: FnMut()>(
         // строке. Финал на 100% chunk завершается `\n`. Работает одинаково
         // в TTY (cursor возврат) и при просмотре через `tail -F` (терминал
         // рендерит `\r` как возврат курсора → animated bar).
-        if i == VDF_PROGRESS_CHUNKS {
+        if i == SSHA_PROGRESS_CHUNKS {
             println!("\r{line}");
         } else {
             print!("\r{line}");

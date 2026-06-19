@@ -47,11 +47,11 @@ pub mod domain {
     pub const NODEREG: &[u8] = b"mt-nodereg";
     pub const PROPOSAL: &[u8] = b"mt-proposal";
     pub const BUNDLE: &[u8] = b"mt-bundle";
-    pub const VDF_REVEAL: &[u8] = b"mt-vdf-reveal";
+    pub const SSHA_REVEAL: &[u8] = b"mt-ssha-reveal";
 
     // Account/Node derivation
     pub const ACCOUNT: &[u8] = b"mt-account";
-    pub const CANDIDATE_VDF_INIT: &[u8] = b"mt-candidate-vdf-init";
+    pub const CANDIDATE_SSHA_INIT: &[u8] = b"mt-candidate-ssha-init";
     pub const MERKLE_LEAF: &[u8] = b"mt-merkle-leaf";
     pub const MERKLE_NODE: &[u8] = b"mt-merkle-node";
     pub const STATE_ROOT: &[u8] = b"mt-state-root";
@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(domain::NODEREG, b"mt-nodereg");
         assert_eq!(domain::PROPOSAL, b"mt-proposal");
         assert_eq!(domain::BUNDLE, b"mt-bundle");
-        assert_eq!(domain::VDF_REVEAL, b"mt-vdf-reveal");
+        assert_eq!(domain::SSHA_REVEAL, b"mt-ssha-reveal");
     }
 
     #[test]
@@ -224,8 +224,8 @@ mod tests {
     }
 
     #[test]
-    fn domain_candidate_vdf_init_ascii() {
-        assert_eq!(domain::CANDIDATE_VDF_INIT, b"mt-candidate-vdf-init");
+    fn domain_candidate_ssha_init_ascii() {
+        assert_eq!(domain::CANDIDATE_SSHA_INIT, b"mt-candidate-ssha-init");
     }
 
     #[test]
@@ -261,9 +261,9 @@ mod tests {
             domain::NODEREG,
             domain::PROPOSAL,
             domain::BUNDLE,
-            domain::VDF_REVEAL,
+            domain::SSHA_REVEAL,
             domain::ACCOUNT,
-            domain::CANDIDATE_VDF_INIT,
+            domain::CANDIDATE_SSHA_INIT,
             domain::MERKLE_LEAF,
             domain::MERKLE_NODE,
             domain::STATE_ROOT,

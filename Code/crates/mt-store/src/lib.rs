@@ -248,7 +248,7 @@ fn decode_node_record(bytes: &[u8]) -> Result<NodeRecord, StoreError> {
 
 // CandidateRecord fixed-size decode (CANDIDATE_RECORD_SIZE = 2082 B под ML-DSA-65):
 //   node_id 32 + node_pubkey 1952 + suite_id 2 + operator_account_id 32
-//   + proof_endpoint 32 + w_start 8 + vdf_chain_length 8
+//   + proof_endpoint 32 + w_start 8 + ssha_chain_length 8
 //   + registration_window 8 + expires 8
 fn decode_candidate_record(bytes: &[u8]) -> Result<CandidateRecord, StoreError> {
     if bytes.len() != CANDIDATE_RECORD_SIZE {
@@ -265,7 +265,7 @@ fn decode_candidate_record(bytes: &[u8]) -> Result<CandidateRecord, StoreError> 
     let proof_endpoint = read_32_at(bytes, 66 + PUBLIC_KEY_SIZE);
     let base = 98 + PUBLIC_KEY_SIZE;
     let w_start = read_u64_at(bytes, base);
-    let vdf_chain_length = read_u64_at(bytes, base + 8);
+    let ssha_chain_length = read_u64_at(bytes, base + 8);
     let registration_window = read_u64_at(bytes, base + 16);
     let expires = read_u64_at(bytes, base + 24);
     Ok(CandidateRecord {
@@ -275,7 +275,7 @@ fn decode_candidate_record(bytes: &[u8]) -> Result<CandidateRecord, StoreError> 
         operator_account_id,
         proof_endpoint,
         w_start,
-        vdf_chain_length,
+        ssha_chain_length,
         registration_window,
         expires,
     })
@@ -619,7 +619,7 @@ mod tests {
             operator_account_id: [seed; 32],
             proof_endpoint: [seed; 32],
             w_start: seed as u64,
-            vdf_chain_length: seed as u64 * 1000,
+            ssha_chain_length: seed as u64 * 1000,
             registration_window: seed as u64,
             expires: seed as u64 + 10_000,
         }

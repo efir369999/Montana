@@ -65,10 +65,10 @@ def run() -> dict:
         hash_with_domain(b"mt-lottery", t_r, cba, node_id, w_le).hex()
     )
 
-    # --- mt-entry::candidate_vdf_init ---
-    # spec: SHA-256("mt-candidate-vdf-init" || NUL || timechain || cba || node_id)
-    results["candidate_vdf_init(t_r=11..,cba=22..,node_id=33..)"] = (
-        hash_with_domain(b"mt-candidate-vdf-init", t_r, cba, node_id).hex()
+    # --- mt-entry::candidate_ssha_init ---
+    # spec: SHA-256("mt-candidate-ssha-init" || NUL || timechain || cba || node_id)
+    results["candidate_ssha_init(t_r=11..,cba=22..,node_id=33..)"] = (
+        hash_with_domain(b"mt-candidate-ssha-init", t_r, cba, node_id).hex()
     )
 
     # --- mt-entry::selection_sort_key ---
@@ -88,9 +88,9 @@ def run() -> dict:
     # Three different domains для same (t_r, cba, node_id) input — must produce
     # 3 different outputs (NUL pattern + domain isolation).
     sel = hash_with_domain(b"mt-selection", t_r, cba, node_id)
-    vdf = hash_with_domain(b"mt-candidate-vdf-init", t_r, cba, node_id)
+    ssha = hash_with_domain(b"mt-candidate-ssha-init", t_r, cba, node_id)
     nr = hash_with_domain(b"mt-nodereg-sort", t_r, cba, pubkey)
-    distinct = (sel != vdf) and (vdf != nr) and (sel != nr)
+    distinct = (sel != ssha) and (ssha != nr) and (sel != nr)
     results["distinct_domains_for_three_compositions"] = "PASS" if distinct else "FAIL"
 
     # --- compute_endpoint dependencies (each input change → different output) ---

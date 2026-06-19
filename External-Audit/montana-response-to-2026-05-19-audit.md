@@ -13,7 +13,7 @@ This document is the Montana project's formal response to the 19 May 2026 consol
 
 | ID | Audit severity | Verified severity | Disposition |
 |----|----------------|-------------------|-------------|
-| WP-1 VDF terminology | Critical | Critical | Accept and fix |
+| WP-1 SSHA terminology | Critical | Critical | Accept and fix |
 | WP-2 PQ claim partially incorrect | Critical | Critical | Accept and fix |
 | WP-3 Sybil math | Critical | Critical | Accept and fix |
 | WP-4 Missing threat model | High | High | Accept and fix |
@@ -36,9 +36,9 @@ This document is the Montana project's formal response to the 19 May 2026 consol
 
 The following four critical findings are accepted in full. They are addressed in the whitepaper revision committed alongside this response.
 
-### 1.1 WP-1 — VDF terminology
+### 1.1 WP-1 — SSHA terminology
 
-**Accepted.** Cited works (Boneh et al. CRYPTO 2018; Pietrzak ITCS 2019; Wesolowski EUROCRYPT 2019) define verifiable delay functions as having sublinear verification — O(log T) or O(1) — typically via RSA groups or class groups of imaginary quadratic fields. Montana's primitive is iterated SHA-256 with verification cost O(D) per window, equal to computation cost. This is a sequential delay function, not a VDF in the sense of the cited literature.
+**Accepted.** Cited works (Boneh et al. CRYPTO 2018; Pietrzak ITCS 2019; Wesolowski EUROCRYPT 2019) define verifiable delay functions as having sublinear verification — O(log T) or O(1) — typically via RSA groups or class groups of imaginary quadratic fields. Montana's primitive is iterated SHA-256 with verification cost O(D) per window, equal to computation cost. This is a sequential delay function, not a SSHA in the sense of the cited literature.
 
 Whitepaper change:
 - Terminology shifted to "sequential delay function over SHA-256" with explicit acknowledgment that verification cost equals computation cost.
@@ -61,7 +61,7 @@ Whitepaper change:
 
 ### 1.3 WP-3 — Sybil analysis math
 
-**Accepted.** The sentence "producing N false identities requires N candidate chains, each consuming N times the wall-clock time" is arithmetically incorrect. Each candidate VDF chain has a fixed wall-clock cost T regardless of N. Total cost scales linearly in hardware (N machines compute N chains in parallel at wall-clock T with N × T machine-hours) or linearly in time (one machine computes N chains sequentially at N × T wall-clock). The product N × N does not arise.
+**Accepted.** The sentence "producing N false identities requires N candidate chains, each consuming N times the wall-clock time" is arithmetically incorrect. Each candidate SSHA chain has a fixed wall-clock cost T regardless of N. Total cost scales linearly in hardware (N machines compute N chains in parallel at wall-clock T with N × T machine-hours) or linearly in time (one machine computes N chains sequentially at N × T wall-clock). The product N × N does not arise.
 
 Whitepaper change:
 - Section 3 rewritten to state the correct linear scaling and to clarify that Sybil resistance derives from hardware cost combined with per-identity protocol rate limits, not from time-non-parallelizability across identities.
@@ -74,7 +74,7 @@ Content:
 - Attacker classes: profit-seeking, sabotage, state-level adversary.
 - Honest-majority assumption: > 67% of total active_chain_length controlled by honest operators (quorum-weighted, not headcount).
 - Hardware-bounded influence: attacker advantage scales linearly with hardware budget, not with token holdings.
-- Failure conditions: when adversary controls > 50% persistent VDF compute and ChainLength-weighted operator share simultaneously.
+- Failure conditions: when adversary controls > 50% persistent SSHA compute and ChainLength-weighted operator share simultaneously.
 - Out of scope: application-layer metadata anonymity beyond Anchor encryption (the network observes operation timing and counts even when content is encrypted). Transport-layer confidentiality against quantum adversaries is in scope and is closed by Noise_PQ XX as the production handshake.
 
 ---

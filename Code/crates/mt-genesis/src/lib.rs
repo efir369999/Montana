@@ -14,7 +14,7 @@ use mt_crypto::{hash, Hash32, PUBLIC_KEY_SIZE};
 // PARAMS_ENCODED_SIZE: layout sum для protocol_params (см. spec раздел "Указ Генезиса").
 // Layout (LE):
 // d0(8) + reserved(8) + tau2(8) + emission(16) + target_zero(32) + quorum_num(1)
-// + quorum_den(1) + dead_zone(2+2) + d_adj(2+2) + vdf_entry(8) + sel_interval(8)
+// + quorum_den(1) + dead_zone(2+2) + d_adj(2+2) + ssha_entry(8) + sel_interval(8)
 // + admission_divisor(8) + cand_expiry(8) + adapt_thr(2) + adapt_mult(2) + pruning(8)
 // + pow(4) + max_payload(4) + max_sf(4) + bootstrap_account_pk(1952)
 // + bootstrap_node_pk(1952) + n_seed(2) + app_id(32) + content_hash(32)
@@ -39,7 +39,7 @@ pub const BOOTSTRAP_ACCOUNT_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
 pub const BOOTSTRAP_NODE_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
     include_bytes!("../include/bootstrap-node-pk.bin");
 
-/// 32 байта initial VDF target. SHA-256("mt-genesis" || account_pk || node_pk
+/// 32 байта initial SSHA target. SHA-256("mt-genesis" || account_pk || node_pk
 /// || "montana-genesis-mainnet-2026-06-11").
 pub const TARGET_ZERO_BYTES: [u8; 32] = [
     0x31, 0x30, 0xB7, 0xD8, 0x5F, 0x4A, 0x41, 0xB9, 0xFB, 0xD3, 0xEC, 0xE4, 0x70, 0xC8, 0x8A, 0x29,
@@ -66,7 +66,7 @@ pub struct ProtocolParams {
     pub participation_dead_zone_high: u16,
     pub d_adjustment_rate_num: u16,
     pub d_adjustment_rate_den: u16,
-    pub vdf_entry_windows: u64,
+    pub ssha_entry_windows: u64,
     pub selection_interval: u64,
     // spec v33.1.6+: slots = max(1, floor(active_nodes / admission_divisor))
     // per selection event. Pin 130 даёт 1/130 ≈ 0.77% steady-state admission
@@ -74,8 +74,8 @@ pub struct ProtocolParams {
     // mt-entry::ADMISSION_DIVISOR (M4-LOW-7 closure).
     pub admission_divisor: u64,
     pub candidate_expiry_windows: u64,
-    pub adaptive_vdf_threshold: u16,
-    pub adaptive_vdf_multiplier: u16,
+    pub adaptive_ssha_threshold: u16,
+    pub adaptive_ssha_multiplier: u16,
     pub pruning_idle_windows: u64,
     pub bootstrap_pow_difficulty: u32,
     pub max_protocol_payload_bytes: u32,
@@ -101,12 +101,12 @@ impl CanonicalEncode for ProtocolParams {
         write_u16(buf, self.participation_dead_zone_high);
         write_u16(buf, self.d_adjustment_rate_num);
         write_u16(buf, self.d_adjustment_rate_den);
-        write_u64(buf, self.vdf_entry_windows);
+        write_u64(buf, self.ssha_entry_windows);
         write_u64(buf, self.selection_interval);
         write_u64(buf, self.admission_divisor);
         write_u64(buf, self.candidate_expiry_windows);
-        write_u16(buf, self.adaptive_vdf_threshold);
-        write_u16(buf, self.adaptive_vdf_multiplier);
+        write_u16(buf, self.adaptive_ssha_threshold);
+        write_u16(buf, self.adaptive_ssha_multiplier);
         write_u64(buf, self.pruning_idle_windows);
         write_u32(buf, self.bootstrap_pow_difficulty);
         write_u32(buf, self.max_protocol_payload_bytes);
@@ -143,14 +143,14 @@ pub fn genesis_params() -> &'static ProtocolParams {
         d_adjustment_rate_num: 3,
         d_adjustment_rate_den: 100,
         // TEST CONFIG (devnet, spec 2387): кандидат входит за 1 окно.
-        // БОЕВОЙ = 20_160 (= τ₂). Развязано от tau2_windows в required_vdf_length.
-        vdf_entry_windows: 1,
+        // БОЕВОЙ = 20_160 (= τ₂). Развязано от tau2_windows в required_ssha_length.
+        ssha_entry_windows: 1,
         // TEST CONFIG: приём в Active каждое окно. БОЕВОЙ = 336.
         selection_interval: 1,
         admission_divisor: 130,
         candidate_expiry_windows: 60_480,
-        adaptive_vdf_threshold: 1,
-        adaptive_vdf_multiplier: 100,
+        adaptive_ssha_threshold: 1,
+        adaptive_ssha_multiplier: 100,
         pruning_idle_windows: 80_640,
         bootstrap_pow_difficulty: 65_536,
         max_protocol_payload_bytes: 1_048_576,
@@ -160,7 +160,7 @@ pub fn genesis_params() -> &'static ProtocolParams {
         // spec "N_SEED ... 0 для reference singleton": the reference mainnet is
         // a singleton genesis — bootstrap is the sole genesis Active operator
         // (sole canonical proposer, quorum=1, singleton-cementing). Every other
-        // operator joins post-genesis via the standard CandidateVdf → Registered
+        // operator joins post-genesis via the standard CandidateSsha → Registered
         // → Active admission path.
         n_seed: 0,
         genesis_active_operators: vec![],
@@ -181,7 +181,7 @@ pub fn compute_genesis_state_hash(state_root: &Hash32, params: &ProtocolParams) 
 // non-placeholder values (non-zero):
 //   - bootstrap_account_pubkey
 //   - bootstrap_node_pubkey
-//   - target_zero (initial VDF target)
+//   - target_zero (initial SSHA target)
 //   - genesis_content_data_hash
 //
 // До mainnet ceremony — возвращает false (поля = placeholders [0; N]).
@@ -222,12 +222,12 @@ mod tests {
         assert_eq!(p.participation_dead_zone_high, 95);
         assert_eq!(p.d_adjustment_rate_num, 3);
         assert_eq!(p.d_adjustment_rate_den, 100);
-        assert_eq!(p.vdf_entry_windows, 20_160);
+        assert_eq!(p.ssha_entry_windows, 20_160);
         assert_eq!(p.selection_interval, 336);
         assert_eq!(p.admission_divisor, 130);
         assert_eq!(p.candidate_expiry_windows, 60_480);
-        assert_eq!(p.adaptive_vdf_threshold, 1);
-        assert_eq!(p.adaptive_vdf_multiplier, 100);
+        assert_eq!(p.adaptive_ssha_threshold, 1);
+        assert_eq!(p.adaptive_ssha_multiplier, 100);
         assert_eq!(p.pruning_idle_windows, 80_640);
         assert_eq!(p.bootstrap_pow_difficulty, 65_536);
         assert_eq!(p.max_protocol_payload_bytes, 1_048_576);
@@ -240,9 +240,9 @@ mod tests {
     }
 
     #[test]
-    fn tau2_equals_vdf_entry() {
+    fn tau2_equals_ssha_entry() {
         let p = genesis_params();
-        assert_eq!(p.tau2_windows, p.vdf_entry_windows);
+        assert_eq!(p.tau2_windows, p.ssha_entry_windows);
     }
 
     #[test]
@@ -358,7 +358,7 @@ mod tests {
             |p| p.participation_dead_zone_high = 96,
             |p| p.selection_interval = 370,
             |p| p.candidate_expiry_windows += 1,
-            |p| p.adaptive_vdf_multiplier = 101,
+            |p| p.adaptive_ssha_multiplier = 101,
             |p| p.pruning_idle_windows += 1,
             |p| p.bootstrap_account_pubkey[0] = 0xFF,
             |p| p.bootstrap_node_pubkey[0] = 0xFF,

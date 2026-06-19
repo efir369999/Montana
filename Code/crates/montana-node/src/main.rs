@@ -77,7 +77,7 @@ fn help_text() -> String {
          \n\
            status    Показать содержимое локального state: AccountTable,\n\
                      NodeTable, CandidatePool, статус узла, current_window,\n\
-                     phase lifecycle (Bootstrap/CandidateVdf/Registered/Active),\n\
+                     phase lifecycle (Bootstrap/CandidateSsha/Registered/Active),\n\
                      supply, балансы.\n\
          \n\
            time      Показать current_window локального узла, ближайшее\n\
@@ -85,14 +85,14 @@ fn help_text() -> String {
          \n\
            start     БОЕВОЙ РЕЖИМ — запуск узла Montana через canonical\n\
                      apply_proposal pipeline. Узел проходит lifecycle:\n\
-                       Bootstrap → CandidateVdf (тикает VDF до vdf_chain_length\n\
+                       Bootstrap → CandidateSsha (тикает SSHA до ssha_chain_length\n\
                                                    ≥ τ₂ = 20160 окон, ~10 часов\n\
                                                    wall-clock на M-class Mac)\n\
-                       CandidateVdf → Registered (формирует NodeRegistration\n\
+                       CandidateSsha → Registered (формирует NodeRegistration\n\
                                                    через apply_noderegistrations_batch)\n\
                        Registered → Active (через apply_selection_event на\n\
                                             следующем W % 336 == 0)\n\
-                       Active: per окно VdfReveal + BundledConfirmation +\n\
+                       Active: per окно SshaReveal + BundledConfirmation +\n\
                                ProposalHeader + apply_proposal + archive_proposal,\n\
                                state_root self-verify, эмиссия 13 Ɉ оператору\n\
                      Ctrl-C — корректная остановка с сохранением state.\n\

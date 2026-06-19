@@ -253,7 +253,7 @@ mod tests {
             operator_account_id: [seed; 32],
             proof_endpoint: [seed; 32],
             w_start: 0,
-            vdf_chain_length: 20_160,
+            ssha_chain_length: 20_160,
             registration_window: seed as u64,
             expires: 90_480,
         };
@@ -534,7 +534,7 @@ mod wire_tests {
             operator_account_id: [seed; 32],
             proof_endpoint: [seed; 32],
             w_start: 0,
-            vdf_chain_length: 20_160,
+            ssha_chain_length: 20_160,
             registration_window: seed as u64,
             expires: 90_480,
         }

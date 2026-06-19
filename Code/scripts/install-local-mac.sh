@@ -104,7 +104,7 @@ fi
 # Cross-machine / test overrides (опционально, через env):
 #   MONTANA_GENESIS_MANIFEST=/path  → узел входит в сеть (--listen + --genesis-manifest)
 #   MONTANA_LISTEN=/ip4/0.0.0.0/tcp/8444  (default если задан manifest)
-#   MONTANA_D_TEST_OVERRIDE=N  → TEST-ONLY быстрый VDF (одинаков на всех узлах когорты)
+#   MONTANA_D_TEST_OVERRIDE=N  → TEST-ONLY быстрый SSHA (одинаков на всех узлах когорты)
 EXTRA_ARGS_XML=""
 if [ -n "${MONTANA_GENESIS_MANIFEST:-}" ]; then
   L="${MONTANA_LISTEN:-/ip4/0.0.0.0/tcp/8444}"
@@ -212,8 +212,8 @@ log "  launchctl unload \"$PLIST_PATH\"             # остановить уз�
 log "  launchctl load -w \"$PLIST_PATH\"            # запустить заново"
 log ""
 log "Жизненный цикл узла (canonical apply_proposal pipeline byte-exact spec):"
-log "  Phase 1: Bootstrap → CandidateVdf  (~10 часов VDF до vdf_chain_length ≥ τ₂)"
-log "  Phase 2: CandidateVdf → Registered (apply_noderegistrations_batch)"
+log "  Phase 1: Bootstrap → CandidateSsha  (~10 часов SSHA до ssha_chain_length ≥ τ₂)"
+log "  Phase 2: CandidateSsha → Registered (apply_noderegistrations_batch)"
 log "  Phase 3: Registered → Active       (apply_selection_event на W % 336 == 0)"
 log "  Phase 4: Active                    (13 Ɉ per окно через apply_proposal)"
 log ""

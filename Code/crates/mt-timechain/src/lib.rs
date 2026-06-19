@@ -1,4 +1,4 @@
-// spec: разделы "Двигатели → TimeChain VDF — осциллятор", "Адаптация D через
+// spec: разделы "Двигатели → TimeChain SSHA — осциллятор", "Адаптация D через
 // participation-ratio feedback", "Cemented bundle aggregate"
 
 use mt_codec::{domain, write_u64};
@@ -9,25 +9,25 @@ use sha2::{Digest, Sha256};
 
 pub type WindowIndex = u64;
 
-// Upper bound on the per-window VDF iteration count accepted by both
-// vdf_step (consensus path) and vdf_verify (validator path). Honest
+// Upper bound on the per-window SSHA iteration count accepted by both
+// ssha_step (consensus path) and ssha_verify (validator path). Honest
 // production D values live in the [D0/8, D0*8] band (calibrated to one
 // τ₁ window on commodity x86_64); a malicious proposer that forges a
 // header with `d > MAX_D` would be able to wedge every follower's
-// vdf_verify loop for ≈ 2^32 SHA-256 rounds otherwise. Capping at
+// ssha_verify loop for ≈ 2^32 SHA-256 rounds otherwise. Capping at
 // 2^32 - 1 keeps the verifier cost bounded while leaving multiple
 // orders of magnitude of headroom over the calibrated regime.
 pub const MAX_D: u64 = u32::MAX as u64;
 
 // spec: T_r = SHA-256^d(prev). d must satisfy 1 ≤ d ≤ MAX_D; values outside
-// the range are protocol violations and `vdf_step` panics, which is the
+// the range are protocol violations and `ssha_step` panics, which is the
 // correct consensus-halt behaviour on the proposer path (state machine
 // must never run forever / never run zero iterations). Validator path
-// runs through `vdf_verify`, which returns `false` instead of panicking.
-pub fn vdf_step(prev: &Hash32, d: u64) -> Hash32 {
+// runs through `ssha_verify`, which returns `false` instead of panicking.
+pub fn ssha_step(prev: &Hash32, d: u64) -> Hash32 {
     assert!(
         (1..=MAX_D).contains(&d),
-        "vdf_step: d = {d} outside the protocol-accepted band [1, MAX_D = {}]",
+        "ssha_step: d = {d} outside the protocol-accepted band [1, MAX_D = {}]",
         MAX_D
     );
     let mut current = *prev;
@@ -38,15 +38,15 @@ pub fn vdf_step(prev: &Hash32, d: u64) -> Hash32 {
 }
 
 // Validator-side: accepts a proposer's claimed (prev, d, claim) triple and
-// returns whether vdf_step(prev, d) == claim. Returns false for any d
+// returns whether ssha_step(prev, d) == claim. Returns false for any d
 // outside the [1, MAX_D] band, so a malicious proposer cannot wedge the
 // verifier with `d = 0` (trivial identity acceptance) or `d = u64::MAX`
 // (≈ 2^64 SHA-256 rounds per validate call).
-pub fn vdf_verify(prev: &Hash32, d: u64, claim: &Hash32) -> bool {
+pub fn ssha_verify(prev: &Hash32, d: u64, claim: &Hash32) -> bool {
     if !(1..=MAX_D).contains(&d) {
         return false;
     }
-    &vdf_step(prev, d) == claim
+    &ssha_step(prev, d) == claim
 }
 
 // spec: Adaptive D feedback on τ₂ boundary. Integer form per [I-9].
@@ -141,51 +141,51 @@ pub fn cemented_bundle_aggregate(window: WindowIndex, cemented_node_ids: &[NodeI
 mod tests {
     use super::*;
 
-    // ============ VDF ============
+    // ============ SSHA ============
 
-    // Per the MAX_D guard hardening, vdf_step now panics on d outside [1, MAX_D].
-    // vdf_verify returns false for the same range without panic — that is the
+    // Per the MAX_D guard hardening, ssha_step now panics on d outside [1, MAX_D].
+    // ssha_verify returns false for the same range without panic — that is the
     // correct validator-side behaviour on adversarial input.
     #[test]
     #[should_panic(expected = "outside the protocol-accepted band")]
-    fn vdf_step_d_zero_panics() {
+    fn ssha_step_d_zero_panics() {
         let prev = [0xABu8; 32];
-        let _ = vdf_step(&prev, 0);
+        let _ = ssha_step(&prev, 0);
     }
 
     #[test]
     #[should_panic(expected = "outside the protocol-accepted band")]
-    fn vdf_step_d_above_max_panics() {
+    fn ssha_step_d_above_max_panics() {
         let prev = [0xABu8; 32];
-        let _ = vdf_step(&prev, MAX_D + 1);
+        let _ = ssha_step(&prev, MAX_D + 1);
     }
 
     #[test]
-    fn vdf_verify_rejects_d_zero() {
+    fn ssha_verify_rejects_d_zero() {
         let prev = [0xABu8; 32];
         let claim = prev; // identity claim would historically pass for d=0
-        assert!(!vdf_verify(&prev, 0, &claim));
+        assert!(!ssha_verify(&prev, 0, &claim));
     }
 
     #[test]
-    fn vdf_verify_rejects_d_above_max() {
+    fn ssha_verify_rejects_d_above_max() {
         let prev = [0xABu8; 32];
         let bogus = [0u8; 32];
-        assert!(!vdf_verify(&prev, MAX_D + 1, &bogus));
-        assert!(!vdf_verify(&prev, u64::MAX, &bogus));
+        assert!(!ssha_verify(&prev, MAX_D + 1, &bogus));
+        assert!(!ssha_verify(&prev, u64::MAX, &bogus));
     }
 
     #[test]
-    fn vdf_step_d_one_is_single_sha256() {
+    fn ssha_step_d_one_is_single_sha256() {
         let prev = [0xABu8; 32];
         let expected: Hash32 = Sha256::digest(prev).into();
-        assert_eq!(vdf_step(&prev, 1), expected);
+        assert_eq!(ssha_step(&prev, 1), expected);
     }
 
     #[test]
-    fn vdf_step_d_ten_chains_ten_hashes() {
+    fn ssha_step_d_ten_chains_ten_hashes() {
         let prev = [0x01u8; 32];
-        let result = vdf_step(&prev, 10);
+        let result = ssha_step(&prev, 10);
         // Вычислим вручную 10 итераций и сравним
         let mut manual: Hash32 = prev;
         for _ in 0..10 {
@@ -195,34 +195,34 @@ mod tests {
     }
 
     #[test]
-    fn vdf_step_deterministic() {
+    fn ssha_step_deterministic() {
         let prev = [0xCDu8; 32];
-        let a = vdf_step(&prev, 100);
-        let b = vdf_step(&prev, 100);
+        let a = ssha_step(&prev, 100);
+        let b = ssha_step(&prev, 100);
         assert_eq!(a, b);
     }
 
     #[test]
-    fn vdf_verify_roundtrip() {
+    fn ssha_verify_roundtrip() {
         let prev = [0xEFu8; 32];
-        let claim = vdf_step(&prev, 50);
-        assert!(vdf_verify(&prev, 50, &claim));
+        let claim = ssha_step(&prev, 50);
+        assert!(ssha_verify(&prev, 50, &claim));
     }
 
     #[test]
-    fn vdf_verify_rejects_mutated_claim() {
+    fn ssha_verify_rejects_mutated_claim() {
         let prev = [0x11u8; 32];
-        let mut claim = vdf_step(&prev, 25);
+        let mut claim = ssha_step(&prev, 25);
         claim[0] ^= 0xFF;
-        assert!(!vdf_verify(&prev, 25, &claim));
+        assert!(!ssha_verify(&prev, 25, &claim));
     }
 
     #[test]
-    fn vdf_verify_rejects_wrong_d() {
+    fn ssha_verify_rejects_wrong_d() {
         let prev = [0x22u8; 32];
-        let claim = vdf_step(&prev, 10);
-        assert!(!vdf_verify(&prev, 9, &claim));
-        assert!(!vdf_verify(&prev, 11, &claim));
+        let claim = ssha_step(&prev, 10);
+        assert!(!ssha_verify(&prev, 9, &claim));
+        assert!(!ssha_verify(&prev, 11, &claim));
     }
 
     // ============ Adaptive D ============

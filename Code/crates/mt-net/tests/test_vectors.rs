@@ -53,7 +53,7 @@ fn all_18_msg_type_codes_round_trip() {
         (0x04, MsgType::Anchor),
         (0x10, MsgType::NodeRegistration),
         (0x20, MsgType::BundledConfirmation),
-        (0x21, MsgType::VdfReveal),
+        (0x21, MsgType::SshaReveal),
         (0x22, MsgType::Proposal),
         (0x40, MsgType::FastSyncRequest),
         (0x41, MsgType::FastSyncResponse),

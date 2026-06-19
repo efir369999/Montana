@@ -12,7 +12,7 @@
 
 The Montana Protocol is an ambitious post-quantum blockchain project with an unusually mature specification apparatus -- 4,416 lines of protocol specification, 22 critic passes, 15 architecture gates. The protocol specification itself is exceptionally well thought-out for a pre-mainnet project. The whitepaper, however, is in its current form **not ready for publication** on the Metzdowd Cryptography List.
 
-The review identifies three critical technical errors in the whitepaper (incorrect VDF terminology, partially incorrect post-quantum claim, mathematically inconsistent Sybil analysis), several high-severity deficiencies (missing threat model, missing liveness proof, unsubstantiated 1B claim, bootstrap economics unanalyzed), as well as four critical and nine high findings at the implementation level. The central problem: The whitepaper does not correctly represent the actual maturity level of the technical specifications -- the specifications are significantly more mature than the project's public face.
+The review identifies three critical technical errors in the whitepaper (incorrect SSHA terminology, partially incorrect post-quantum claim, mathematically inconsistent Sybil analysis), several high-severity deficiencies (missing threat model, missing liveness proof, unsubstantiated 1B claim, bootstrap economics unanalyzed), as well as four critical and nine high findings at the implementation level. The central problem: The whitepaper does not correctly represent the actual maturity level of the technical specifications -- the specifications are significantly more mature than the project's public face.
 
 ---
 
@@ -20,18 +20,18 @@ The review identifies three critical technical errors in the whitepaper (incorre
 
 *All findings with severity "critical" or "high", consolidated and deduplicated from both review streams.*
 
-### 1.1 Incorrect VDF Terminology (Whitepaper)
+### 1.1 Incorrect SSHA Terminology (Whitepaper)
 
 **Severity:** Critical  
 **Source:** Adversarial Protocol Design Review
 
 The whitepaper claims that SHA-256 sequential hashing is a "Verifiable Delay Function" and cites Boneh et al., Pietrzak, and Wesolowski for this. This is technically incorrect.
 
-VDFs in the sense of the cited literature have the property that verification of an output is substantially faster than computation -- typically O(log T) instead of O(T). Montana has sequential SHA-256 hashing: verification costs O(T), every node must perform all D = 325,000,000 iterations itself. This is sequential proof-of-work, not a VDF.
+SSHAs in the sense of the cited literature have the property that verification of an output is substantially faster than computation -- typically O(log T) instead of O(T). Montana has sequential SHA-256 hashing: verification costs O(T), every node must perform all D = 325,000,000 iterations itself. This is sequential proof-of-work, not a SSHA.
 
 Cryptographers on the Metzdowd list will recognize this immediately. This undermines the credibility of the entire paper.
 
-**Recommendation:** Correct the terminology ("sequential hash chain" instead of "VDF") and remove the incorrect references. The protocol specification itself uses more correct language -- the whitepaper must catch up.
+**Recommendation:** Correct the terminology ("sequential hash chain" instead of "SSHA") and remove the incorrect references. The protocol specification itself uses more correct language -- the whitepaper must catch up.
 
 ---
 
@@ -104,7 +104,7 @@ The calculation P = p^k in Section 12 is insufficient -- it does not explain wha
 **Severity:** High  
 **Source:** Adversarial Protocol Design Review
 
-The whitepaper claims liveness ("the chain extends") without proof. The protocol specification contains complex mechanisms for fallback proposals, participation-ratio adjustment, and adaptive VDF -- the whitepaper mentions none of these.
+The whitepaper claims liveness ("the chain extends") without proof. The protocol specification contains complex mechanisms for fallback proposals, participation-ratio adjustment, and adaptive SSHA -- the whitepaper mentions none of these.
 
 Open questions: What is the minimum quorum for progress? What happens during a network split? What happens when D calibration diverges between nodes?
 
@@ -217,7 +217,7 @@ The Montana Protocol exhibits several notable strengths that are explicitly ackn
 
 | Risk | Severity | Status |
 |------|----------|--------|
-| Incorrect VDF terminology in whitepaper | Critical | Open |
+| Incorrect SSHA terminology in whitepaper | Critical | Open |
 | Post-quantum claim partially incorrect (TLS X25519) | Critical | Open |
 | ML-DSA-65 without constant-time requirement in specification | High | Open |
 | PBKDF2 iteration count documented without migration path | Medium | Open |
@@ -266,7 +266,7 @@ The Montana Protocol exhibits several notable strengths that are explicitly ackn
 
 **Priority 1 -- Before any publication on the Metzdowd list (Blocker)**
 
-1. **Correct VDF terminology.** "Sequential hash chain" instead of "VDF", remove references Boneh/Pietrzak/Wesolowski or contextualize them correctly. Effort: low, impact: high.
+1. **Correct SSHA terminology.** "Sequential hash chain" instead of "SSHA", remove references Boneh/Pietrzak/Wesolowski or contextualize them correctly. Effort: low, impact: high.
 
 2. **Precise post-quantum claim.** Explicitly differentiate between consensus layer (fully PQ) and network layer (TLS 1.3 with X25519, Tier 2 with Noise_PQ available). Effort: low, impact: high.
 
@@ -293,7 +293,7 @@ The Montana Protocol exhibits several notable strengths that are explicitly ackn
 ### Strategic Recommendation: Two Paths
 
 **Path A -- Focused whitepaper (recommended for timely publication):**  
-Reduce the whitepaper to the core promise: post-quantum consensus with time as a scarcity resource. Remove all unsubstantiated claims (1B, no-fees as unique selling point, VDF terminology). Add threat model. Formalize liveness conditions. Length: 6-8 pages.
+Reduce the whitepaper to the core promise: post-quantum consensus with time as a scarcity resource. Remove all unsubstantiated claims (1B, no-fees as unique selling point, SSHA terminology). Add threat model. Formalize liveness conditions. Length: 6-8 pages.
 
 **Path B -- Full academic paper:**  
 Expand the whitepaper into a full academic paper with threat model, liveness proof, scaling analysis, security reductions, and comparison with related work. Length: 20-30 pages. Time investment: considerable.
@@ -308,7 +308,7 @@ Path A is the more realistic route for timely publication on the Metzdowd list.
 
 ### Rationale
 
-The Metzdowd Cryptography List is a forum for technically proficient cryptographers who judge protocols on the basis of their mathematical and cryptographic correctness. The three critical errors in the whitepaper (incorrect VDF terminology, partially incorrect PQ claim, inconsistent Sybil analysis) will be immediately recognized by this audience and undermine the credibility of the entire project -- regardless of how sound the underlying protocol specification is.
+The Metzdowd Cryptography List is a forum for technically proficient cryptographers who judge protocols on the basis of their mathematical and cryptographic correctness. The three critical errors in the whitepaper (incorrect SSHA terminology, partially incorrect PQ claim, inconsistent Sybil analysis) will be immediately recognized by this audience and undermine the credibility of the entire project -- regardless of how sound the underlying protocol specification is.
 
 ### What the whitepaper has
 
@@ -336,7 +336,7 @@ The project has the potential for a strong publication. The protocol specificati
 
 | ID | Title | Severity | Source | Status |
 |----|-------|----------|--------|--------|
-| WP-1 | Incorrect VDF terminology | Critical | Whitepaper review | Open |
+| WP-1 | Incorrect SSHA terminology | Critical | Whitepaper review | Open |
 | WP-2 | Post-quantum claim partially incorrect | Critical | Whitepaper review | Open |
 | WP-3 | Inconsistent Sybil analysis | Critical | Whitepaper review | Open |
 | WP-4 | Missing threat model | High | Whitepaper review | Open |

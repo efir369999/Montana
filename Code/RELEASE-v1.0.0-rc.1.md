@@ -47,7 +47,7 @@ After the install completes:
 1. `systemctl status montana-node` shows `active (running)`.
 2. The journal shows `[network] CONNECTION ESTABLISHED peer=Q… label=moscow|frankfurt|helsinki` for each Genesis peer.
 3. Within one minute, the new node appears at [efir.org/explorer/](https://efir.org/explorer/) under "Discovered peers" with the new node's public IP, last-heartbeat age, and the three Genesis witnesses.
-4. The local node enters Phase 1 Bootstrap → CandidateVdf (sequential SHA-256 chain to `vdf_chain_length ≥ τ₂`, approximately fourteen days of wall-clock).
+4. The local node enters Phase 1 Bootstrap → CandidateSsha (sequential SHA-256 chain to `ssha_chain_length ≥ τ₂`, approximately fourteen days of wall-clock).
 
 The install path is the canonical onboarding flow for the Metzdowd cryptography list audience and any independent operator who wants to join the live mesh.
 

@@ -15,7 +15,7 @@ This bundle is the curated entry point for an external cryptographer or systems 
 
 **File:** [`Whitepaper Montana.md`](../Whitepaper%20Montana.md)
 
-The protocol-level claim. Adversary model, threat surface, sequential delay function over SHA-256 with the explicit non-VDF disclaimer in §5, multi-class lottery, cementing rule and quorum, Identity-Bound Tunnels, the eight attack-class subsections of §5, and the cryptographic primitives table in §13.
+The protocol-level claim. Adversary model, threat surface, sequential delay function over SHA-256 with the explicit non-SSHA disclaimer in §5, multi-class lottery, cementing rule and quorum, Identity-Bound Tunnels, the eight attack-class subsections of §5, and the cryptographic primitives table in §13.
 
 What to look for: implicit assumptions in §5 attack-class subsections, particularly the cost asymmetry between proposer and verifier in §5.3 (sequential-delay grinding); the section §13 row-level constant-time requirement on ML-DSA-65 and ML-KEM-768.
 
@@ -41,7 +41,7 @@ What to look for: the transcript-binding ordering between ML-KEM-768 decapsulati
 | [`mt-crypto-native`](../Code/crates/mt-crypto-native/) | C bindings over OpenSSL 3.5 LTS for ML-DSA-65 and ML-KEM-768. Constant-time row-level requirement is the explicit external-audit ask. |
 | [`mt-noise-pq`](../Code/crates/mt-noise-pq/) | Noise_PQ XX handshake state machine + libp2p UpgradeInfo / Inbound / Outbound trait impls. Loopback and three-peer end-to-end tests. |
 | [`mt-net-transport`](../Code/crates/mt-net-transport/) | The libp2p Swarm wiring that selects `/montana/noise-pq-xx/1.0.0` for every connection. |
-| [`mt-timechain`](../Code/crates/mt-timechain/) | Sequential SHA-256 delay function. `vdf_step` is the canonical name despite the non-VDF status — kept for backward compatibility with the spec wording. |
+| [`mt-timechain`](../Code/crates/mt-timechain/) | Sequential SHA-256 delay function. `ssha_step` is the canonical name despite the non-SSHA status — kept for backward compatibility with the spec wording. |
 | [`mt-consensus`](../Code/crates/mt-consensus/) | ProposalHeader layout, signed scope, R1 / R2 rules, validate_header. |
 | [`mt-lottery`](../Code/crates/mt-lottery/) | BundledConfirmation, lottery weights, cementing rule, quorum, validate_bundle. |
 | [`mt-state`](../Code/crates/mt-state/) | AccountTable / NodeTable / CandidatePool over Sparse Merkle, depth 256. `compute_state_root` domain-separated combiner. |

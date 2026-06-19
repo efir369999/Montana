@@ -216,7 +216,7 @@ pub struct CandidateRecord {
     pub operator_account_id: AccountId,
     pub proof_endpoint: Hash32,
     pub w_start: u64,
-    pub vdf_chain_length: u64,
+    pub ssha_chain_length: u64,
     pub registration_window: u64,
     pub expires: u64,
 }
@@ -229,7 +229,7 @@ impl CanonicalEncode for CandidateRecord {
         write_bytes(buf, &self.operator_account_id);
         write_bytes(buf, &self.proof_endpoint);
         write_u64(buf, self.w_start);
-        write_u64(buf, self.vdf_chain_length);
+        write_u64(buf, self.ssha_chain_length);
         write_u64(buf, self.registration_window);
         write_u64(buf, self.expires);
     }
@@ -261,7 +261,7 @@ impl CandidateRecord {
         o += 32;
         let w_start = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
         o += 8;
-        let vdf_chain_length = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
+        let ssha_chain_length = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
         o += 8;
         let registration_window = u64::from_le_bytes(input[o..o + 8].try_into().unwrap());
         o += 8;
@@ -275,7 +275,7 @@ impl CandidateRecord {
             operator_account_id,
             proof_endpoint,
             w_start,
-            vdf_chain_length,
+            ssha_chain_length,
             registration_window,
             expires,
         })
@@ -503,7 +503,7 @@ mod tests {
             operator_account_id: [0x66; 32],
             proof_endpoint: [0x77; 32],
             w_start: 10,
-            vdf_chain_length: 20_160,
+            ssha_chain_length: 20_160,
             registration_window: 30_000,
             expires: 90_480,
         }

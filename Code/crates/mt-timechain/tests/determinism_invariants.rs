@@ -1,84 +1,84 @@
 // Automated determinism invariants для mt-timechain.
-// M2 batch 3 audit prep — TimeChain VDF + Adaptive D + cemented_bundle_aggregate
+// M2 batch 3 audit prep — TimeChain SSHA + Adaptive D + cemented_bundle_aggregate
 // = критическая консенсус-поверхность с защитой [I-8] Network-Bound
 // Unpredictability. Любой non-determinism = consensus fork.
 
 use mt_genesis::genesis_params;
 use mt_state::NodeId;
-use mt_timechain::{cemented_bundle_aggregate, next_d, vdf_step, vdf_verify};
+use mt_timechain::{cemented_bundle_aggregate, next_d, ssha_step, ssha_verify};
 
-// ---------- VDF determinism ----------
+// ---------- SSHA determinism ----------
 
 #[test]
 #[should_panic(expected = "outside the protocol-accepted band")]
-fn vdf_step_zero_iterations_panics() {
+fn ssha_step_zero_iterations_panics() {
     // Honest proposer never produces d=0; an adversarial input must not
     // be silently accepted as identity (would let the proposer forge any
-    // (prev, d=0, claim=prev) triple). vdf_step panics on d=0.
+    // (prev, d=0, claim=prev) triple). ssha_step panics on d=0.
     let prev = [0u8; 32];
-    let _ = vdf_step(&prev, 0);
+    let _ = ssha_step(&prev, 0);
 }
 
 #[test]
-fn vdf_step_deterministic() {
+fn ssha_step_deterministic() {
     let prev = [0x33u8; 32];
-    let a = vdf_step(&prev, 100);
-    let b = vdf_step(&prev, 100);
+    let a = ssha_step(&prev, 100);
+    let b = ssha_step(&prev, 100);
     assert_eq!(a, b);
 }
 
 #[test]
-fn vdf_step_changes_with_iterations() {
+fn ssha_step_changes_with_iterations() {
     let prev = [0x55u8; 32];
-    let a = vdf_step(&prev, 1);
-    let b = vdf_step(&prev, 2);
-    let c = vdf_step(&prev, 3);
+    let a = ssha_step(&prev, 1);
+    let b = ssha_step(&prev, 2);
+    let c = ssha_step(&prev, 3);
     assert_ne!(a, b);
     assert_ne!(b, c);
     assert_ne!(a, c);
 }
 
 #[test]
-fn vdf_step_changes_with_prev_input() {
-    assert_ne!(vdf_step(&[0x00u8; 32], 50), vdf_step(&[0xFFu8; 32], 50));
+fn ssha_step_changes_with_prev_input() {
+    assert_ne!(ssha_step(&[0x00u8; 32], 50), ssha_step(&[0xFFu8; 32], 50));
 }
 
 #[test]
-fn vdf_verify_accepts_correct_chain() {
+fn ssha_verify_accepts_correct_chain() {
     let prev = [0x77u8; 32];
-    let claim = vdf_step(&prev, 42);
-    assert!(vdf_verify(&prev, 42, &claim));
+    let claim = ssha_step(&prev, 42);
+    assert!(ssha_verify(&prev, 42, &claim));
 }
 
 #[test]
-fn vdf_verify_rejects_wrong_claim() {
+fn ssha_verify_rejects_wrong_claim() {
     let prev = [0x88u8; 32];
-    let claim = vdf_step(&prev, 50);
+    let claim = ssha_step(&prev, 50);
     let bad_claim = [0x99u8; 32];
     // Positive + negative checks
-    assert!(vdf_verify(&prev, 50, &claim));
-    assert!(!vdf_verify(&prev, 50, &bad_claim));
+    assert!(ssha_verify(&prev, 50, &claim));
+    assert!(!ssha_verify(&prev, 50, &bad_claim));
 }
 
 #[test]
-fn vdf_verify_rejects_wrong_iteration_count() {
+fn ssha_verify_rejects_wrong_iteration_count() {
     let prev = [0xAAu8; 32];
-    let claim = vdf_step(&prev, 100);
-    assert!(vdf_verify(&prev, 100, &claim));
-    assert!(!vdf_verify(&prev, 99, &claim));
-    assert!(!vdf_verify(&prev, 101, &claim));
+    let claim = ssha_step(&prev, 100);
+    assert!(ssha_verify(&prev, 100, &claim));
+    assert!(!ssha_verify(&prev, 99, &claim));
+    assert!(!ssha_verify(&prev, 101, &claim));
 }
 
 #[test]
-fn vdf_chain_composition() {
-    // vdf_step(vdf_step(prev, A), B) == vdf_step(prev, A+B)
+fn ssha_chain_composition() {
+    // ssha_step(ssha_step(prev, A), B) == ssha_step(prev, A+B)
     let prev = [0xBBu8; 32];
     let a = 30u64;
     let b = 70u64;
-    let intermediate = vdf_step(&prev, a);
-    let chained = vdf_step(&intermediate, b);
-    let direct = vdf_step(&prev, a + b);
-    assert_eq!(chained, direct, "VDF chain composition non-associative");
+    let intermediate = ssha_step(&prev, a);
+    let chained = ssha_step(&intermediate, b);
+    let direct = ssha_step(&prev, a + b);
+    assert_eq!(chained, direct, "SSHA chain composition non-associative");
 }
 
 // ---------- next_d Adaptive D feedback ----------

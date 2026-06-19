@@ -13,8 +13,8 @@
 | S-N2 | HIGH | closed | `4309da2` — `XxSharedSecret` newtype with `impl Drop` zeroises the 32-byte ML-KEM-768 shared secret; eliminates the plain `[u8; 32]` field in InitiatorAfterMsg2 / ResponderAfterMsg2 |
 | S-N3 | HIGH | closed | `4309da2` — `xx_initiator_drive` / `xx_responder_drive` accept `Arc<SecretKey>`; the `dup_sk` helper that copied 4032 bytes of ML-DSA-65 SK onto the libp2p upgrade stack is removed |
 | S-N6 | LOW | closed | `4309da2` — `tokio::time::timeout(Duration::from_secs(15), ...)` wraps the libp2p upgrade futures |
-| S-T1 | MEDIUM | closed | `56d90b9` — `MAX_D = u32::MAX as u64`; `vdf_step` panics outside `[1, MAX_D]`; `vdf_verify` returns false outside the same band |
-| S-T3 | LOW | closed | `56d90b9` — `vdf_verify(prev, 0, claim)` returns false (trivial-identity path closed) |
+| S-T1 | MEDIUM | closed | `56d90b9` — `MAX_D = u32::MAX as u64`; `ssha_step` panics outside `[1, MAX_D]`; `ssha_verify` returns false outside the same band |
+| S-T3 | LOW | closed | `56d90b9` — `ssha_verify(prev, 0, claim)` returns false (trivial-identity path closed) |
 | S-M2 | MEDIUM | closed | `5821f14` — `MAX_FAST_SYNC_RECORDS = 10_000_000`; `Snapshot::add_record` returns `CapacityExceeded` past the bound |
 | S-M3 | MEDIUM | closed | `5821f14` — `Snapshot::build_tables` returns `DuplicateRecord { table }` instead of silently overwriting a duplicate primary key |
 | S-C2 | MEDIUM | closed | `8a0599c` — `OPENSSL_cleanse(buf, sizeof(buf))` on every stack ML-DSA-65 / ML-KEM-768 SK buffer in `mt_self_test`, on every return path |
@@ -23,7 +23,7 @@
 | S-C1 | HIGH | open as MONT-001 | external constant-time pass over `mt-crypto-native` / OpenSSL 3.5.5 LTS ML-DSA-65 + ML-KEM-768 paths. Acknowledged as the only priority-1 audit ask of the v1.0.0 mainnet README |
 | S-N4 | MEDIUM | open as documentation | `Montana Network v1.1.0.md` to gain an explicit note: `PeerId = SHA-256-multihash(raw ML-DSA-65 pk bytes)` is intentionally non-compatible with the libp2p protobuf-encoded PublicKey format |
 | S-N5 | LOW | acknowledged, no change | `SHA-256(domain || master)` derivation is structurally sound for derived keys of length ≤ 256 bits; migration to HKDF is a style upgrade, not a defect closure |
-| S-T2 | DESIGN | acknowledged in spec | `vdf_step` is sequential SHA-256, not a Boneh-style VDF; the property is explicit in [`MAINNET-READINESS-v1.0.0.md`](MAINNET-READINESS-v1.0.0.md) §2.2 and the whitepaper threat model |
+| S-T2 | DESIGN | acknowledged in spec | `ssha_step` is sequential SHA-256, not a Boneh-style SSHA; the property is explicit in [`MAINNET-READINESS-v1.0.0.md`](MAINNET-READINESS-v1.0.0.md) §2.2 and the whitepaper threat model |
 | S-C3 | MEDIUM | open as v1.0.1 | `CRYPTO_secure_malloc_init` at process start to route OpenSSL intermediate secret material through the mlock-protected pool |
 | S-C4 | LOW | mitigated | `keypair_from_seed` regenerates from seed; tampering must happen at the seed layer (identity file persistence) |
 | S-M1 | HIGH | open as DEV-015 | M7 client-side handler (drain chunks + verify + LocalState swap) is the v1.0.1 hot-fix milestone item |

@@ -32,7 +32,7 @@ The academic paper, written in the style of the Bitcoin paper and addressed to t
 The whitepaper covers, in present-tense factual form:
 
 - Time as a scarce resource (§2)
-- Sequential delay function over SHA-256 with explicit acknowledgment that this is not a VDF in the sense of Boneh / Pietrzak / Wesolowski (§3)
+- Sequential delay function over SHA-256 with explicit acknowledgment that this is not a SSHA in the sense of Boneh / Pietrzak / Wesolowski (§3)
 - Post-quantum primitives with NIST FIPS citations (§4)
 - Threat model with eight explicit attack-class subsections (§5): Quantum adversary, Sybil, Equivocation, Grinding under hardware asymmetry, Eclipse, Long-range rewrite, Side-channel, Transport-layer adversary
 - Operations and the Account Table (§6)

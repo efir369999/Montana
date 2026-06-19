@@ -6,7 +6,7 @@ This document is the canonical entry point for any AI agent or human researcher 
 
 Montana is a from-scratch post-quantum blockchain. Three architectural primitives:
 
-1. **Sequential-delay TimeChain** — globally-ordered windows of ~60 seconds each, sealed by a sequential SHA-256 chain (D = 325 000 000 iterations per window). Cannot be parallelized, cannot be skipped. Verification costs the same order of work as computation, so this is not a VDF in the efficient-verification literature sense.
+1. **Sequential-delay TimeChain** — globally-ordered windows of ~60 seconds each, sealed by a sequential SHA-256 chain (D = 325 000 000 iterations per window). Cannot be parallelized, cannot be skipped. Verification costs the same order of work as computation, so this is not a SSHA in the efficient-verification literature sense.
 2. **Time-as-scarcity** — anti-spam through window-rate-limits, chain_length thresholds, seniority gating. No transaction fees. No gas. Cannot accelerate operations by paying.
 3. **Post-quantum where the protocol currently claims it** — ML-DSA-65 (FIPS 204) for consensus signatures, ML-KEM-768 (FIPS 203) at the application layer, SHA-256 for hashing and TimeChain, PBKDF2 for key derivation. Transport confidentiality is tracked separately through the Noise_PQ migration.
 
@@ -90,7 +90,7 @@ supply (closed-form) : 78000000000 nɈ      (must equal Σ balance + future emis
 ```
 
 Healthy invariants:
-- `phase == Active` (genesis bootstrap activates immediately, no Candidate VDF wait)
+- `phase == Active` (genesis bootstrap activates immediately, no Candidate SSHA wait)
 - `current_window` increases by exactly 1 per ~60 seconds
 - `Σ balance == supply (closed-form) × correction-for-emission-schedule`
 - `state_root` after each apply_proposal byte-equals the expected recompute (logged at INFO level)
@@ -108,7 +108,7 @@ Pathological signs (file an Issue):
 
 We have not stress-tested at scale. Here is what would help:
 
-### 1. VDF correctness under chaos
+### 1. SSHA correctness under chaos
 
 Kill the node mid-window and restart. State must resume from the last cemented window without divergence. Repeat 100×, automate with `kill -9` + immediate `systemctl start`.
 
@@ -136,7 +136,7 @@ rm /var/lib/montana/_filler
 
 ### 3. Clock skew
 
-Set system clock backwards 1 hour mid-operation. Node uses VDF iterations as the clock, not wall-time, so it should ignore the jump.
+Set system clock backwards 1 hour mid-operation. Node uses SSHA iterations as the clock, not wall-time, so it should ignore the jump.
 
 ```bash
 date -s "$(date -d '1 hour ago')"
@@ -177,7 +177,7 @@ while true; do
 done
 ```
 
-Expected: RSS ≈ stable around 30-50 MiB (peak ~100 MiB during VDF burst). Continuous growth >1 MiB/hour = leak.
+Expected: RSS ≈ stable around 30-50 MiB (peak ~100 MiB during SSHA burst). Continuous growth >1 MiB/hour = leak.
 
 ### 6. Fuzz inputs to apply_proposal
 
@@ -218,7 +218,7 @@ Any **un-documented** deviation you find = high-value finding. File as an Issue 
 
 - [`AUDIT.md`](AUDIT.md) — pre-audit self-attestation, single-page summary for an external audit firm
 - [`docs/audit-checklist.md`](docs/audit-checklist.md) — what we covered internally
-- [`docs/security-cards.md`](docs/security-cards.md) — per-primitive security analysis (FN-DSA, ML-KEM, SHA-256 VDF, PBKDF2)
+- [`docs/security-cards.md`](docs/security-cards.md) — per-primitive security analysis (FN-DSA, ML-KEM, SHA-256 SSHA, PBKDF2)
 
 ### Spec-vs-code comments
 
@@ -281,7 +281,7 @@ No NDA. No engagement contract. Public review by default.
 - [ ] Property-based test coverage for `apply_*` functions (currently has unit + invariants, not property-based)
 - [ ] Differential testing harness comparing this Rust impl vs an independent re-implementation (Go / Python / Zig)
 - [ ] CI matrix across Linux x86_64 + ARM64 + macOS ARM64 + Windows (currently single-platform local)
-- [ ] Benchmark suite measuring VDF iter/sec across CPU classes (we have one micro-bench, not a suite)
+- [ ] Benchmark suite measuring SSHA iter/sec across CPU classes (we have one micro-bench, not a suite)
 - [ ] Deterministic-replay framework (record all inputs to apply_proposal, replay byte-for-byte)
 - [ ] Side-channel analysis on PBKDF2 / signature verify (timing, cache, branching)
 - [ ] Audit of the crowdsec / fail2ban / ufw default rules for the VPS installer
@@ -291,7 +291,7 @@ No NDA. No engagement contract. Public review by default.
 
 ## What we will NOT do
 
-- We will **not** sell tokens. Not now, not at mainnet. Montana has no premine, no presale, no airdrop schedule. Block reward (13 Ɉ per window to operator) is the only emission, paid to whoever ran the VDF for that window.
+- We will **not** sell tokens. Not now, not at mainnet. Montana has no premine, no presale, no airdrop schedule. Block reward (13 Ɉ per window to operator) is the only emission, paid to whoever ran the SSHA for that window.
 - We will **not** add fees. Anti-spam is time-based by architectural invariant `[I-15]` of the spec.
 - We will **not** add ECDSA / RSA / curve25519 fallback. Post-quantum from day one is invariant `[I-1]`.
 - We will **not** add KYC, allowlist, or compliance backdoors. Privacy-by-default is invariant `[privacy-default]`.

@@ -20,8 +20,8 @@ The manifesto is written in the academic register of a position paper, addressed
 Three residual issues from the v2.0.2 re-pass are addressed.
 
 - *«approximately» qualifiers in §III and §VIII* are replaced by either inline integer derivation or abstract framing. §V now carries the canonical genesis-hardware derivation `D / 5.097 × 10⁶ ≈ 63.8 seconds per window` once; §III drops the wall-clock estimate in favor of «within one window of the canonical order»; §VIII and §IX reference the §V derivation rather than repeating «approximately one minute». Every numerical claim in the manifesto is now traceable to a derivation or a constant.
-- *«production-grade» in §II* is replaced with the analytical equivalent «Post-quantum succinct VDF constructions remain at research-grade status; none has published security audits or standardization at the level of FIPS 203 / FIPS 204». The construction's status is now stated in defensible terms.
-- The v2.0.2 §III «at NIST security level 3» and §IX integer derivation (`vdf_entry_windows = 20 160 windows × D = 6.552 × 10¹² SHA-256 hashes`, fourteen days at the genesis-hardware calibration) are kept and remain peer-review defensible.
+- *«production-grade» in §II* is replaced with the analytical equivalent «Post-quantum succinct SSHA constructions remain at research-grade status; none has published security audits or standardization at the level of FIPS 203 / FIPS 204». The construction's status is now stated in defensible terms.
+- The v2.0.2 §III «at NIST security level 3» and §IX integer derivation (`ssha_entry_windows = 20 160 windows × D = 6.552 × 10¹² SHA-256 hashes`, fourteen days at the genesis-hardware calibration) are kept and remain peer-review defensible.
 
 **v2.0.2 (2026-05-29) — critic-pass first round.** The marketing line «Designed to be safe for your children's children» of §III is replaced with a defensible analytical claim. §IX adds the integer derivation for the node-entry barrier. §IV softens present-tense for Messenger, Junona, Pluton, and Vera Montana (all design-stage); shipping components (Rail, Money, Wallet, Anchor, Hub) keep present-tense.
 
@@ -33,7 +33,7 @@ Three residual issues from the v2.0.2 re-pass are addressed.
 
 **v1.2.0 (2026-05-28):** Rail-not-currency positioning from the Metzdowd thread. Bitcoin's title conflated two distinct jobs. Montana picks the second on purpose. `Ɉ` is the rail's reward unit, not a stable unit of account. Dormant non-zero accounts are never touched.
 
-**v1.1.0 (2026-05-28):** Terminology aligned with Montana Protocol v35.25.1: sequential delay computation / iterated SHA-256 hash chain, not VDF. Finality at window cementing, not «300 ms». Twenty-three crates, not twelve.
+**v1.1.0 (2026-05-28):** Terminology aligned with Montana Protocol v35.25.1: sequential delay computation / iterated SHA-256 hash chain, not SSHA. Finality at window cementing, not «300 ms». Twenty-three crates, not twelve.
 
 ---
 

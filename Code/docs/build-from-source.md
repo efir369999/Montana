@@ -22,7 +22,7 @@
 
 - Genesis hardware reference (per spec [I-18]): Apple iMac 24-inch M1 2021, 8 GB unified memory, macOS Sequoia 15.7.3, Rust 1.92.0 stable, sha2 crate 0.10.9 + ARM SHA-2 hardware extensions
 - D₀ benchmark expected: median single-thread SHA-256 rate 5.097 MH/s
-- Other hardware: D₀ value remains 325 000 000 (Genesis Decree authoritative); только VDF wall-clock varies
+- Other hardware: D₀ value remains 325 000 000 (Genesis Decree authoritative); только SSHA wall-clock varies
 
 ---
 

@@ -8,7 +8,7 @@
 
 use std::time::Instant;
 
-use mt_timechain::vdf_step;
+use mt_timechain::ssha_step;
 
 // 10-минутный бенчмарк: 3 запуска × 1 миллиард итераций ≈ 200 сек/run.
 // Total ≈ 600 секунд wall-clock на reference machine ~5 MH/s.
@@ -26,7 +26,7 @@ fn main() {
 
     for run_idx in 1..=RUNS {
         let start = Instant::now();
-        let _ = vdf_step(&bench_input, BENCH_ITERS);
+        let _ = ssha_step(&bench_input, BENCH_ITERS);
         let elapsed = start.elapsed().as_secs_f64();
         let rate = (BENCH_ITERS as f64) / elapsed.max(0.0001);
         rates_per_sec.push(rate);

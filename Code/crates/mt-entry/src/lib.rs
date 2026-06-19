@@ -1,5 +1,5 @@
 // spec, разделы "Вход и регистрация" + "NodeRegistration" + "Selection event"
-// + "Adaptive VDF" + "apply_proposal steps 1/3a/3b".
+// + "Adaptive SSHA" + "apply_proposal steps 1/3a/3b".
 //
 // ============ Validate-then-apply ordering invariant ============
 //
@@ -49,7 +49,7 @@ use mt_state::{
 //   operator_account_id  32B
 //   proof_endpoint       32B
 //   W_start               8B   <- u64 LE
-//   vdf_chain_length      8B   <- u64 LE
+//   ssha_chain_length      8B   <- u64 LE
 //   signature          3309B   <- ML-DSA-65 (was Falcon-512 666)
 // Итого: 1 + 2 + 1952 + 32 + 32 + 8 + 8 + 3309 = 5344
 pub const NODE_REGISTRATION_SIZE: usize = 5344;
@@ -62,7 +62,7 @@ pub struct NodeRegistration {
     pub operator_account_id: AccountId,
     pub proof_endpoint: Hash32,
     pub w_start: u64,
-    pub vdf_chain_length: u64,
+    pub ssha_chain_length: u64,
     pub signature: Signature,
 }
 
@@ -75,7 +75,7 @@ impl NodeRegistration {
         write_bytes(buf, &self.operator_account_id);
         write_bytes(buf, &self.proof_endpoint);
         write_u64(buf, self.w_start);
-        write_u64(buf, self.vdf_chain_length);
+        write_u64(buf, self.ssha_chain_length);
     }
 }
 
@@ -107,7 +107,7 @@ pub enum NodeRegError {
     OperatorAccountNotFound,
     OperatorAccountAlreadyNode,
     WStartOutOfRange,
-    VdfChainTooShort,
+    SshaChainTooShort,
 }
 
 // spec "Валидация NodeRegistration" строки 1783-1790.
@@ -151,22 +151,22 @@ pub fn validate_noderegistration(
     Ok(())
 }
 
-// ============ Phase B: candidate_vdf_init + Candidate Pool apply ============
+// ============ Phase B: candidate_ssha_init + Candidate Pool apply ============
 
 // spec, "Шаг 2: Кандидатура" + "[I-8] compliance" строка 1794:
-//   candidate_vdf_init = SHA-256(
-//     "mt-candidate-vdf-init" ||
+//   candidate_ssha_init = SHA-256(
+//     "mt-candidate-ssha-init" ||
 //     timechain_value(W_start) ||
 //     cemented_bundle_aggregate(W_start - 2) ||
 //     node_id
 //   )
-pub fn candidate_vdf_init(
+pub fn candidate_ssha_init(
     timechain_value_w_start: &Hash32,
     cba_w_start_minus_2: &Hash32,
     node_id: &NodeId,
 ) -> Hash32 {
     hash(
-        domain::CANDIDATE_VDF_INIT,
+        domain::CANDIDATE_SSHA_INIT,
         &[timechain_value_w_start, cba_w_start_minus_2, node_id],
     )
 }
@@ -302,15 +302,15 @@ pub fn apply_selection_event(
     activated
 }
 
-// ============ Phase D: Adaptive VDF length ============
+// ============ Phase D: Adaptive SSHA length ============
 
-// spec, "Adaptive VDF" строки 1816-1831:
+// spec, "Adaptive SSHA" строки 1816-1831:
 //   candidate_pressure(W) = pending_candidates(W) / active_nodes(W)
 //
 //   if candidate_pressure(W) > 0.01:
-//       required_vdf_length(W) = τ₂_windows × candidate_pressure(W) × 100
+//       required_ssha_length(W) = τ₂_windows × candidate_pressure(W) × 100
 //   else:
-//       required_vdf_length(W) = τ₂_windows     (base)
+//       required_ssha_length(W) = τ₂_windows     (base)
 //
 // Integer form per [I-9]:
 //   pressure_permille = (pending * 1000) / active                [u64, 0..=1000+]
@@ -319,7 +319,7 @@ pub fn apply_selection_event(
 //                = τ₂_windows × pressure_permille / 10
 //   Иначе:
 //       required = τ₂_windows
-pub fn required_vdf_length(pending_candidates: u64, active_nodes: u64, tau2_windows: u64) -> u64 {
+pub fn required_ssha_length(pending_candidates: u64, active_nodes: u64, tau2_windows: u64) -> u64 {
     if active_nodes == 0 {
         // Genesis / degenerate — нет активных узлов
         return tau2_windows;
@@ -362,7 +362,7 @@ pub fn nr_sort_key(
 //      current_pending = pending_baseline + N_already_applied
 //      current_pressure = current_pending / active_nodes
 //      required = adaptive_formula(current_pressure)
-//      if NR.vdf_chain_length >= required: apply; N += 1
+//      if NR.ssha_chain_length >= required: apply; N += 1
 //      else: reject
 //   3. Apply = insert в CandidatePool с registration_window = W_p,
 //      expires = W_p + 3τ₂.
@@ -392,12 +392,12 @@ pub fn apply_noderegistrations_batch(
     let mut rejected = Vec::new();
     for nr in sorted {
         let current_pending = pending_baseline + applied_count;
-        // spec 2250: base_vdf_length = vdf_entry_windows (= τ₂ in production).
-        // Reading vdf_entry_windows (not tau2_windows) lets a test build lower the
+        // spec 2250: base_ssha_length = ssha_entry_windows (= τ₂ in production).
+        // Reading ssha_entry_windows (not tau2_windows) lets a test build lower the
         // candidate entry length to 1 window while τ₂ stays 20160 for calibration.
-        let required = required_vdf_length(current_pending, active_nodes, params.vdf_entry_windows);
+        let required = required_ssha_length(current_pending, active_nodes, params.ssha_entry_windows);
         let node_id = compute_node_id(&nr.node_pubkey);
-        if nr.vdf_chain_length >= required {
+        if nr.ssha_chain_length >= required {
             let rec = CandidateRecord {
                 node_id,
                 node_pubkey: nr.node_pubkey,
@@ -405,7 +405,7 @@ pub fn apply_noderegistrations_batch(
                 operator_account_id: nr.operator_account_id,
                 proof_endpoint: nr.proof_endpoint,
                 w_start: nr.w_start,
-                vdf_chain_length: nr.vdf_chain_length,
+                ssha_chain_length: nr.ssha_chain_length,
                 registration_window: w_p,
                 expires: compute_expiry_window(w_p, params),
             };
@@ -444,14 +444,14 @@ mod tests {
         }
     }
 
-    fn stub_nr(pubkey: [u8; mt_crypto::PUBLIC_KEY_SIZE], vdf_len: u64) -> NodeRegistration {
+    fn stub_nr(pubkey: [u8; mt_crypto::PUBLIC_KEY_SIZE], ssha_len: u64) -> NodeRegistration {
         NodeRegistration {
             suite_id: SuiteId::Mldsa65 as u16,
             node_pubkey: pubkey,
             operator_account_id: [0x11; 32],
             proof_endpoint: [0x33; 32],
             w_start: 100,
-            vdf_chain_length: vdf_len,
+            ssha_chain_length: ssha_len,
             signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
         }
     }
@@ -492,7 +492,7 @@ mod tests {
         assert_eq!(&buf[pk_end + 32..pk_end + 64], &[0x33; 32]);
         // w_start u64 LE
         assert_eq!(&buf[pk_end + 64..pk_end + 72], &100u64.to_le_bytes());
-        // vdf_chain_length u64 LE
+        // ssha_chain_length u64 LE
         assert_eq!(&buf[pk_end + 72..pk_end + 80], &100u64.to_le_bytes());
     }
 
@@ -599,21 +599,21 @@ mod tests {
     // Phase B tests
 
     #[test]
-    fn candidate_vdf_init_formula() {
+    fn candidate_ssha_init_formula() {
         let t_r: Hash32 = [0x10; 32];
         let cba: Hash32 = [0x20; 32];
         let node_id: NodeId = [0x30; 32];
-        let got = candidate_vdf_init(&t_r, &cba, &node_id);
-        let expected = hash(b"mt-candidate-vdf-init", &[&t_r, &cba, &node_id]);
+        let got = candidate_ssha_init(&t_r, &cba, &node_id);
+        let expected = hash(b"mt-candidate-ssha-init", &[&t_r, &cba, &node_id]);
         assert_eq!(got, expected);
     }
 
     #[test]
-    fn candidate_vdf_init_sensitivity() {
-        let base = candidate_vdf_init(&[1; 32], &[2; 32], &[3; 32]);
-        assert_ne!(candidate_vdf_init(&[9; 32], &[2; 32], &[3; 32]), base);
-        assert_ne!(candidate_vdf_init(&[1; 32], &[9; 32], &[3; 32]), base);
-        assert_ne!(candidate_vdf_init(&[1; 32], &[2; 32], &[9; 32]), base);
+    fn candidate_ssha_init_sensitivity() {
+        let base = candidate_ssha_init(&[1; 32], &[2; 32], &[3; 32]);
+        assert_ne!(candidate_ssha_init(&[9; 32], &[2; 32], &[3; 32]), base);
+        assert_ne!(candidate_ssha_init(&[1; 32], &[9; 32], &[3; 32]), base);
+        assert_ne!(candidate_ssha_init(&[1; 32], &[2; 32], &[9; 32]), base);
     }
 
     #[test]
@@ -638,7 +638,7 @@ mod tests {
                 operator_account_id: [0; 32],
                 proof_endpoint: [0; 32],
                 w_start: 0,
-                vdf_chain_length: 0,
+                ssha_chain_length: 0,
                 registration_window: 0,
                 expires: 10 + i as u64,
             });
@@ -699,7 +699,7 @@ mod tests {
                 operator_account_id: [0; 32],
                 proof_endpoint: [0; 32],
                 w_start: 0,
-                vdf_chain_length: 0,
+                ssha_chain_length: 0,
                 registration_window: 0,
                 expires: 1000,
             });
@@ -717,39 +717,39 @@ mod tests {
     // Phase D tests
 
     #[test]
-    fn required_vdf_base_low_pressure() {
+    fn required_ssha_base_low_pressure() {
         // pressure = 5/1000 = 0.5% < 1% threshold → base τ₂
-        assert_eq!(required_vdf_length(5, 1000, TAU2), TAU2);
+        assert_eq!(required_ssha_length(5, 1000, TAU2), TAU2);
     }
 
     #[test]
-    fn required_vdf_exactly_1_percent_is_base() {
+    fn required_ssha_exactly_1_percent_is_base() {
         // pressure_permille = 10 (1%) → не > 10, base
-        assert_eq!(required_vdf_length(10, 1000, TAU2), TAU2);
+        assert_eq!(required_ssha_length(10, 1000, TAU2), TAU2);
     }
 
     #[test]
-    fn required_vdf_moderate_pressure() {
+    fn required_ssha_moderate_pressure() {
         // pressure = 20/1000 = 2% = 20 permille → required = τ₂ × 20 / 10 = 2τ₂
-        assert_eq!(required_vdf_length(20, 1000, TAU2), 2 * TAU2);
+        assert_eq!(required_ssha_length(20, 1000, TAU2), 2 * TAU2);
     }
 
     #[test]
-    fn required_vdf_high_pressure() {
+    fn required_ssha_high_pressure() {
         // pressure = 100/1000 = 10% = 100 permille → 10 × τ₂
-        assert_eq!(required_vdf_length(100, 1000, TAU2), 10 * TAU2);
+        assert_eq!(required_ssha_length(100, 1000, TAU2), 10 * TAU2);
     }
 
     #[test]
-    fn required_vdf_attack_pressure() {
+    fn required_ssha_attack_pressure() {
         // pressure = 1000/1000 = 100% = 1000 permille → 100 × τ₂
-        assert_eq!(required_vdf_length(1000, 1000, TAU2), 100 * TAU2);
+        assert_eq!(required_ssha_length(1000, 1000, TAU2), 100 * TAU2);
     }
 
     #[test]
-    fn required_vdf_active_zero_returns_base() {
+    fn required_ssha_active_zero_returns_base() {
         // Защита от division by zero
-        assert_eq!(required_vdf_length(10, 0, TAU2), TAU2);
+        assert_eq!(required_ssha_length(10, 0, TAU2), TAU2);
     }
 
     // Phase E tests
@@ -785,7 +785,7 @@ mod tests {
     }
 
     #[test]
-    fn batch_insufficient_vdf_rejected() {
+    fn batch_insufficient_ssha_rejected() {
         let (pk, sk) = keypair();
         let mut nr = stub_nr(*pk.as_bytes(), TAU2 - 1); // shortfall
         sign_nr(&mut nr, &sk);
@@ -939,7 +939,7 @@ mod tests {
                 operator_account_id: [i; 32],
                 proof_endpoint: [0; 32],
                 w_start: 0,
-                vdf_chain_length: 0,
+                ssha_chain_length: 0,
                 registration_window: 0,
                 expires: 10_000,
             });
@@ -980,7 +980,7 @@ mod tests {
                 operator_account_id: [i; 32],
                 proof_endpoint: [0; 32],
                 w_start: 0,
-                vdf_chain_length: 0,
+                ssha_chain_length: 0,
                 registration_window: 0,
                 expires: 10_000,
             });
@@ -1036,7 +1036,7 @@ mod tests {
             operator_account_id: [1; 32],
             proof_endpoint: [0; 32],
             w_start: 0,
-            vdf_chain_length: 0,
+            ssha_chain_length: 0,
             registration_window: 0,
             expires: 10_000,
         });

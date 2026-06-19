@@ -1,6 +1,6 @@
 // M2 — TimeChain + State shakedown.
 // Subcommands:
-//   vdf-forward [N]          VDF forward N шагов, byte-exact match с manual SHA-256^N
+//   ssha-forward [N]          SSHA forward N шагов, byte-exact match с manual SHA-256^N
 //   next-d-boundaries        Adaptive D: 7 binding test vectors из спеки
 //   cba-branches             cemented_bundle_aggregate: три ветви (W<2 / empty / non-empty)
 //   state-root-compose       state_root = SHA-256("mt-state-root" || node || cand || acct)
@@ -21,23 +21,23 @@ use mt_state::{
     compute_state_root, AccountId, AccountRecord, AccountTable, CandidatePool, CandidateRecord,
     NodeId, NodeRecord, NodeTable,
 };
-use mt_timechain::{cemented_bundle_aggregate, next_d, vdf_step};
+use mt_timechain::{cemented_bundle_aggregate, next_d, ssha_step};
 
-// VDF forward через единственный vdf_step(prev, N) vs ручной N-кратный SHA-256.
-fn cmd_vdf_forward(steps: u64) -> bool {
+// SSHA forward через единственный ssha_step(prev, N) vs ручной N-кратный SHA-256.
+fn cmd_ssha_forward(steps: u64) -> bool {
     print_section(&format!(
-        "VDF FORWARD — vdf_step(prev, {steps}) vs manual SHA-256^{steps}"
+        "SSHA FORWARD — ssha_step(prev, {steps}) vs manual SHA-256^{steps}"
     ));
     print_note(
-        "spec, раздел \"TimeChain\": T_r = SHA-256^D(T_{r-1}). vdf_step(prev, D) применяет ровно D одиночных SHA-256.",
+        "spec, раздел \"TimeChain\": T_r = SHA-256^D(T_{r-1}). ssha_step(prev, D) применяет ровно D одиночных SHA-256.",
     );
 
     let prev: Hash32 = [0u8; 32];
     print_kv("T_r_0 (genesis seed)", hex_full(&prev));
     print_kv("D", format!("{steps}"));
 
-    print_subsection("1. vdf_step(prev, D) → T_r_D");
-    let t_r_batch = vdf_step(&prev, steps);
+    print_subsection("1. ssha_step(prev, D) → T_r_D");
+    let t_r_batch = ssha_step(&prev, steps);
     print_kv("T_r_D (batch)", hex_full(&t_r_batch));
 
     print_subsection("2. Manual: prev → SHA-256 → SHA-256 → ... ровно D раз");
@@ -49,25 +49,25 @@ fn cmd_vdf_forward(steps: u64) -> bool {
 
     let equal = t_r_batch == manual;
     print_subsection("3. Byte-exact equality");
-    print_kv("vdf_step == SHA-256^D", format!("{equal}"));
+    print_kv("ssha_step == SHA-256^D", format!("{equal}"));
 
-    print_subsection("4. Determinism: повторный вызов vdf_step(prev, D) → тот же T_r_D");
-    let t_r_again = vdf_step(&prev, steps);
+    print_subsection("4. Determinism: повторный вызов ssha_step(prev, D) → тот же T_r_D");
+    let t_r_again = ssha_step(&prev, steps);
     let det = t_r_batch == t_r_again;
-    print_kv("vdf_step idempotent", format!("{det}"));
+    print_kv("ssha_step idempotent", format!("{det}"));
 
     print_subsection("5. Preimage resistance: D=0 → identity; D=1 → один SHA-256");
-    let d0 = vdf_step(&prev, 0);
-    let d1 = vdf_step(&prev, 1);
+    let d0 = ssha_step(&prev, 0);
+    let d1 = ssha_step(&prev, 1);
     let single_sha = sha256_raw(&prev);
     let d0_id = d0 == prev;
     let d1_match = d1 == single_sha;
-    print_kv("vdf_step(prev, 0) == prev", format!("{d0_id}"));
-    print_kv("vdf_step(prev, 1) == SHA-256(prev)", format!("{d1_match}"));
+    print_kv("ssha_step(prev, 0) == prev", format!("{d0_id}"));
+    print_kv("ssha_step(prev, 1) == SHA-256(prev)", format!("{d1_match}"));
 
     let pass = equal && det && d0_id && d1_match;
     println!(
-        "\n[result] VDF-FORWARD: {}",
+        "\n[result] SSHA-FORWARD: {}",
         if pass { "PASS" } else { "FAIL" }
     );
     pass
@@ -236,7 +236,7 @@ fn make_candidate(seed_byte: u8, operator_id: AccountId) -> CandidateRecord {
         operator_account_id: operator_id,
         proof_endpoint: [seed_byte; 32],
         w_start: u64::from(seed_byte) * 30,
-        vdf_chain_length: u64::from(seed_byte) * 1000,
+        ssha_chain_length: u64::from(seed_byte) * 1000,
         registration_window: u64::from(seed_byte) * 30,
         expires: u64::from(seed_byte) * 30 + 60480,
     }
@@ -377,14 +377,14 @@ fn cmd_merkle_inclusion() -> bool {
 fn cmd_all() -> bool {
     print_section("M2 TIMECHAIN + STATE — FULL SHAKEDOWN");
 
-    let a = cmd_vdf_forward(1000);
+    let a = cmd_ssha_forward(1000);
     let b = cmd_next_d_boundaries();
     let c = cmd_cba_branches();
     let d = cmd_state_root_compose();
     let e = cmd_merkle_inclusion();
 
     print_section("SUMMARY");
-    print_kv("vdf-forward 1000", if a { "PASS" } else { "FAIL" });
+    print_kv("ssha-forward 1000", if a { "PASS" } else { "FAIL" });
     print_kv("next-d-boundaries", if b { "PASS" } else { "FAIL" });
     print_kv("cba-branches", if c { "PASS" } else { "FAIL" });
     print_kv("state-root-compose", if d { "PASS" } else { "FAIL" });
@@ -407,11 +407,11 @@ fn bool_to_exit(pass: bool) -> ExitCode {
 }
 
 fn usage() {
-    eprintln!("M2 — TimeChain (VDF, next_d, CBA) + State (roots, merkle) shakedown");
+    eprintln!("M2 — TimeChain (SSHA, next_d, CBA) + State (roots, merkle) shakedown");
     eprintln!();
     eprintln!("usage: m2_timechain_state <subcommand> [args]");
     eprintln!();
-    eprintln!("  vdf-forward [N]        VDF forward N шагов (default 1000) vs manual SHA-256^N");
+    eprintln!("  ssha-forward [N]        SSHA forward N шагов (default 1000) vs manual SHA-256^N");
     eprintln!("  next-d-boundaries      Adaptive D — 7 binding test vectors из спеки");
     eprintln!("  cba-branches           cemented_bundle_aggregate: три ветви");
     eprintln!("  state-root-compose     state_root = SHA-256(\"mt-state-root\" || ...)");
@@ -431,9 +431,9 @@ fn main() -> ExitCode {
         },
     };
     let pass = match sub {
-        "vdf-forward" => {
+        "ssha-forward" => {
             let n: u64 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1000);
-            cmd_vdf_forward(n)
+            cmd_ssha_forward(n)
         },
         "next-d-boundaries" => cmd_next_d_boundaries(),
         "cba-branches" => cmd_cba_branches(),

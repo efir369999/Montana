@@ -19,12 +19,12 @@ field participation_dead_zone_low 2 85
 field participation_dead_zone_high 2 95
 field d_adjustment_rate_num 2 3
 field d_adjustment_rate_den 2 100
-field vdf_entry_windows 8 20160
+field ssha_entry_windows 8 20160
 field selection_interval 8 336
 field admission_divisor 8 130
 field candidate_expiry_windows 8 60480
-field adaptive_vdf_threshold 2 1
-field adaptive_vdf_multiplier 2 100
+field adaptive_ssha_threshold 2 1
+field adaptive_ssha_multiplier 2 100
 field pruning_idle_windows 8 80640
 field bootstrap_pow_difficulty 4 65536
 field max_protocol_payload_bytes 4 1048576

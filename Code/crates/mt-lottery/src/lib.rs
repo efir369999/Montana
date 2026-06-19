@@ -1,4 +1,4 @@
-// spec, разделы "BundledConfirmation", "VDF Reveal и лотерея", "Signed scope, identity и aggregation" (Правила R1, R2)
+// spec, разделы "BundledConfirmation", "SSHA Reveal и лотерея", "Signed scope, identity и aggregation" (Правила R1, R2)
 
 use mt_codec::{domain, write_bytes, write_u16, write_u64, CanonicalEncode};
 use mt_crypto::{
@@ -7,7 +7,7 @@ use mt_crypto::{
 use mt_state::{NodeId, NodeTable};
 
 // spec v33.1.5+: window_index унифицирован на u64 (8B LE) во всех M4 структурах
-// (BundledConfirmation, VdfReveal, ProposalHeader). Старый u32 (4B) убран как
+// (BundledConfirmation, SshaReveal, ProposalHeader). Старый u32 (4B) убран как
 // architectural smell — единый тип для одного концептуально-единого field
 // устраняет cross-struct cast и расхождение в hash composition.
 pub const BUNDLE_FIXED_OVERHEAD: usize = 32 + 32 + 8 + 2 + 2 + SIGNATURE_SIZE;
@@ -236,16 +236,16 @@ pub fn validate_bundle(
     Ok(())
 }
 
-// spec, раздел "VDF Reveal и лотерея" (строки 920-928)
+// spec, раздел "SSHA Reveal и лотерея" (строки 920-928)
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VdfReveal {
+pub struct SshaReveal {
     pub node_id: NodeId,
     pub window_index: u64,
     pub endpoint: Hash32,
     pub signature: Signature,
 }
 
-impl VdfReveal {
+impl SshaReveal {
     // spec: Правило R1 — signed_scope = canonical_bytes без поля signature (last SIGNATURE_SIZE bytes)
     pub fn encode_signed_scope(&self, buf: &mut Vec<u8>) {
         write_bytes(buf, &self.node_id);
@@ -253,12 +253,12 @@ impl VdfReveal {
         write_bytes(buf, &self.endpoint);
     }
 
-    // DEV-020: decode wire-format VdfReveal. Layout = 32 (node_id) + 8 (window_index LE)
+    // DEV-020: decode wire-format SshaReveal. Layout = 32 (node_id) + 8 (window_index LE)
     // + 32 (endpoint) + SIGNATURE_SIZE (signature) = 32+8+32+3309 = 3381 bytes for ML-DSA-65.
     pub fn decode(input: &[u8]) -> Result<(Self, usize), &'static str> {
         let needed = 32 + 8 + 32 + SIGNATURE_SIZE;
         if input.len() < needed {
-            return Err("truncated VdfReveal");
+            return Err("truncated SshaReveal");
         }
         let mut node_id = [0u8; 32];
         node_id.copy_from_slice(&input[0..32]);
@@ -269,7 +269,7 @@ impl VdfReveal {
         sig_bytes.copy_from_slice(&input[72..72 + SIGNATURE_SIZE]);
         let signature = Signature::from_array(sig_bytes);
         Ok((
-            VdfReveal {
+            SshaReveal {
                 node_id,
                 window_index,
                 endpoint,
@@ -280,21 +280,21 @@ impl VdfReveal {
     }
 }
 
-impl CanonicalEncode for VdfReveal {
+impl CanonicalEncode for SshaReveal {
     fn encode(&self, buf: &mut Vec<u8>) {
         self.encode_signed_scope(buf);
         write_bytes(buf, self.signature.as_bytes());
     }
 }
 
-// spec: Правило R2 — reveal_hash = SHA-256("mt-vdf-reveal" || signed_scope(reveal))
-pub fn reveal_hash(reveal: &VdfReveal) -> Hash32 {
+// spec: Правило R2 — reveal_hash = SHA-256("mt-ssha-reveal" || signed_scope(reveal))
+pub fn reveal_hash(reveal: &SshaReveal) -> Hash32 {
     let mut scope = Vec::new();
     reveal.encode_signed_scope(&mut scope);
-    hash(domain::VDF_REVEAL, &[&scope])
+    hash(domain::SSHA_REVEAL, &[&scope])
 }
 
-// spec, "VDF Reveal и лотерея" — endpoint formula:
+// spec, "SSHA Reveal и лотерея" — endpoint formula:
 //   endpoint_node(W) = SHA-256("mt-lottery" || T_r(W) || cemented_bundle_aggregate(W-2) || node_id || window_index)
 // window_index encoded as u64 LE (8B) consistent с layout field (spec v33.1.5+ unified).
 pub fn compute_endpoint(
@@ -320,10 +320,10 @@ pub enum RevealError {
     InvalidSignature,
 }
 
-// spec, "Валидация VDF_Reveal" (строки 1020-1026) — правила 1, 2, 3, 5.
+// spec, "Валидация SSHA_Reveal" (строки 1020-1026) — правила 1, 2, 3, 5.
 // Правило 4 (weighted_ticket < target) — в Phase C (Node lottery).
 pub fn validate_reveal(
-    reveal: &VdfReveal,
+    reveal: &SshaReveal,
     node_table: &NodeTable,
     t_r: &Hash32,
     cemented_bundle_aggregate_w_minus_2: &Hash32,
@@ -526,7 +526,7 @@ pub fn weighted_ticket_node(
 // ============ Phase E: Winner determination (argmin) ============
 
 // spec, раздел "Определение winner-а (Lookback Leadership)" (строки ~1017-1056):
-// winner_{W-1} = argmin(weighted_ticket) среди cemented VDF_Reveal nodes + accounts.
+// winner_{W-1} = argmin(weighted_ticket) среди cemented SSHA_Reveal nodes + accounts.
 //
 // [C-1] SSOT: единый источник WINNER_CLASS_NODE — mt-state.
 // Лотерея single-class: только узлы (spec Sovereignty Ladder);
@@ -1097,15 +1097,15 @@ mod tests {
         assert_eq!(SECRET_KEY_SIZE, 4032);
     }
 
-    // -------- VdfReveal (Phase B) --------
+    // -------- SshaReveal (Phase B) --------
 
     fn build_signed_reveal(
         sk: &mt_crypto::SecretKey,
         node_id: NodeId,
         window_index: u64,
         endpoint: Hash32,
-    ) -> VdfReveal {
-        let mut r = VdfReveal {
+    ) -> SshaReveal {
+        let mut r = SshaReveal {
             node_id,
             window_index,
             endpoint,
@@ -1119,7 +1119,7 @@ mod tests {
 
     #[test]
     fn reveal_encode_matches_spec_layout() {
-        let r = VdfReveal {
+        let r = SshaReveal {
             node_id: [0xAA; 32],
             window_index: 0x0102030405060708,
             endpoint: [0xBB; 32],
@@ -1146,7 +1146,7 @@ mod tests {
 
     #[test]
     fn reveal_signed_scope_excludes_signature() {
-        let r = VdfReveal {
+        let r = SshaReveal {
             node_id: [0x11; 32],
             window_index: 42,
             endpoint: [0x22; 32],
@@ -1162,8 +1162,8 @@ mod tests {
     }
 
     #[test]
-    fn reveal_hash_domain_mt_vdf_reveal() {
-        let r = VdfReveal {
+    fn reveal_hash_domain_mt_ssha_reveal() {
+        let r = SshaReveal {
             node_id: [0x01; 32],
             window_index: 7,
             endpoint: [0x02; 32],
@@ -1171,13 +1171,13 @@ mod tests {
         };
         let mut scope = Vec::new();
         r.encode_signed_scope(&mut scope);
-        let expected = hash(b"mt-vdf-reveal", &[&scope]);
+        let expected = hash(b"mt-ssha-reveal", &[&scope]);
         assert_eq!(reveal_hash(&r), expected);
     }
 
     #[test]
     fn reveal_hash_stable_across_resign() {
-        let mut r = VdfReveal {
+        let mut r = SshaReveal {
             node_id: [0x01; 32],
             window_index: 7,
             endpoint: [0x02; 32],
@@ -1346,7 +1346,7 @@ mod tests {
 
     #[test]
     fn reveal_encode_determinism() {
-        let r = VdfReveal {
+        let r = SshaReveal {
             node_id: [0x42; 32],
             window_index: 99,
             endpoint: [0x77; 32],

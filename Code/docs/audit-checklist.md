@@ -244,7 +244,7 @@ cd "<repo-root>" && cargo test -p mt-merkle -p mt-genesis -p mt-state -p mt-time
 
 Ожидание: SMT root determinism, Genesis singleton stability,
 state table BTreeMap canonical sort,
-VDF + cemented_bundle_aggregate per [I-8].
+SSHA + cemented_bundle_aggregate per [I-8].
 
 **M3 Determinism invariants (mt-account):**
 ```
@@ -267,9 +267,9 @@ compute_endpoint [I-8] binding, log2_q64 / ln_q64 / weighted_ticket_node
 monotonicity, determine_winner argmin canonical (M4-1 closure: TooManyOps
 validation barrier), proposal_hash R2, canonical_proposer / fallback_proposer
 Lookback Leadership cascade, compute_control_set canonical sort, validate_*
-acceptance, finalization_status, NodeRegistration R2, candidate_vdf_init
-[I-8], selection_slots / selection_sort_key, required_vdf_length Adaptive
-VDF, distinct domain separators between three sort_key compositions.
+acceptance, finalization_status, NodeRegistration R2, candidate_ssha_init
+[I-8], selection_slots / selection_sort_key, required_ssha_length Adaptive
+SSHA, distinct domain separators between three sort_key compositions.
 
 **M5 Determinism invariants (mt-store):**
 ```
@@ -308,7 +308,7 @@ cd "<repo-root>" && cargo test -p mt-lottery --test external_oracle -p mt-entry 
 Ожидание (Python): 4 hardcoded hex digests + distinct domains PASS +
 input sensitivity PASS.
 
-Ожидание (Rust tests): 4 PASS — `compute_endpoint`, `candidate_vdf_init`,
+Ожидание (Rust tests): 4 PASS — `compute_endpoint`, `candidate_ssha_init`,
 `selection_sort_key`, `nr_sort_key` byte-exact match Python `hashlib.sha256`
 output. Cross-impl conformance verified — независимая reference не от
 Rust SHA-256 (sha2 crate) → защита от drift между Rust impl и spec

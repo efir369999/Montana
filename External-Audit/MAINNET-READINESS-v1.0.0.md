@@ -59,7 +59,7 @@ The maintainer's request to the external reviewer is concentrated on three lines
 |------|---------|
 | Spec  | [`Whitepaper Montana.md`](../Whitepaper%20Montana.md) §5 (threat model + attack-class subsections); [`Montana Network v1.1.0.md`](../Montana%20Network%20v1.1.0.md) §«Lookback Leadership» |
 | Code  | [`Code/crates/mt-timechain/src/lib.rs`](../Code/crates/mt-timechain/src/lib.rs) |
-| Disclaimer | The construction is explicitly **not** a VDF in the Boneh / Pietrzak / Wesolowski sense; there is no proof of correct evaluation |
+| Disclaimer | The construction is explicitly **not** a SSHA in the Boneh / Pietrzak / Wesolowski sense; there is no proof of correct evaluation |
 
 **Reviewer's question:** what is the reduction from the cementing rule to the unforgeability of `t_r(W)` under the proposer-verifier asymmetry? Is the two-window lookback (`cemented_bundle_aggregate(W − 2)`) sufficient against grinding when the proposer holds a hardware advantage ×K over a verifier?
 

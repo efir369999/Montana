@@ -8,27 +8,27 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 
 ---
 
-## DEV-001: NodeRegistration with vdf_chain_length=0
+## DEV-001: NodeRegistration with ssha_chain_length=0
 
 **Crate:** `montana-node`
 **File:line:** `crates/montana-node/src/registration.rs:8-22` (build_node_registration)
 **Spec section:** «NodeRegistration» / «Adaptive SSHA» / «Step 1: incremental apply»
-**Spec quote:** «`if NR.vdf_chain_length >= required: apply; N += 1; else: reject`», `required_vdf_length(pending=0, active=0, τ₂)` → `tau2_windows = 20160`
-**What the code does:** `vdf_chain_length=0` (or user-provided), with no `≥ τ₂` check, bypasses `apply_noderegistrations_batch` via a manual `CandidatePool::insert`
+**Spec quote:** «`if NR.ssha_chain_length >= required: apply; N += 1; else: reject`», `required_ssha_length(pending=0, active=0, τ₂)` → `tau2_windows = 20160`
+**What the code does:** `ssha_chain_length=0` (or user-provided), with no `≥ τ₂` check, bypasses `apply_noderegistrations_batch` via a manual `CandidatePool::insert`
 **Severity:** mainnet blocker ([I-9] / [C-7] violation, bypass of the canonical apply pipeline)
-**Closure path:** implement the candidate SSHA phase in `start.rs` — the node ticks SSHA until `vdf_chain_length ≥ τ₂_windows`, then automatically forms a NodeRegistration with the correct `vdf_chain_length` and calls `apply_noderegistrations_batch` through the canonical pipeline
+**Closure path:** implement the candidate SSHA phase in `start.rs` — the node ticks SSHA until `ssha_chain_length ≥ τ₂_windows`, then automatically forms a NodeRegistration with the correct `ssha_chain_length` and calls `apply_noderegistrations_batch` through the canonical pipeline
 **Closure cost:** ~14 days wall-clock on an M-class Mac (SSHA physics, not code) + ~4 hours of code
 **Status:** closed (commit `fb204ef` mt-local-node: byte-exact rewrite via canonical apply_proposal)
 
 ---
 
-## DEV-002: proof_endpoint = candidate_vdf_init(zeros, zeros, node_id)
+## DEV-002: proof_endpoint = candidate_ssha_init(zeros, zeros, node_id)
 
 **Crate:** `montana-node`
 **File:line:** `crates/montana-node/src/registration.rs:11`
 **Spec section:** «Step 2: Candidacy» / «[I-8] compliance»
-**Spec quote:** «`candidate_vdf_init = SHA-256("mt-candidate-vdf-init" || timechain_value(W_start) || cemented_bundle_aggregate(W_start - 2) || node_id)`»
-**What the code does:** `candidate_vdf_init(&[0u8; 32], &[0u8; 32], &node_id)` — timechain_value and cba both zeros (placeholder)
+**Spec quote:** «`candidate_ssha_init = SHA-256("mt-candidate-ssha-init" || timechain_value(W_start) || cemented_bundle_aggregate(W_start - 2) || node_id)`»
+**What the code does:** `candidate_ssha_init(&[0u8; 32], &[0u8; 32], &node_id)` — timechain_value and cba both zeros (placeholder)
 **Severity:** mainnet blocker ([I-8] violation — no canonical unpredictable-offline binding)
 **Closure path:** at the time of forming a NodeRegistration use the **real** `timechain.t_r` and `cemented_bundle_aggregate(W_start - 2, &cemented_node_ids_at_W_start_minus_2)` from the local node state
 **Closure cost:** ~1 hour of code after DEV-001 closure
@@ -41,10 +41,10 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 **Crate:** `montana-node`
 **File:line:** `crates/montana-node/src/commands/start.rs:104-120`, `commands/advance.rs` similarly
 **Spec section:** «Lottery» / «τ₁ Winner»
-**Spec quote:** «winner = `argmin(weighted_ticket_node)` among cemented ``VdfReveal`` candidate nodes; `weighted_ticket_node = ln_q64(endpoint) / lottery_weight`»
-**What the code does:** `state.nodes.iter().next()` — the first node by `node_id` lex order, **with no `VdfReveal` formed, no endpoint, no weighted_ticket**
+**Spec quote:** «winner = `argmin(weighted_ticket_node)` among cemented ``SshaReveal`` candidate nodes; `weighted_ticket_node = ln_q64(endpoint) / lottery_weight`»
+**What the code does:** `state.nodes.iter().next()` — the first node by `node_id` lex order, **with no `SshaReveal` formed, no endpoint, no weighted_ticket**
 **Severity:** mainnet blocker (consensus-critical logic ignored, [I-8] violation)
-**Closure path:** implement per window: form a ``VdfReveal`` (`mt_lottery::VdfReveal`) with `endpoint = SHA-256("mt-lottery" || T_r || cba || node_id || W LE)`, sign with `node_sk`; compute `weighted_ticket_node` via `mt_lottery::weighted_ticket_node`; for singleton — sole candidate — argmin is trivial and correct **through the canonical API**
+**Closure path:** implement per window: form a ``SshaReveal`` (`mt_lottery::SshaReveal`) with `endpoint = SHA-256("mt-lottery" || T_r || cba || node_id || W LE)`, sign with `node_sk`; compute `weighted_ticket_node` via `mt_lottery::weighted_ticket_node`; for singleton — sole candidate — argmin is trivial and correct **through the canonical API**
 **Closure cost:** ~6 hours of code
 **Status:** closed (commit `fb204ef` mt-local-node: byte-exact rewrite via canonical apply_proposal)
 
@@ -58,7 +58,7 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 **Spec quote:** «chain_length is incremented on a cemented `BundledConfirmation`», quorum = `(67 × X + 99) / 100` of active_chain_length
 **What the code does:** `chain_length += 1` directly, with no BC formed, no signature over `op_hashes / reveal_hashes`, no quorum cementing
 **Severity:** mainnet blocker (chain_length is bluntly incremented on the basis of a non-existent rule)
-**Closure path:** form a `mt_lottery::BundledConfirmation` with `op_hashes[]` (from Account Table cemented operations) + `reveal_hashes[]` (from cemented `VdfReveal` of the previous window) + signature `node_sk`; cementing via quorum (for singleton — 100% by itself, checked via `mt_lottery::is_cemented`)
+**Closure path:** form a `mt_lottery::BundledConfirmation` with `op_hashes[]` (from Account Table cemented operations) + `reveal_hashes[]` (from cemented `SshaReveal` of the previous window) + signature `node_sk`; cementing via quorum (for singleton — 100% by itself, checked via `mt_lottery::is_cemented`)
 **Closure cost:** ~8 hours of code
 **Status:** closed (commit `fb204ef` mt-local-node: byte-exact rewrite via canonical apply_proposal)
 
@@ -144,7 +144,7 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
                  on median commodity hardware (engineering target, not a protocol
                  invariant)»
 **What the code does:** on the first run of the node (timechain.bin did not exist)
-                    it runs benchmark vdf_step(zeros, 10M) → measures
+                    it runs benchmark ssha_step(zeros, 10M) → measures
                     the hardware SHA-256 rate → calibrates `current_d` so that
                     a window ≈ 60 s wall-clock on this machine.
 **What the spec says:** spec `D₀ = 252M` — engineering calibration target for
@@ -174,7 +174,7 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 **Crate:** `montana-node`
 **File:line:** `crates/montana-node/src/state.rs:32-66` (LocalState::bootstrap),
               `crates/montana-node/src/node_lifecycle.rs:48-92` (NodeLifecycle::fresh_for + is_bootstrap_node),
-              `crates/montana-node/src/commands/start.rs:74-93` (Bootstrap → CandidateVdf transition)
+              `crates/montana-node/src/commands/start.rs:74-93` (Bootstrap → CandidateSsha transition)
 **Spec section:** «Genesis Decree» / «bootstrap_node_pubkey» / «Node activation»
 **Spec quote:** «`bootstrap_node_pubkey: [u8; PUBLIC_KEY_SIZE]` in `protocol_params` —
                  the first node of the network is activated via genesis state, not via
@@ -190,8 +190,8 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
   - If `bootstrap_node_pubkey` is finalized + `identity.node_pk` matches —
     genesis path: phase=Active immediately, NodeRecord for self in NodeTable
   - If `bootstrap_node_pubkey` is finalized + `identity.node_pk` does NOT match —
-    standard candidate path: phase=Bootstrap → CandidateVdf on the first window
-    → Registered (via apply_noderegistrations_batch once vdf_chain_length
+    standard candidate path: phase=Bootstrap → CandidateSsha on the first window
+    → Registered (via apply_noderegistrations_batch once ssha_chain_length
     ≥ τ₂) → Active (via apply_selection_event at the nearest W % selection_interval == 0).
     The node does NOT appear in NodeTable bootstrap state — it is added only
     via canonical apply_selection_event.
@@ -452,19 +452,19 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 ## DEV-020: per-window Reveal broadcast + reveal_pool
 
 **Crate:** `montana-node`, `mt-lottery`
-**File:line:** `crates/mt-lottery/src/lib.rs:248-281` (VdfReveal::decode), `crates/montana-node/src/commands/start.rs:196` (reveal_pool init), `crates/montana-node/src/commands/start.rs:622-700` (drain MsgType::VdfReveal), `crates/montana-node/src/commands/start.rs:300-370` (follower compute+broadcast own Reveal), `crates/montana-node/src/commands/start.rs:850-870` (bootstrap broadcast own Reveal), `crates/montana-node/src/commands/start.rs:1010-1080` (spin+grace inline Reveal handling).
-**Spec section:** «`VdfReveal` pipeline» / «Cemented Reveal set»
+**File:line:** `crates/mt-lottery/src/lib.rs:248-281` (SshaReveal::decode), `crates/montana-node/src/commands/start.rs:196` (reveal_pool init), `crates/montana-node/src/commands/start.rs:622-700` (drain MsgType::SshaReveal), `crates/montana-node/src/commands/start.rs:300-370` (follower compute+broadcast own Reveal), `crates/montana-node/src/commands/start.rs:850-870` (bootstrap broadcast own Reveal), `crates/montana-node/src/commands/start.rs:1010-1080` (spin+grace inline Reveal handling).
+**Spec section:** «`SshaReveal` pipeline» / «Cemented Reveal set»
 **What the code does (before):** only bootstrap inserted its own reveal_hash into BC; the Reveal object itself was never broadcast over the wire. Peer nodes had no way to participate in the lottery.
 **What the code does (after):**
   1. All Active operators compute their own Reveal each window using `compute_endpoint(t_r_window, cba_w_minus_2, my_node, window_index)`.
-  2. The Reveal is broadcast as `MsgType::VdfReveal` envelope (wire size 3381 = 32+8+32+3309).
-  3. Every node maintains `reveal_pool: BTreeMap<u64, BTreeMap<NodeId, VdfReveal>>` keyed by window, bounded to last 64 windows.
-  4. Main dispatcher and proposer's spin-drain / grace handlers all decode VdfReveal envelopes, validate via `mt_lottery::validate_reveal`, and insert into the pool.
+  2. The Reveal is broadcast as `MsgType::SshaReveal` envelope (wire size 3381 = 32+8+32+3309).
+  3. Every node maintains `reveal_pool: BTreeMap<u64, BTreeMap<NodeId, SshaReveal>>` keyed by window, bounded to last 64 windows.
+  4. Main dispatcher and proposer's spin-drain / grace handlers all decode SshaReveal envelopes, validate via `mt_lottery::validate_reveal`, and insert into the pool.
   5. Follower's BC.reveal_hashes is populated from `reveal_pool.get(window_index)` (own + any peer reveals received).
 
 **Severity:** prerequisite for DEV-021 winner determination and DEV-022 Lookback rotation.
 **Closure path:** ↑ implemented in this commit.
-**Closure cost:** ~150 lines of Rust + VdfReveal::decode added to mt-lottery.
+**Closure cost:** ~150 lines of Rust + SshaReveal::decode added to mt-lottery.
 **Status:** closed (Build 17/18, this session).
 
 ---
@@ -474,7 +474,7 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 **Crate:** `montana-node`, `mt-lottery`
 **File:line:** `crates/montana-node/src/commands/start.rs:1240-1290` (winner computation block)
 **Spec section:** «Lookback Leadership / Determine winner_{W-1}»
-**Spec quote:** «`winner_{W-1} = argmin(weighted_ticket_node)` среди cemented `VdfReveal` узлов-кандидатов окна W-1»
+**Spec quote:** «`winner_{W-1} = argmin(weighted_ticket_node)` среди cemented `SshaReveal` узлов-кандидатов окна W-1»
 **What the code does (before):** proposer set `winner_id = my_node` unconditionally — no lottery, no per-window winner.
 **What the code does (after):**
   1. At cement time, proposer computes `cemented_hashes = union of reveal_hashes across BCs in accumulator[current]`.
@@ -494,11 +494,11 @@ PeerId derivation: SHA-256 multihash of the peer's ML-DSA-65 identity public key
 ## DEV-021b (open): peer drain during SSHA tick
 
 **Crate:** `montana-node`
-**File:line:** `crates/montana-node/src/commands/start.rs:627` (vdf_step_chunked call inside main loop body)
+**File:line:** `crates/montana-node/src/commands/start.rs:627` (ssha_step_chunked call inside main loop body)
 **Spec section:** «Cross-window cementing timeline»
 **What the code currently does:** follower's main loop drains `incoming_rx` only at the very top of each iteration. Each iteration takes ~30s (SSHA tick) + ~500ms (idle sleep). Candidate Proposal envelopes arrive mid-SSHA and queue in `incoming_rx` until next iteration top. By the time the follower's drain processes a candidate, the proposer has already moved past that window into the next, so follower's BC for window N reaches the proposer ~30s late — too late to land in `accumulator[N]` before cement.
 **Consequence:** peer BCs and peer Reveals are chronically 1 window late. DEV-019b grace mitigates partially; full multi-confirmer cement (bundles=N) and multi-candidate lottery (DEV-021) require lockstep timing.
-**Closure path:** restructure follower main loop so `incoming_rx` is drained periodically during `vdf_step_chunked` (callback every N steps), or move drain into a separate tokio task in the network thread with shared state. Either change implies a larger refactor than fits this session.
+**Closure path:** restructure follower main loop so `incoming_rx` is drained periodically during `ssha_step_chunked` (callback every N steps), or move drain into a separate tokio task in the network thread with shared state. Either change implies a larger refactor than fits this session.
 **Closure cost:** ~1–2 days wall-clock for correct implementation + integration test.
 **Status:** open. Tracked as the gate for DEV-022 Lookback Leadership rotation.
 
@@ -639,7 +639,7 @@ Live verification (window 4418..4422 explorer snapshot):
 **Closure cost:** ~15 lines.
 **Status:** closed (Build 24b sha ad27ae713758, this session).
 
-**Operational note.** Frankfurt does not yet actually propose for W=4467 because of upstream DEV-021b (peer drain during sequential-SHA-chain tick) — Frankfurt's local current=4466 doesn't advance to 4467 before bootstrap takes over the cement via fallback K-window timeout. Full multi-proposer rotation gated on DEV-021b closure (drain refactor with periodic message processing inside vdf_step_chunked).
+**Operational note.** Frankfurt does not yet actually propose for W=4467 because of upstream DEV-021b (peer drain during sequential-SHA-chain tick) — Frankfurt's local current=4466 doesn't advance to 4467 before bootstrap takes over the cement via fallback K-window timeout. Full multi-proposer rotation gated on DEV-021b closure (drain refactor with periodic message processing inside ssha_step_chunked).
 
 
 ---
@@ -681,7 +681,7 @@ After K windows since FIRST election, bootstrap fallback fires regardless of whe
 
 Закрытые этим циклом отклонения:
 
-- **DEV-021b closed.** `drain_network`/`handle_protocol_message` вызываются между порциями последовательной SHA-256 цепочки (`vdf_step_chunked` on_chunk) и из цикла ожидания кворума ведущего — спецификация «непрерывность последовательной SHA-256 цепочки» выполняется дословно: финализация и приём билетов идут параллельно вычислению следующего окна. Подтверждено локальным собранием из 3 узлов: confirmers=3 на каждом окне после генезисных.
+- **DEV-021b closed.** `drain_network`/`handle_protocol_message` вызываются между порциями последовательной SHA-256 цепочки (`ssha_step_chunked` on_chunk) и из цикла ожидания кворума ведущего — спецификация «непрерывность последовательной SHA-256 цепочки» выполняется дословно: финализация и приём билетов идут параллельно вычислению следующего окна. Подтверждено локальным собранием из 3 узлов: confirmers=3 на каждом окне после генезисных.
 - **DEV-022 closed (re-enabled).** Lookback-ротация ведущего: `proposer_W = winner_{W-2}` из `winner_history` (канонически из cemented proposal_{W-1}); подпись заголовка проверяется по `NodeTable[proposer_node_id].node_pubkey` (mt_consensus::validate_header), не по ключу первопоселенца. Подтверждено: цементируют все три узла собрания (46/63/44 на 150 окнах).
 - **DEV-023 closed (cascade).** Каскад запасных: глубина = elapsed/FALLBACK_TIMEOUT_SECS (120 с), `mt_consensus::fallback_proposer` по отсортированным взвешенным билетам окна W-2 из `lottery_history`; первопоселенец — терминальная страховка генезисных окон. Терпимость ±1 уровень глубины на расхождение настенных часов при приёме.
 - **DEV-012 closed (multi-confirmer).** Цементация только по реальному кворуму: Σ chain_length подписантов BC ≥ 67% активной длины (active predicate 2τ₂ — `active_chain_length_at`). Никакого тайм-аут-цементирования: при недостижимом кворуме цепочка честно ждёт (проверено отказом узла: рост 2 окна инерции → заморозка → возобновление при возврате узла).

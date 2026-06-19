@@ -63,7 +63,7 @@ fn sample_candidate(id_byte: u8) -> CandidateRecord {
         operator_account_id: [id_byte.wrapping_add(1); 32],
         proof_endpoint: [id_byte.wrapping_add(2); 32],
         w_start: id_byte as u64 * 10,
-        vdf_chain_length: 20_160,
+        ssha_chain_length: 20_160,
         registration_window: id_byte as u64 * 10,
         expires: id_byte as u64 * 10 + 60_480,
     }

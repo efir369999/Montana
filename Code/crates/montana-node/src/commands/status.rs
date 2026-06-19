@@ -33,10 +33,10 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
     println!("D (current)           : {}", timechain.current_d);
     if matches!(
         lifecycle.phase,
-        crate::node_lifecycle::NodePhase::CandidateVdf
+        crate::node_lifecycle::NodePhase::CandidateSsha
     ) {
         println!(
-            "candidate VDF         : {}/{} (осталось {} окон)",
+            "candidate SSHA         : {}/{} (осталось {} окон)",
             lifecycle.candidate_progress,
             lifecycle.target_chain_length,
             lifecycle
@@ -98,14 +98,14 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
         println!("узел в Candidate Pool : ДА — ожидает selection event");
         let c = state.candidates.get(&my_node).unwrap();
         println!("  w_start              : {}", c.w_start);
-        println!("  vdf_chain_length     : {}", c.vdf_chain_length);
+        println!("  ssha_chain_length     : {}", c.ssha_chain_length);
         println!("  registration_window  : {}", c.registration_window);
         println!("  expires (window)     : {}", c.expires);
         println!("  proof_endpoint       : {}", hex_lower(&c.proof_endpoint));
     } else {
         println!("узел                  : НЕ ЗАРЕГИСТРИРОВАН");
         println!("                        запустите «start» — узел пройдёт через");
-        println!("                        candidate VDF (τ₂ окон) → registered → active");
+        println!("                        candidate SSHA (τ₂ окон) → registered → active");
     }
     println!();
 

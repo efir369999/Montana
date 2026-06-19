@@ -8,7 +8,7 @@
 #   MONTANA_MNEMONIC           fixed identity (otherwise generated on first run)
 #   MONTANA_GENESIS_MANIFEST   manifest path (default /etc/montana/genesis-manifest.json)
 #   MONTANA_MANIFEST_SHA256    if set, refuse to start unless manifest sha matches
-#   MONTANA_D_TEST_OVERRIDE    TEST-ONLY fast VDF (same value across the cohort)
+#   MONTANA_D_TEST_OVERRIDE    TEST-ONLY fast SSHA (same value across the cohort)
 set -eu
 
 DATA_DIR="/var/lib/montana"

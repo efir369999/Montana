@@ -184,7 +184,7 @@ Findings against this section go to https://github.com/efir369999/Montana/issues
 Code: [`Code/crates/mt-timechain/src/lib.rs`](../Code/crates/mt-timechain/src/lib.rs).
 Spec: [`Whitepaper Montana.md`](../Whitepaper%20Montana.md) §5 (threat model, attack-class subsections) + §13 (cryptographic primitives table); [`Montana Network v1.1.0.md`](../Montana%20Network%20v1.1.0.md) §«Lookback Leadership».
 
-The implementation is **explicitly not** a VDF in the Boneh / Pietrzak / Wesolowski sense — there is no proof of correct evaluation. The disclaimer is in §5 of the whitepaper and is repeated in `Code/docs/SPEC_DEVIATIONS.md` under the spec target row.
+The implementation is **explicitly not** a SSHA in the Boneh / Pietrzak / Wesolowski sense — there is no proof of correct evaluation. The disclaimer is in §5 of the whitepaper and is repeated in `Code/docs/SPEC_DEVIATIONS.md` under the spec target row.
 
 **Audit asks** (priority 1 per `AUDIT-SCOPE-v1.0.0.md` §1.2):
 

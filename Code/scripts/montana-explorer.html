@@ -153,7 +153,7 @@ async function refresh() {
           <td><span class="label-chip ${labelCls}">${n.label || 'unknown'}</span></td>
           <td class="mono">${shortHex(n.node_id, 16)}</td>
           <td><span class="label-chip ${n.state === 'Active' ? 'ok' : 'warn'}">${n.state}</span></td>
-          <td>${fmt(n.chain_length || n.vdf_chain_length || 0)}</td>
+          <td>${fmt(n.chain_length || n.ssha_chain_length || 0)}</td>
           <td>${share.toFixed(1)}% <span class="bar" style="width:80px"><span style="width:${Math.min(share,100)}%"></span></span></td>
           <td>${n.start_window ?? n.w_start ?? '—'}</td>
           <td>${n.last_confirmation_window ?? '—'}</td>

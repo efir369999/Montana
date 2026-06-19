@@ -292,7 +292,7 @@ pub fn validate_control_set(
 // spec, "Canonical acceptance" (строка 1114):
 //   (a) proposer = winner_{W-2}
 //   (b) included_bundles ≥ 67% active_chain_length
-//   (c) included_reveals = cemented set VDF_Reveals окна W-1
+//   (c) included_reveals = cemented set SSHA_Reveals окна W-1
 //   (d) winner_{W-1} = argmin из (cemented reveals ∪ account_candidates)
 //   (e) state_root корректен (independent recomputation — delegated в mt-account::apply_proposal)
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -336,7 +336,7 @@ pub fn validate_bundles_threshold(
     }
 }
 
-// (c) included_reveals == cemented set VDF_Reveals W-1 (каноничен).
+// (c) included_reveals == cemented set SSHA_Reveals W-1 (каноничен).
 // Compare via sorted Vec equality — caller sorts both before call.
 pub fn validate_included_reveals(
     proposer_reveal_hashes: &[Hash32],
@@ -355,13 +355,13 @@ pub fn validate_included_reveals(
 // **Caller contract (M4-MED-2):**
 //
 // Эта функция **строго отвергает** любой winner_id если cemented set окна W-1
-// пуст (т.е. нет ни одного VDF_Reveal от node-кандидата). Это правильно для
+// пуст (т.е. нет ни одного SSHA_Reveal от node-кандидата). Это правильно для
 // **post-genesis** окон: в стационарном режиме сеть всегда имеет ≥1 candidate
 // в W-1; пустой cemented set = либо все nodes одновременно offline (degenerate
 // scenario, network в degraded mode), либо attacker подаёт fabricated proposal.
 //
 // **Для genesis bootstrap** (первые окна где cemented W-1 candidates пустые
-// потому что сеть ещё не накопила VDF_Reveals) caller ОБЯЗАН skip
+// потому что сеть ещё не накопила SSHA_Reveals) caller ОБЯЗАН skip
 // `validate_winner` и применять fallback proposer logic из `canonical_proposer`
 // (которая возвращает bootstrap_node_id при `current_window < 2` либо при
 // empty W-2 cemented set). Genesis bypass — caller responsibility (mt-account

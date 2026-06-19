@@ -16,7 +16,7 @@ const SIZE: usize = 4 + 1 + 1 + 2 + 32 + 32 + 8 + 8 + 8 + 8 + 32;
 #[repr(u8)]
 pub enum NodePhase {
     Bootstrap = 0,
-    CandidateVdf = 1,
+    CandidateSsha = 1,
     Registered = 2,
     Active = 3,
 }
@@ -25,7 +25,7 @@ impl NodePhase {
     fn from_u8(v: u8) -> Result<Self, NodeError> {
         match v {
             0 => Ok(NodePhase::Bootstrap),
-            1 => Ok(NodePhase::CandidateVdf),
+            1 => Ok(NodePhase::CandidateSsha),
             2 => Ok(NodePhase::Registered),
             3 => Ok(NodePhase::Active),
             other => Err(NodeError::InvalidArguments(format!(
@@ -49,8 +49,8 @@ pub struct NodeLifecycle {
 impl NodeLifecycle {
     // Автоматическое определение genesis vs candidate per spec Genesis Decree:
     // если identity.node_pk == params.bootstrap_node_pubkey → узел = bootstrap
-    // node сети, phase = Active immediately (без Candidate VDF, DEV-010);
-    // иначе → standard path: phase = Bootstrap → CandidateVdf на первом окне →
+    // node сети, phase = Active immediately (без Candidate SSHA, DEV-010);
+    // иначе → standard path: phase = Bootstrap → CandidateSsha на первом окне →
     // Registered (через apply_noderegistrations_batch) → Active (через
     // apply_selection_event на ближайшем W % selection_interval == 0).
     //
