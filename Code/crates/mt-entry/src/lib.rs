@@ -392,7 +392,10 @@ pub fn apply_noderegistrations_batch(
     let mut rejected = Vec::new();
     for nr in sorted {
         let current_pending = pending_baseline + applied_count;
-        let required = required_vdf_length(current_pending, active_nodes, params.tau2_windows);
+        // spec 2250: base_vdf_length = vdf_entry_windows (= τ₂ in production).
+        // Reading vdf_entry_windows (not tau2_windows) lets a test build lower the
+        // candidate entry length to 1 window while τ₂ stays 20160 for calibration.
+        let required = required_vdf_length(current_pending, active_nodes, params.vdf_entry_windows);
         let node_id = compute_node_id(&nr.node_pubkey);
         if nr.vdf_chain_length >= required {
             let rec = CandidateRecord {

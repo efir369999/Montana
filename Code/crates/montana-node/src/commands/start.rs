@@ -134,7 +134,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             lifecycle.phase = NodePhase::Active;
         } else if args.enable_candidate {
             lifecycle.phase = NodePhase::CandidateVdf;
-            lifecycle.target_chain_length = params.tau2_windows;
+            lifecycle.target_chain_length = params.vdf_entry_windows;
             lifecycle.w_start = current.saturating_add(1);
             lifecycle.candidate_progress = 0;
             // candidate_endpoint начинается с T_r текущего timechain — это
