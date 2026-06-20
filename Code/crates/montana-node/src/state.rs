@@ -37,9 +37,11 @@ impl LocalState {
 
         // A non-genesis node also carries its own operator account (needed to
         // sign a future NodeRegistration). Genesis members are already seeded
-        // above; for them this account_id collides and the insert is a no-op.
-        let is_genesis = NodeLifecycle::is_bootstrap_node(operator, params);
-        if !is_genesis {
+        // above. A genesis member (bootstrap or any N_SEED operator) already has
+        // its account baked into `accounts` with is_node_operator=true; inserting
+        // would OVERWRITE it (AccountTable::insert replaces), diverging the
+        // account_root from canonical genesis. Insert only when truly absent.
+        if accounts.get(&operator.account_id()).is_none() {
             accounts.insert(AccountRecord {
                 account_id: operator.account_id(),
                 balance: 0,
