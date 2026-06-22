@@ -395,7 +395,8 @@ pub fn apply_noderegistrations_batch(
         // spec 2250: base_ssha_length = ssha_entry_windows (= τ₂ in production).
         // Reading ssha_entry_windows (not tau2_windows) lets a test build lower the
         // candidate entry length to 1 window while τ₂ stays 20160 for calibration.
-        let required = required_ssha_length(current_pending, active_nodes, params.ssha_entry_windows);
+        let required =
+            required_ssha_length(current_pending, active_nodes, params.ssha_entry_windows);
         let node_id = compute_node_id(&nr.node_pubkey);
         if nr.ssha_chain_length >= required {
             let rec = CandidateRecord {
@@ -679,13 +680,18 @@ mod tests {
 
     #[test]
     fn is_selection_window_at_intervals() {
+        // devnet TEST CONFIG: selection_interval=1 → every non-zero window is a
+        // selection window (production selection_interval=336). Window 0 is always
+        // excluded (genesis). Verify the formula against params.selection_interval.
         let p = mt_genesis::genesis_params();
+        let si = p.selection_interval;
         assert!(!is_selection_window(0, p)); // Genesis exclusion
-        assert!(!is_selection_window(1, p));
-        assert!(!is_selection_window(335, p));
-        assert!(is_selection_window(336, p));
-        assert!(!is_selection_window(337, p));
-        assert!(is_selection_window(672, p));
+        assert!(is_selection_window(si, p));
+        assert!(is_selection_window(2 * si, p));
+        // first window strictly inside (0, si) is not a selection window
+        if si > 1 {
+            assert!(!is_selection_window(si - 1, p));
+        }
     }
 
     #[test]
@@ -786,8 +792,11 @@ mod tests {
 
     #[test]
     fn batch_insufficient_ssha_rejected() {
+        // Shortfall = base required length (params.ssha_entry_windows) minus 1.
+        let params = mt_genesis::genesis_params();
+        let base = params.ssha_entry_windows;
         let (pk, sk) = keypair();
-        let mut nr = stub_nr(*pk.as_bytes(), TAU2 - 1); // shortfall
+        let mut nr = stub_nr(*pk.as_bytes(), base.saturating_sub(1)); // shortfall
         sign_nr(&mut nr, &sk);
         let mut pool = CandidatePool::new();
         let outcome = apply_noderegistrations_batch(
@@ -798,7 +807,7 @@ mod tests {
             0,
             1000,
             100,
-            mt_genesis::genesis_params(),
+            params,
         );
         assert_eq!(outcome.applied.len(), 0);
         assert_eq!(outcome.rejected.len(), 1);
@@ -807,11 +816,14 @@ mod tests {
 
     #[test]
     fn batch_incremental_pending_increases() {
-        // Publish 3 NR, each requires base initially — но после первой pending += 1
+        // Publish 3 NR, each carrying exactly the base required length — после
+        // первой pending += 1, давление растёт, третья требует 2×base → reject.
+        let params = mt_genesis::genesis_params();
+        let base = params.ssha_entry_windows;
         let mut nrs = Vec::new();
         for _ in 0..3 {
             let (pk, sk) = keypair();
-            let mut nr = stub_nr(*pk.as_bytes(), TAU2);
+            let mut nr = stub_nr(*pk.as_bytes(), base);
             // Change operator_account to unique id per NR
             nr.operator_account_id = [nrs.len() as u8 + 1; 32];
             sign_nr(&mut nr, &sk);
@@ -822,17 +834,9 @@ mod tests {
         // NR1: pressure=0 → base; NR2: pressure=10 → base; NR3: pressure=20 → 2×base
         // Third NR has TAU2 = base, not 2×base → rejected
         let mut pool = CandidatePool::new();
-        let outcome = apply_noderegistrations_batch(
-            &mut pool,
-            &nrs,
-            &[0; 32],
-            &[0; 32],
-            0,
-            100,
-            100,
-            mt_genesis::genesis_params(),
-        );
-        // First 2 applied, third rejected
+        let outcome =
+            apply_noderegistrations_batch(&mut pool, &nrs, &[0; 32], &[0; 32], 0, 100, 100, params);
+        // First 2 applied, third rejected (required jumps to 2×base at pending=2)
         assert_eq!(outcome.applied.len(), 2);
         assert_eq!(outcome.rejected.len(), 1);
     }

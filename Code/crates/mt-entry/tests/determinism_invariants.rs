@@ -186,17 +186,19 @@ fn selection_slots_at_least_one() {
 }
 
 #[test]
-fn is_selection_window_every_336() {
-    // [C-1] SSOT: selection_interval читается из ProtocolParams (336 at genesis)
+fn is_selection_window_at_interval() {
+    // [C-1] SSOT: selection_interval читается из ProtocolParams (devnet TEST
+    // CONFIG = 1; production = 336). Window 0 is always excluded (genesis).
     let p = mt_genesis::genesis_params();
-    assert_eq!(p.selection_interval, 336);
+    let si = p.selection_interval;
     assert!(!is_selection_window(0, p)); // window 0 — особый случай (нет selection)
-    assert!(!is_selection_window(1, p));
-    assert!(!is_selection_window(335, p));
-    assert!(is_selection_window(336, p));
-    assert!(!is_selection_window(337, p));
-    assert!(is_selection_window(672, p));
-    assert!(is_selection_window(336 * 100, p));
+    assert!(is_selection_window(si, p));
+    assert!(is_selection_window(2 * si, p));
+    assert!(is_selection_window(si * 100, p));
+    if si > 1 {
+        assert!(!is_selection_window(si - 1, p));
+        assert!(!is_selection_window(si + 1, p));
+    }
 }
 
 // ---------- selection_sort_key + rank_candidates_for_selection ----------

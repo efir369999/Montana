@@ -9,35 +9,19 @@ use std::sync::OnceLock;
 use mt_codec::{
     domain, write_bytes, write_u128, write_u16, write_u32, write_u64, write_u8, CanonicalEncode,
 };
-use mt_crypto::{hash, Hash32, PUBLIC_KEY_SIZE};
+use mt_crypto::{hash, Hash32};
 
 // PARAMS_ENCODED_SIZE: layout sum для protocol_params (см. spec раздел "Указ Генезиса").
 // Layout (LE):
 // d0(8) + reserved(8) + tau2(8) + emission(16) + target_zero(32) + quorum_num(1)
 // + quorum_den(1) + dead_zone(2+2) + d_adj(2+2) + ssha_entry(8) + sel_interval(8)
 // + admission_divisor(8) + cand_expiry(8) + adapt_thr(2) + adapt_mult(2) + pruning(8)
-// + pow(4) + max_payload(4) + max_sf(4) + bootstrap_account_pk(1952)
-// + bootstrap_node_pk(1952) + n_seed(2) + app_id(32) + content_hash(32)
-// = 4108 bytes for the reference singleton (n_seed=0, empty
-// genesis_active_operators per spec "0 для reference singleton"). Each baked
-// N_SEED operator would add 2×1952=3904 bytes.
-pub const PARAMS_ENCODED_SIZE: usize = 4108;
-
-// === Genesis Ceremony 2026-05-02 — финализированные значения ===
-//
-// Bootstrap operator: Moscow node `montana-moscow` (<front>)
-//   account_id = 4c290c3d5d63e84b99c30c83fb4d172e04102af4492b4d56d0642711b09e2072
-//   node_id    = 75bfaf9026405c12ef36437f08cc63c040cfe1924773dedcba0abadf8c6928a1
-//
-// Bootstrap peers: 3 early узла (мос/фра/зел) — без протокольных привилегий, просто known peers. После ceremony эти константы immutable.
-
-/// 1952 байта ML-DSA-65 публичного ключа Moscow operator account.
-pub const BOOTSTRAP_ACCOUNT_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
-    include_bytes!("../include/bootstrap-account-pk.bin");
-
-/// 1952 байта ML-DSA-65 публичного ключа Moscow consensus node.
-pub const BOOTSTRAP_NODE_PUBKEY_BYTES: &[u8; PUBLIC_KEY_SIZE] =
-    include_bytes!("../include/bootstrap-node-pk.bin");
+// + max_payload(4) + max_sf(4) + app_id(32) + content_hash(32)
+// = 198 bytes. Genesis = empty window 0: no baked bootstrap operator, no
+// N_SEED cohort, no proof-of-work difficulty. The first node bootstraps via
+// the existing admission path (selection_slots(0)=1 self-admit, quorum(1)=1
+// self-cement).
+pub const PARAMS_ENCODED_SIZE: usize = 198;
 
 /// 32 байта initial SSHA target. SHA-256("mt-genesis" || account_pk || node_pk
 /// || "montana-genesis-mainnet-2026-06-11").
@@ -77,13 +61,8 @@ pub struct ProtocolParams {
     pub adaptive_ssha_threshold: u16,
     pub adaptive_ssha_multiplier: u16,
     pub pruning_idle_windows: u64,
-    pub bootstrap_pow_difficulty: u32,
     pub max_protocol_payload_bytes: u32,
     pub max_sf_ciphertext_bytes: u32,
-    pub bootstrap_account_pubkey: [u8; PUBLIC_KEY_SIZE],
-    pub bootstrap_node_pubkey: [u8; PUBLIC_KEY_SIZE],
-    pub n_seed: u16,
-    pub genesis_active_operators: Vec<([u8; PUBLIC_KEY_SIZE], [u8; PUBLIC_KEY_SIZE])>,
     pub genesis_content_app_id: Hash32,
     pub genesis_content_data_hash: Hash32,
 }
@@ -108,16 +87,8 @@ impl CanonicalEncode for ProtocolParams {
         write_u16(buf, self.adaptive_ssha_threshold);
         write_u16(buf, self.adaptive_ssha_multiplier);
         write_u64(buf, self.pruning_idle_windows);
-        write_u32(buf, self.bootstrap_pow_difficulty);
         write_u32(buf, self.max_protocol_payload_bytes);
         write_u32(buf, self.max_sf_ciphertext_bytes);
-        write_bytes(buf, &self.bootstrap_account_pubkey);
-        write_bytes(buf, &self.bootstrap_node_pubkey);
-        write_u16(buf, self.n_seed);
-        for (acct, node) in &self.genesis_active_operators {
-            write_bytes(buf, acct);
-            write_bytes(buf, node);
-        }
         write_bytes(buf, &self.genesis_content_app_id);
         write_bytes(buf, &self.genesis_content_data_hash);
     }
@@ -152,18 +123,8 @@ pub fn genesis_params() -> &'static ProtocolParams {
         adaptive_ssha_threshold: 1,
         adaptive_ssha_multiplier: 100,
         pruning_idle_windows: 80_640,
-        bootstrap_pow_difficulty: 65_536,
         max_protocol_payload_bytes: 1_048_576,
         max_sf_ciphertext_bytes: 65_536,
-        bootstrap_account_pubkey: *BOOTSTRAP_ACCOUNT_PUBKEY_BYTES,
-        bootstrap_node_pubkey: *BOOTSTRAP_NODE_PUBKEY_BYTES,
-        // spec "N_SEED ... 0 для reference singleton": the reference mainnet is
-        // a singleton genesis — bootstrap is the sole genesis Active operator
-        // (sole canonical proposer, quorum=1, singleton-cementing). Every other
-        // operator joins post-genesis via the standard CandidateSsha → Registered
-        // → Active admission path.
-        n_seed: 0,
-        genesis_active_operators: vec![],
         genesis_content_app_id: genesis_app_id(),
         genesis_content_data_hash: GENESIS_CONTENT_DATA_HASH_BYTES,
     })
@@ -176,27 +137,6 @@ pub fn compute_genesis_state_hash(state_root: &Hash32, params: &ProtocolParams) 
     hash(domain::GENESIS, &[state_root, &encoded])
 }
 
-// Programmatic check для статуса финализации Genesis ceremony.
-// Возвращает true если все 4 ceremony-controlled поля содержат
-// non-placeholder values (non-zero):
-//   - bootstrap_account_pubkey
-//   - bootstrap_node_pubkey
-//   - target_zero (initial SSHA target)
-//   - genesis_content_data_hash
-//
-// До mainnet ceremony — возвращает false (поля = placeholders [0; N]).
-// После ceremony — возвращает true; Genesis Decree становится immutable
-// и singleton начинает раздавать финализированные значения.
-//
-// Использование в operator deployment script: assert is_finalized() == true
-// перед start узла, иначе fail-fast с инструкциями к ceremony.
-pub fn is_genesis_bootstrap_finalized(params: &ProtocolParams) -> bool {
-    params.bootstrap_account_pubkey != [0u8; PUBLIC_KEY_SIZE]
-        && params.bootstrap_node_pubkey != [0u8; PUBLIC_KEY_SIZE]
-        && params.target_zero != [0u8; 32]
-        && params.genesis_content_data_hash != [0u8; 32]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,7 +146,7 @@ mod tests {
         let mut buf = Vec::new();
         genesis_params().encode(&mut buf);
         assert_eq!(buf.len(), PARAMS_ENCODED_SIZE);
-        assert_eq!(PARAMS_ENCODED_SIZE, 4108);
+        assert_eq!(PARAMS_ENCODED_SIZE, 198);
     }
 
     #[test]
@@ -222,27 +162,25 @@ mod tests {
         assert_eq!(p.participation_dead_zone_high, 95);
         assert_eq!(p.d_adjustment_rate_num, 3);
         assert_eq!(p.d_adjustment_rate_den, 100);
-        assert_eq!(p.ssha_entry_windows, 20_160);
-        assert_eq!(p.selection_interval, 336);
+        // devnet TEST CONFIG: ssha_entry_windows=1, selection_interval=1
+        // (production = 20_160 / 336). Calibration values are author-chosen and
+        // decoupled from tau2_windows in required_ssha_length / is_selection_window.
+        assert_eq!(p.ssha_entry_windows, 1);
+        assert_eq!(p.selection_interval, 1);
         assert_eq!(p.admission_divisor, 130);
         assert_eq!(p.candidate_expiry_windows, 60_480);
         assert_eq!(p.adaptive_ssha_threshold, 1);
         assert_eq!(p.adaptive_ssha_multiplier, 100);
         assert_eq!(p.pruning_idle_windows, 80_640);
-        assert_eq!(p.bootstrap_pow_difficulty, 65_536);
         assert_eq!(p.max_protocol_payload_bytes, 1_048_576);
         assert_eq!(p.max_sf_ciphertext_bytes, 65_536);
-        // Reference singleton genesis: bootstrap is the sole genesis Active
-        // operator; n_seed == 0 and genesis_active_operators is empty.
-        assert_eq!(p.n_seed, 0);
-        assert_eq!(p.genesis_active_operators.len(), 0);
-        assert_eq!(p.n_seed as usize, p.genesis_active_operators.len());
     }
 
     #[test]
-    fn tau2_equals_ssha_entry() {
+    fn ssha_entry_is_devnet_one_window() {
+        // devnet TEST CONFIG: a candidate enters in 1 window (production = τ₂).
         let p = genesis_params();
-        assert_eq!(p.tau2_windows, p.ssha_entry_windows);
+        assert_eq!(p.ssha_entry_windows, 1);
     }
 
     #[test]
@@ -259,9 +197,11 @@ mod tests {
 
     #[test]
     fn selection_interval_divides_tau2() {
+        // devnet TEST CONFIG: selection_interval=1 divides τ₂; ratio = τ₂
+        // (production selection_interval=336 → ratio 60).
         let p = genesis_params();
         assert_eq!(p.tau2_windows % p.selection_interval, 0);
-        assert_eq!(p.tau2_windows / p.selection_interval, 60);
+        assert_eq!(p.tau2_windows / p.selection_interval, p.tau2_windows);
     }
 
     #[test]
@@ -360,8 +300,6 @@ mod tests {
             |p| p.candidate_expiry_windows += 1,
             |p| p.adaptive_ssha_multiplier = 101,
             |p| p.pruning_idle_windows += 1,
-            |p| p.bootstrap_account_pubkey[0] = 0xFF,
-            |p| p.bootstrap_node_pubkey[0] = 0xFF,
             |p| p.genesis_content_app_id[0] = 0xFF,
             |p| p.genesis_content_data_hash[0] = 0xFF,
         ];
@@ -380,58 +318,12 @@ mod tests {
         assert_eq!(genesis_params().reserved_m0, [0u8; 8]);
     }
 
-    // Pre-mainnet статус: возвращает false (placeholder fields).
-    // После Genesis ceremony — bootstrap_keypairs_finalized() становится PASS,
-    // и этот тест меняется на assert_eq!(true).
     #[test]
-    fn is_genesis_bootstrap_finalized_post_ceremony_returns_true() {
-        // Genesis Ceremony 2026-05-02: Moscow operator pubkeys + target_zero + content hash
-        // финализированы. is_genesis_bootstrap_finalized() должен возвращать true.
+    fn genesis_target_and_content_finalized() {
+        // Genesis = empty window 0: no baked bootstrap operator. The only
+        // ceremony-controlled values left are the initial SSHA target and the
+        // genesis content hash; both are non-placeholder.
         let p = genesis_params();
-        assert!(
-            is_genesis_bootstrap_finalized(p),
-            "Genesis ceremony завершена 2026-05-02 — все 4 поля должны быть non-zero"
-        );
-    }
-
-    #[test]
-    fn is_genesis_bootstrap_finalized_detects_partial_finalization() {
-        // Симулируем pre-ceremony state (все 4 поля placeholder zeros) и
-        // постепенно финализируем — проверяем all-or-nothing semantic.
-        let mut p = genesis_params().clone();
-        p.bootstrap_account_pubkey = [0u8; PUBLIC_KEY_SIZE];
-        p.bootstrap_node_pubkey = [0u8; PUBLIC_KEY_SIZE];
-        p.target_zero = [0u8; 32];
-        p.genesis_content_data_hash = [0u8; 32];
-        assert!(
-            !is_genesis_bootstrap_finalized(&p),
-            "all zeros → not finalized"
-        );
-
-        p.bootstrap_account_pubkey = [0xAB; PUBLIC_KEY_SIZE];
-        assert!(!is_genesis_bootstrap_finalized(&p));
-
-        p.bootstrap_node_pubkey = [0xCD; PUBLIC_KEY_SIZE];
-        assert!(!is_genesis_bootstrap_finalized(&p));
-
-        p.target_zero = [0xEF; 32];
-        assert!(!is_genesis_bootstrap_finalized(&p));
-
-        p.genesis_content_data_hash = [0x42; 32];
-        assert!(
-            is_genesis_bootstrap_finalized(&p),
-            "all 4 non-zero → finalized"
-        );
-    }
-
-    #[test]
-    fn bootstrap_keypairs_finalized() {
-        // Post-ceremony: проверяем что bootstrap_account_pubkey/bootstrap_node_pubkey
-        // не placeholder (содержат реальные байты Moscow operator).
-        let p = genesis_params();
-        assert!(is_genesis_bootstrap_finalized(p));
-        assert_ne!(p.bootstrap_account_pubkey[..16], [0u8; 16]);
-        assert_ne!(p.bootstrap_node_pubkey[..16], [0u8; 16]);
         assert_ne!(p.target_zero, [0u8; 32]);
         assert_ne!(p.genesis_content_data_hash, [0u8; 32]);
     }

@@ -5,8 +5,8 @@ use mt_crypto::{
     hash, suite_id_from_u16, verify, Hash32, PublicKey, Signature, PUBLIC_KEY_SIZE, SIGNATURE_SIZE,
 };
 use mt_state::{
-    compute_state_root, derive_account_id, derive_node_id, AccountId, AccountRecord, AccountTable,
-    CandidatePool, NodeId, NodeRecord, NodeTable,
+    compute_state_root, derive_account_id, AccountId, AccountTable, CandidatePool, NodeId,
+    NodeRecord, NodeTable,
 };
 
 // spec v30.x: OpenAccount удалён; TransferActivation 0x0A создаёт AccountRecord
@@ -640,10 +640,14 @@ fn apply_checkpoint_rotation(node_table: &mut NodeTable, window_w: u64, params: 
     }
 }
 
-// spec: "Вход и регистрация → Genesis State" (строки 1468-1502)
+// spec: "Вход и регистрация → Genesis State"
 //
-// Genesis State — аксиома сети: 1 bootstrap account (is_node_operator=true, balance=0)
-// + 1 bootstrap node (chain_length=1 для инварианта weighted_ticket) + empty Candidate Pool.
+// Genesis State — аксиома сети: пустое окно 0. Нет baked bootstrap operator,
+// нет N_SEED cohort. Account Table, Node Table, Candidate Pool пусты; их корни
+// равны корню пустого sparse-Merkle дерева (empty_internal(256)). Первый узел
+// поднимает сеть через существующий admission path: при нулевом Active-наборе
+// selection_slots(0)=1 self-admit-ит первого кандидата, а quorum(1)=1 даёт ему
+// зацементировать собственную цепочку.
 
 pub const GENESIS_SUITE_ID: u16 = 1;
 
@@ -653,90 +657,11 @@ pub struct GenesisState {
     pub candidate_pool: CandidatePool,
 }
 
-pub fn build_genesis_state(params: &ProtocolParams) -> GenesisState {
-    let account_id = derive_account_id(GENESIS_SUITE_ID, &params.bootstrap_account_pubkey);
-    let node_id = derive_node_id(&params.bootstrap_node_pubkey);
-
-    // spec: frontier_hash = SHA-256("mt-genesis" || account_id)
-    let frontier = hash(domain::GENESIS, &[&account_id]);
-
-    let account = AccountRecord {
-        account_id,
-        balance: 0,
-        suite_id: GENESIS_SUITE_ID,
-        is_node_operator: true,
-        frontier_hash: frontier,
-        op_height: 0,
-        account_chain_length: 0,
-        account_chain_length_snapshot: 0,
-        current_pubkey: params.bootstrap_account_pubkey,
-        creation_window: 0,
-        last_op_window: 0,
-        last_activation_window: 0,
-    };
-
-    let node = NodeRecord {
-        node_id,
-        node_pubkey: params.bootstrap_node_pubkey,
-        suite_id: GENESIS_SUITE_ID,
-        operator_account_id: account_id,
-        start_window: 0,
-        chain_length: 1, // spec: invariant chain_length ≥ 1
-        // spec "N_SEED как consensus-binding": all genesis records snapshot=1
-        chain_length_snapshot: 1,
-        chain_length_checkpoints: [0u64; 6],
-        last_confirmation_window: 0,
-    };
-
-    let mut account_table = AccountTable::new();
-    account_table.insert(account);
-    let mut node_table = NodeTable::new();
-    node_table.insert(node);
-
-    // N_SEED cohort: additional Active operators baked into protocol_params
-    // (hash-bound via the Genesis State Hash). Seeded byte-exact identically to
-    // the montana-node runtime LocalState::bootstrap so genesis_state_root from
-    // this function equals the runtime state_root (no genesis fork on non-empty
-    // N_SEED). suite = GENESIS_SUITE_ID for every baked operator.
-    for (account_pubkey, node_pubkey) in &params.genesis_active_operators {
-        let extra_account_id = derive_account_id(GENESIS_SUITE_ID, account_pubkey);
-        let extra_node_id = derive_node_id(node_pubkey);
-        // spec 2384: N_SEED operator records identical to bootstrap, incl.
-        // frontier_hash = SHA-256("mt-genesis" || account_id).
-        let extra_frontier = hash(domain::GENESIS, &[&extra_account_id]);
-        account_table.insert(AccountRecord {
-            account_id: extra_account_id,
-            balance: 0,
-            suite_id: GENESIS_SUITE_ID,
-            is_node_operator: true,
-            frontier_hash: extra_frontier,
-            op_height: 0,
-            account_chain_length: 0,
-            account_chain_length_snapshot: 0,
-            current_pubkey: *account_pubkey,
-            creation_window: 0,
-            last_op_window: 0,
-            last_activation_window: 0,
-        });
-        node_table.insert(NodeRecord {
-            node_id: extra_node_id,
-            node_pubkey: *node_pubkey,
-            suite_id: GENESIS_SUITE_ID,
-            operator_account_id: extra_account_id,
-            start_window: 0,
-            chain_length: 1,
-            chain_length_snapshot: 1,
-            chain_length_checkpoints: [0; 6],
-            last_confirmation_window: 0,
-        });
-    }
-
-    let candidate_pool = CandidatePool::new();
-
+pub fn build_genesis_state(_params: &ProtocolParams) -> GenesisState {
     GenesisState {
-        account_table,
-        node_table,
-        candidate_pool,
+        account_table: AccountTable::new(),
+        node_table: NodeTable::new(),
+        candidate_pool: CandidatePool::new(),
     }
 }
 
@@ -2467,114 +2392,42 @@ mod tests {
     // ================== Phase F: Genesis state ==================
 
     #[test]
-    fn genesis_state_cohort_is_bootstrap_plus_nseed_operators() {
+    fn genesis_state_is_empty() {
+        // spec: Genesis = empty window 0. No baked bootstrap operator, no N_SEED
+        // cohort: all three consensus tables are empty.
         let p = mt_genesis::genesis_params();
         let g = build_genesis_state(p);
-        // Unified genesis: 1 bootstrap + every baked genesis_active_operator,
-        // all Active node operators; candidates empty.
-        let expected = 1 + p.genesis_active_operators.len();
-        assert_eq!(g.account_table.len(), expected);
-        assert_eq!(g.node_table.len(), expected);
+        assert_eq!(g.account_table.len(), 0);
+        assert_eq!(g.node_table.len(), 0);
         assert_eq!(g.candidate_pool.len(), 0);
-        assert_eq!(p.n_seed as usize, p.genesis_active_operators.len());
     }
 
     #[test]
-    fn genesis_state_seeds_each_baked_operator() {
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        for (account_pubkey, node_pubkey) in &p.genesis_active_operators {
-            let aid = derive_account_id(GENESIS_SUITE_ID, account_pubkey);
-            let nid = derive_node_id(node_pubkey);
-            let a = g.account_table.get(&aid).expect("operator account seeded");
-            assert!(a.is_node_operator);
-            assert_eq!(a.balance, 0);
-            assert_eq!(&a.current_pubkey, account_pubkey);
-            let n = g.node_table.get(&nid).expect("operator node seeded");
-            assert_eq!(n.chain_length, 1);
-            assert_eq!(&n.node_pubkey, node_pubkey);
-        }
-    }
-
-    #[test]
-    fn genesis_account_is_node_operator_with_zero_balance() {
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        let account_id = derive_account_id(GENESIS_SUITE_ID, &p.bootstrap_account_pubkey);
-        let acct = g.account_table.get(&account_id).expect("genesis account");
-        assert_eq!(acct.balance, 0);
-        assert!(acct.is_node_operator);
-        assert_eq!(acct.creation_window, 0);
-        assert_eq!(acct.op_height, 0);
-        assert_eq!(acct.account_chain_length, 0);
-        assert_eq!(acct.suite_id, GENESIS_SUITE_ID);
-    }
-
-    #[test]
-    fn genesis_account_frontier_hash_spec_formula() {
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        let account_id = derive_account_id(GENESIS_SUITE_ID, &p.bootstrap_account_pubkey);
-        let acct = g.account_table.get(&account_id).unwrap();
-        // spec: frontier_hash = SHA-256("mt-genesis" || account_id)
-        let expected = hash(domain::GENESIS, &[&account_id]);
-        assert_eq!(acct.frontier_hash, expected);
-    }
-
-    #[test]
-    fn genesis_account_id_derived_from_bootstrap_pubkey() {
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        let expected_id = derive_account_id(GENESIS_SUITE_ID, &p.bootstrap_account_pubkey);
-        assert!(g.account_table.contains(&expected_id));
-    }
-
-    #[test]
-    fn genesis_node_chain_length_is_one() {
-        // spec invariant: chain_length ≥ 1 для любого узла
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        let node_id = derive_node_id(&p.bootstrap_node_pubkey);
-        let node = g.node_table.get(&node_id).expect("genesis node");
-        assert_eq!(node.chain_length, 1);
-    }
-
-    #[test]
-    fn genesis_node_operator_matches_genesis_account() {
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        let node_id = derive_node_id(&p.bootstrap_node_pubkey);
-        let account_id = derive_account_id(GENESIS_SUITE_ID, &p.bootstrap_account_pubkey);
-        let node = g.node_table.get(&node_id).unwrap();
-        assert_eq!(node.operator_account_id, account_id);
-        assert_eq!(node.start_window, 0);
-        assert_eq!(node.last_confirmation_window, 0);
-        assert_eq!(node.chain_length_snapshot, 1);
-        assert_eq!(node.chain_length_checkpoints, [0u64; 6]);
-    }
-
-    #[test]
-    fn genesis_node_id_derived_from_bootstrap_pubkey() {
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        let expected = derive_node_id(&p.bootstrap_node_pubkey);
-        assert!(g.node_table.contains(&expected));
-    }
-
-    #[test]
-    fn genesis_candidate_pool_is_empty_and_root_matches_fresh_empty_pool() {
-        let p = mt_genesis::genesis_params();
-        let g = build_genesis_state(p);
-        assert!(g.candidate_pool.is_empty());
+    fn genesis_account_node_candidate_roots_are_empty_internal_256() {
         // spec, "Вход и регистрация → Genesis State":
-        //   genesis_candidate_root = empty_internal(256)
-        // Sparse Merkle root пустого дерева на TREE_DEPTH=256 — каноническое
-        // значение, consistent с rest of state composition (account_root,
-        // node_root тоже через empty_internal). Binding check: genesis pool
-        // root == empty_internal(256) byte-exact + determinism vs fresh pool.
-        let fresh = CandidatePool::new();
-        assert_eq!(g.candidate_pool.root(), fresh.root());
-        assert_eq!(g.candidate_pool.root(), mt_merkle::empty_internal(256));
+        //   genesis_account_root = genesis_node_root = genesis_candidate_root
+        //   = empty_internal(256). Empty window 0: all three tables empty, so
+        //   each root is the canonical empty sparse-Merkle root at TREE_DEPTH=256.
+        let p = mt_genesis::genesis_params();
+        let g = build_genesis_state(p);
+        let empty = mt_merkle::empty_internal(256);
+        assert_eq!(g.account_table.root(), empty);
+        assert_eq!(g.node_table.root(), empty);
+        assert_eq!(g.candidate_pool.root(), empty);
+        // Determinism vs fresh empty tables.
+        assert_eq!(g.account_table.root(), AccountTable::new().root());
+        assert_eq!(g.node_table.root(), NodeTable::new().root());
+        assert_eq!(g.candidate_pool.root(), CandidatePool::new().root());
+    }
+
+    #[test]
+    fn genesis_supply_zero_no_accounts() {
+        // Empty genesis has no accounts, hence zero supply.
+        let p = mt_genesis::genesis_params();
+        let g = build_genesis_state(p);
+        let total: u128 = g.account_table.iter().map(|r| r.balance).sum();
+        assert_eq!(total, 0);
+        assert_eq!(g.account_table.iter().count(), 0);
     }
 
     #[test]

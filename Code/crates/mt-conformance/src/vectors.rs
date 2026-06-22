@@ -91,41 +91,10 @@ pub fn ibt_b1_online_proof() -> VectorIbtSeed {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct VectorPow {
-    pub name: &'static str,
-    pub difficulty: u32,
-    pub target: [u8; 32],
-}
-
-pub fn pow_f1_difficulty_2_pow_16() -> VectorPow {
-    let mut target = [0u8; 32];
-    target[1] = 0x01;
-    VectorPow {
-        name: "F1: Bootstrap PoW target derivation, difficulty = 2^16",
-        difficulty: 65_536,
-        target,
-    }
-}
-
-pub fn pow_f2_difficulty_2_pow_10() -> VectorPow {
-    let mut target = [0u8; 32];
-    target[1] = 0x40;
-    VectorPow {
-        name: "F2: Bootstrap PoW target derivation, difficulty = 2^10",
-        difficulty: 1024,
-        target,
-    }
-}
-
-pub fn all_pow_vectors() -> Vec<VectorPow> {
-    vec![pow_f1_difficulty_2_pow_16(), pow_f2_difficulty_2_pow_10()]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mt_net::{decode_envelope, encode_envelope, MsgType, ProtocolMessage, Target};
+    use mt_net::{decode_envelope, encode_envelope, MsgType, ProtocolMessage};
 
     #[test]
     fn envelope_vectors_byte_exact() {
@@ -140,14 +109,6 @@ mod tests {
             assert_eq!(buf, v.expected_bytes, "{} byte-exact mismatch", v.name);
             let dec = decode_envelope(&buf).unwrap();
             assert_eq!(dec.payload, v.payload, "{} payload roundtrip", v.name);
-        }
-    }
-
-    #[test]
-    fn pow_target_byte_exact() {
-        for v in all_pow_vectors() {
-            let t = Target::from_difficulty(v.difficulty).unwrap();
-            assert_eq!(t.as_bytes(), &v.target, "{} target byte-exact", v.name);
         }
     }
 }

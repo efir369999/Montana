@@ -47,48 +47,14 @@ pub struct NodeLifecycle {
 }
 
 impl NodeLifecycle {
-    // Автоматическое определение genesis vs candidate per spec Genesis Decree:
-    // если identity.node_pk == params.bootstrap_node_pubkey → узел = bootstrap
-    // node сети, phase = Active immediately (без Candidate SSHA, DEV-010);
-    // иначе → standard path: phase = Bootstrap → CandidateSsha на первом окне →
-    // Registered (через apply_noderegistrations_batch) → Active (через
-    // apply_selection_event на ближайшем W % selection_interval == 0).
-    //
-    // Pre-Genesis-ceremony: params.bootstrap_node_pubkey = [0u8; PUBLIC_KEY_SIZE]
-    // (placeholder zeros). Любой реальный узел с identity не совпадёт с zeros;
-    // в этой ветке узел запускается как singleton genesis (legacy local mode)
-    // — после Genesis ceremony эта ветка перестанет применяться (см.
-    // mt_genesis::is_genesis_bootstrap_finalized).
-    pub fn fresh_for(identity: &Identity, params: &ProtocolParams) -> Self {
-        if Self::is_bootstrap_node(identity, params) {
-            Self::fresh_genesis()
-        } else {
-            Self::fresh_candidate()
-        }
-    }
-
-    pub fn is_bootstrap_node(identity: &Identity, params: &ProtocolParams) -> bool {
-        let bootstrap_pubkey_zeroed = params.bootstrap_node_pubkey.iter().all(|&b| b == 0);
-        if bootstrap_pubkey_zeroed {
-            // Genesis ceremony pending — placeholder zeros pubkey не активирует
-            // production check. Любой узел трактуется как singleton genesis для
-            // local network of one (M5 development phase).
-            return true;
-        }
-        identity.node_pk.as_bytes() == &params.bootstrap_node_pubkey
-    }
-
-    fn fresh_genesis() -> Self {
-        Self {
-            phase: NodePhase::Active,
-            candidate_seed: [0u8; 32],
-            candidate_endpoint: [0u8; 32],
-            candidate_progress: 0,
-            target_chain_length: 0,
-            w_start: 0,
-            registration_window: 0,
-            nodereg_hash: [0u8; 32],
-        }
+    // Genesis = пустое окно 0: нет baked bootstrap-узла. Каждый узел стартует
+    // кандидатом и self-admit-ит себя через стандартный admission path:
+    // phase = Bootstrap → CandidateSsha на первом окне → Registered (через
+    // apply_noderegistrations_batch) → Active (через apply_selection_event на
+    // ближайшем W % selection_interval == 0). При нулевом Active-наборе
+    // selection_slots(0)=1 принимает первого кандидата сразу.
+    pub fn fresh_for(_identity: &Identity, _params: &ProtocolParams) -> Self {
+        Self::fresh_candidate()
     }
 
     fn fresh_candidate() -> Self {

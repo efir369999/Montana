@@ -11,7 +11,7 @@ use mt_consensus::{
     leader_penalty_excluded_node, proposal_hash, validate_bundles_threshold,
     validate_included_reveals, validate_proposer_is_canonical, validate_winner, AcceptanceError,
     ControlObjectRef, ControlSetError, FinalizationStatus, HeaderError, ProposalHeader,
-    PROPOSAL_HEADER_SIZE,
+    NO_PROPOSER, PROPOSAL_HEADER_SIZE,
 };
 use mt_crypto::{Signature, SIGNATURE_SIZE};
 use mt_lottery::{Candidate, WINNER_CLASS_NODE};
@@ -106,21 +106,14 @@ fn proposal_hash_changes_on_field_mutation() {
 // ---------- canonical_proposer / fallback_proposer (Lookback Leadership) ----------
 
 #[test]
-fn canonical_proposer_genesis_bootstrap_window_zero_one() {
-    let bootstrap: NodeId = [0x77; 32];
-    let candidates: Vec<Candidate> = vec![Candidate {
-        ticket: 100,
-        class: WINNER_CLASS_NODE,
-        id: [0x01; 32],
-    }];
-    // window 0 и 1 — bootstrap (genesis bootstrap)
-    assert_eq!(canonical_proposer(0, bootstrap, &candidates), bootstrap);
-    assert_eq!(canonical_proposer(1, bootstrap, &candidates), bootstrap);
+fn canonical_proposer_empty_is_no_proposer() {
+    let empty: Vec<Candidate> = vec![];
+    // Genesis cold-start / degraded mode: empty W-2 → no canonical proposer.
+    assert_eq!(canonical_proposer(&empty), NO_PROPOSER);
 }
 
 #[test]
 fn canonical_proposer_picks_first_node_candidate() {
-    let bootstrap: NodeId = [0x77; 32];
     let c1 = Candidate {
         ticket: 100,
         class: WINNER_CLASS_NODE,
@@ -131,21 +124,12 @@ fn canonical_proposer_picks_first_node_candidate() {
         class: WINNER_CLASS_NODE,
         id: [0x02; 32],
     };
-    let proposer = canonical_proposer(2, bootstrap, &[c1, c2]);
+    let proposer = canonical_proposer(&[c1, c2]);
     assert_eq!(proposer, c1.id);
 }
 
 #[test]
-fn canonical_proposer_no_candidates_extended_genesis_bootstrap() {
-    let bootstrap: NodeId = [0x77; 32];
-    let empty: Vec<Candidate> = vec![];
-    // No node candidates → bootstrap fallback (extended genesis behavior)
-    assert_eq!(canonical_proposer(5, bootstrap, &empty), bootstrap);
-}
-
-#[test]
 fn fallback_proposer_depth_1_equals_canonical() {
-    let bootstrap: NodeId = [0x77; 32];
     let c1 = Candidate {
         ticket: 100,
         class: WINNER_CLASS_NODE,
@@ -156,14 +140,13 @@ fn fallback_proposer_depth_1_equals_canonical() {
         class: WINNER_CLASS_NODE,
         id: [0x02; 32],
     };
-    let canonical = canonical_proposer(2, bootstrap, &[c1, c2]);
-    let fallback_1 = fallback_proposer(2, bootstrap, &[c1, c2], 1);
+    let canonical = canonical_proposer(&[c1, c2]);
+    let fallback_1 = fallback_proposer(&[c1, c2], 1);
     assert_eq!(canonical, fallback_1);
 }
 
 #[test]
 fn fallback_proposer_depth_2_picks_second() {
-    let bootstrap: NodeId = [0x77; 32];
     let c1 = Candidate {
         ticket: 100,
         class: WINNER_CLASS_NODE,
@@ -174,21 +157,20 @@ fn fallback_proposer_depth_2_picks_second() {
         class: WINNER_CLASS_NODE,
         id: [0x02; 32],
     };
-    let fallback_2 = fallback_proposer(2, bootstrap, &[c1, c2], 2);
+    let fallback_2 = fallback_proposer(&[c1, c2], 2);
     assert_eq!(fallback_2, c2.id);
 }
 
 #[test]
-fn fallback_proposer_exhausted_cascade_falls_back_to_bootstrap() {
-    let bootstrap: NodeId = [0x77; 32];
+fn fallback_proposer_exhausted_cascade_is_no_proposer() {
     let c1 = Candidate {
         ticket: 100,
         class: WINNER_CLASS_NODE,
         id: [0x01; 32],
     };
     // Только 1 candidate, request fallback_depth 5 — cascade exhausted.
-    let proposer = fallback_proposer(5, bootstrap, &[c1], 5);
-    assert_eq!(proposer, bootstrap);
+    let proposer = fallback_proposer(&[c1], 5);
+    assert_eq!(proposer, NO_PROPOSER);
 }
 
 // ---------- compute_control_set canonical sort ----------
@@ -272,20 +254,18 @@ fn compute_control_set_input_order_independent() {
 
 #[test]
 fn validate_proposer_canonical_pass_at_depth_1() {
-    let bootstrap: NodeId = [0x77; 32];
     let c1 = Candidate {
         ticket: 100,
         class: WINNER_CLASS_NODE,
         id: [0x01; 32],
     };
     let header = sample_header(2, c1.id);
-    let result = validate_proposer_is_canonical(&header, bootstrap, &[c1]);
+    let result = validate_proposer_is_canonical(&header, &[c1]);
     assert!(result.is_ok());
 }
 
 #[test]
 fn validate_proposer_canonical_fail_on_wrong_proposer() {
-    let bootstrap: NodeId = [0x77; 32];
     let c1 = Candidate {
         ticket: 100,
         class: WINNER_CLASS_NODE,
@@ -293,7 +273,7 @@ fn validate_proposer_canonical_fail_on_wrong_proposer() {
     };
     // Header заявляет proposer = [0xAA; 32] но canonical = c1.id
     let header = sample_header(2, [0xAA; 32]);
-    let result = validate_proposer_is_canonical(&header, bootstrap, &[c1]);
+    let result = validate_proposer_is_canonical(&header, &[c1]);
     assert!(matches!(result, Err(AcceptanceError::ProposerNotCanonical)));
 }
 

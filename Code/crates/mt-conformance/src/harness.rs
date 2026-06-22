@@ -151,15 +151,10 @@ fn code_field_value(name: &str) -> Option<Option<u128>> {
         "adaptive_ssha_threshold" => scalar(p.adaptive_ssha_threshold as u128),
         "adaptive_ssha_multiplier" => scalar(p.adaptive_ssha_multiplier as u128),
         "pruning_idle_windows" => scalar(p.pruning_idle_windows as u128),
-        "bootstrap_account_pubkey" => Some(None),
-        "bootstrap_node_pubkey" => Some(None),
         "genesis_content_app_id" => Some(None),
         "genesis_content_data_hash" => Some(None),
-        "bootstrap_pow_difficulty" => scalar(p.bootstrap_pow_difficulty as u128),
         "max_protocol_payload_bytes" => scalar(p.max_protocol_payload_bytes as u128),
         "max_sf_ciphertext_bytes" => scalar(p.max_sf_ciphertext_bytes as u128),
-        "n_seed" => scalar(p.n_seed as u128),
-        "genesis_active_operators" => Some(None),
         // Unknown field -> Absent (cross-boundary structural drift).
         _ => None,
     }
@@ -354,16 +349,18 @@ fn behavioral_rows(node_toml: &str, transport_toml: &str, audit_cfg: &str) -> Ve
         ".cargo/audit.toml documents the ignore set with justification".to_string(),
     ));
 
-    // genesis singleton invariant: n_seed == 0  <=>  genesis_active_operators empty
-    let gen_ok = (p.n_seed == 0) == p.genesis_active_operators.is_empty();
+    // genesis empty-window-0 invariant: build_genesis_state yields empty tables
+    // whose roots equal the root of a freshly-constructed empty table (the empty
+    // sparse-Merkle root, shared across all three table types at the same depth).
+    let empty_root = mt_state::NodeTable::new().root();
+    let g = mt_account::build_genesis_state(p);
+    let gen_ok = g.account_table.root() == empty_root
+        && g.node_table.root() == empty_root
+        && g.candidate_pool.root() == empty_root;
     out.push(beh_row(
-        "genesis.nseed_operators_consistent",
+        "genesis.empty_window_zero",
         gen_ok,
-        format!(
-            "n_seed={} operators_empty={}",
-            p.n_seed,
-            p.genesis_active_operators.is_empty()
-        ),
+        "account/node/candidate roots == empty sparse-Merkle root".to_string(),
     ));
 
     out
@@ -506,7 +503,7 @@ kat params_encoded_size_nseed0 12
             "fastsync.anchor_window_wire",
             "transport.no_classical_tls_noise",
             "deps.audit_gate_present",
-            "genesis.nseed_operators_consistent",
+            "genesis.empty_window_zero",
         ] {
             assert!(ids.contains(&want), "missing behavioral row {want}");
         }

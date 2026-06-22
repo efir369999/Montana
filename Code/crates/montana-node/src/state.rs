@@ -8,7 +8,6 @@ use mt_state::{
 use mt_store::FsStore;
 
 use crate::identity::{Identity, NodeError};
-use crate::node_lifecycle::NodeLifecycle;
 
 pub struct LocalState {
     pub accounts: AccountTable,
@@ -17,30 +16,27 @@ pub struct LocalState {
 }
 
 impl LocalState {
-    // Автоматический genesis vs candidate fork per spec Genesis Decree:
-    // - genesis узел (identity.node_pk == params.bootstrap_node_pubkey либо
-    //   placeholder zeros — pre-ceremony local mode): operator-аккаунт +
-    //   NodeRecord для self напрямую (DEV-010, активация без Candidate SSHA).
-    // - candidate узел: пустой NodeTable; узел появится в state только после
-    //   apply_selection_event на ближайшем W % selection_interval == 0.
-    //   Operator account создаётся в обоих случаях (нужен для подписания
-    //   будущей NodeRegistration).
+    // Genesis = пустое окно 0: build_genesis_state даёт пустые таблицы. Каждый
+    // узел стартует кандидатом и self-admit-ит себя через standard admission
+    // path (apply_selection_event). Узел появляется в NodeTable только после
+    // admission; до этого NodeTable пуст. Operator account создаётся сразу —
+    // он нужен для подписания будущей NodeRegistration (is_node_operator=false,
+    // ещё НЕ Active).
     pub fn bootstrap(operator: &Identity, params: &ProtocolParams) -> Self {
-        // Canonical genesis tables — byte-identical to
+        // Canonical empty genesis tables — byte-identical to
         // mt_account::genesis_state_root, so the runtime state_root equals the
-        // Genesis State Hash (no fork on non-empty N_SEED). build_genesis_state
-        // is the single source of truth for genesis seeding ([C-1]).
+        // Genesis State Hash. build_genesis_state is the single source of truth
+        // for genesis seeding ([C-1]).
         let genesis = mt_account::build_genesis_state(params);
         let mut accounts = genesis.account_table;
         let nodes = genesis.node_table;
         let candidates = genesis.candidate_pool;
 
-        // A non-genesis node also carries its own operator account (needed to
-        // sign a future NodeRegistration). Genesis members are already seeded
-        // above. A genesis member (bootstrap or any N_SEED operator) already has
-        // its account baked into `accounts` with is_node_operator=true; inserting
-        // would OVERWRITE it (AccountTable::insert replaces), diverging the
-        // account_root from canonical genesis. Insert only when truly absent.
+        // The node carries its own operator account (needed to sign a future
+        // NodeRegistration). Empty genesis has no baked accounts, so this insert
+        // always runs; the `is_none` guard is kept defensively against any future
+        // pre-seeded account so that AccountTable::insert never silently
+        // OVERWRITES a canonical record and diverges account_root.
         if accounts.get(&operator.account_id()).is_none() {
             accounts.insert(AccountRecord {
                 account_id: operator.account_id(),
@@ -138,11 +134,10 @@ impl LocalState {
     }
 }
 
-// SPEC DEVIATION DEV-010 (closed 2026-05-02 в M9 Phase 1):
-// Bootstrap NodeRecord теперь deriviается из params.bootstrap_node_pubkey
-// (а не из operator's own pk). Это унифицирует bootstrap entry между всеми
-// узлами cohort-а — необходимо для apply_proposal validation на receivers.
-// Inline в LocalState::bootstrap(); helper удалён.
+// SPEC DEVIATION DEV-010 (obsolete — closed by "Genesis = empty window 0"):
+// Genesis больше не печёт NodeRecord для bootstrap. Все таблицы пусты на окне 0;
+// каждый узел self-admit-ит себя через standard admission path. См.
+// docs/SPEC_DEVIATIONS.md DEV-010.
 
 #[cfg(test)]
 mod tests {
@@ -211,40 +206,26 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
     #[test]
-    fn bootstrap_seeds_genesis_active_operators_not_manifest() {
+    fn bootstrap_empty_genesis_seeds_only_own_account() {
         use mt_genesis::genesis_params;
         let id = crate::identity::Identity::from_entropy_ephemeral(&[0x77; 32]).unwrap();
 
-        // Unified genesis: active set = bootstrap + every baked genesis_active_operator.
-        let base = genesis_params();
-        let cohort0 = LocalState::bootstrap(&id, base);
-        assert_eq!(cohort0.nodes.len(), 1 + base.genesis_active_operators.len());
-
-        // One more operator baked into a clone is seeded Active at genesis.
-        let mut params = base.clone();
-        params
-            .genesis_active_operators
-            .push(([0xBB; PUBLIC_KEY_SIZE], [0xAA; PUBLIC_KEY_SIZE]));
-        let cohort = LocalState::bootstrap(&id, &params);
-        assert_eq!(
-            cohort.nodes.len(),
-            1 + params.genesis_active_operators.len()
-        );
-        let extra_node_id = mt_state::derive_node_id(&[0xAA; PUBLIC_KEY_SIZE]);
-        assert!(cohort.nodes.contains(&extra_node_id));
-        let extra_account_id =
-            mt_state::derive_account_id(mt_account::GENESIS_SUITE_ID, &[0xBB; PUBLIC_KEY_SIZE]);
-        let rec = cohort.accounts.get(&extra_account_id).unwrap();
-        assert!(rec.is_node_operator);
-        assert_eq!(rec.current_pubkey, [0xBB; PUBLIC_KEY_SIZE]);
+        // Genesis = empty window 0: no baked node, no N_SEED cohort. The node
+        // boots with an empty NodeTable and exactly its own operator account
+        // (is_node_operator=false — not pre-Active).
+        let p = genesis_params();
+        let local = LocalState::bootstrap(&id, p);
+        assert_eq!(local.nodes.len(), 0);
+        assert_eq!(local.accounts.len(), 1);
+        let rec = local.accounts.get(&id.account_id()).unwrap();
+        assert!(!rec.is_node_operator);
     }
 
     #[test]
     fn local_state_node_set_equals_canonical_genesis() {
-        // Closes the non-empty N_SEED genesis-fork bug (EXT-GEN-01 caveat): every
-        // node — genesis member or fresh observer — boots with exactly the
-        // canonical genesis NodeTable (candidates disabled, no node added at
-        // boot), so all nodes agree on the Genesis State Hash consensus set.
+        // Every node boots with exactly the canonical (empty) genesis NodeTable,
+        // so all nodes agree on the Genesis State Hash consensus set. A fresh node
+        // adds only its own account on top of the empty genesis.
         use mt_genesis::genesis_params;
         let id = crate::identity::Identity::from_entropy_ephemeral(&[0x11; 32]).unwrap();
         let p = genesis_params();
@@ -255,7 +236,6 @@ mod tests {
             g.node_table.root(),
             "runtime node set != canonical genesis -> consensus fork"
         );
-        // A fresh observer adds only its own account on top of canonical genesis.
         assert_eq!(local.accounts.len(), g.account_table.len() + 1);
     }
 

@@ -83,9 +83,9 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         network_handle = Some(spawn_network_thread(&identity, listen_str, manifest_path)?);
     }
 
-    // spec, Genesis Decree: the genesis active set is built from
-    // protocol_params.genesis_active_operators (hash-bound via the Genesis State
-    // Hash), not from the runtime manifest. The manifest is discovery-only.
+    // spec, Genesis Decree: Genesis = empty window 0. The genesis state is empty
+    // (no baked active operators); a node self-admits via the existing admission
+    // path. The manifest is discovery-only and is not hash-bound.
     let mut state = LocalState::load_or_bootstrap(&data_dir, &identity, params)?;
     // Persist the seeded genesis state immediately so a separate `status`
     // invocation reads the real bootstrapped tables instead of re-bootstrapping
@@ -119,18 +119,18 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         .map(|a| a.balance)
         .unwrap_or(0);
 
-    let is_genesis = NodeLifecycle::is_bootstrap_node(&identity, params);
-    // Genesis cohort member = the compiled bootstrap node OR a genesis cohort peer
-    // pre-seeded into the genesis NodeTable (state.rs seeds both as Active
-    // operators). Both start Active; every other node joins via the candidate
-    // SSHA + admission path.
-    let is_genesis_member = is_genesis || state.nodes.contains(&my_node);
+    // Genesis = пустое окно 0: нет baked bootstrap-узла. Узел считается уже
+    // активным только если его node_id присутствует в NodeTable (он прошёл
+    // admission в прошлой сессии и состояние загружено с диска). Свежий узел —
+    // кандидат: self-admit через standard admission path (selection_slots(0)=1
+    // принимает первого кандидата при нулевом Active-наборе).
+    let already_active = state.nodes.contains(&my_node);
 
-    // Phase Bootstrap = первая загрузка. Genesis-член (bootstrap или genesis cohort,
-    // уже активный в NodeTable) → сразу Active. Прочие узлы → CandidateSsha
-    // с target_chain_length = τ₂ и w_start = текущее окно + 1.
+    // Phase Bootstrap = первая загрузка. Уже активный (в NodeTable) → Active.
+    // Прочие → CandidateSsha с target_chain_length = τ₂ и w_start = текущее
+    // окно + 1.
     if lifecycle.phase == NodePhase::Bootstrap {
-        if is_genesis_member {
+        if already_active {
             lifecycle.phase = NodePhase::Active;
         } else if args.enable_candidate {
             lifecycle.phase = NodePhase::CandidateSsha;
@@ -197,18 +197,16 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // DEV-012 T_r history: per-window T_r snapshot for BC endpoint validation
     // when BCs arrive after current has advanced.
     let mut t_r_history: BTreeMap<u64, Hash32> = BTreeMap::new();
-    // DEV-022: bootstrap_node_id used both in main drain (Proposal verify) and
-    // active arm (Lookback proposer selection); hoist to outer scope.
-    let bootstrap_node_id = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
     // DEV-023: track per-proposer last cemented window so each node can decide
     // when an elected proposer has gone silent (≥ K_FALLBACK_WINDOWS windows
-    // without producing cement). Bootstrap is the canonical fallback.
+    // without producing cement). A solo node falls back to itself.
     let mut last_proposer_cement: BTreeMap<mt_state::NodeId, u64> = BTreeMap::new();
     #[allow(dead_code)]
     const K_FALLBACK_WINDOWS: u64 = 3;
     // DEV-022 Lookback Leadership: track winner_id per cemented window so any
-    // Active node can compute proposer_W = winner_{W-2} for its own window decisions.
-    // Genesis bootstrap rule: proposer_0 и proposer_1 = bootstrap-узел.
+    // Active node can compute proposer_W = winner_{W-2} for its own window
+    // decisions. Genesis = пустое окно 0: при empty W-2 канонического ведущего
+    // нет — одиночный узел подаёт собственное предложение (self-admit + self-cement).
     let mut winner_history: BTreeMap<u64, mt_state::NodeId> = BTreeMap::new();
     // DEV-020: per-window reveal pool, keyed by (window_index → (node_id → SshaReveal)).
     // Все Active узлы публикуют собственный Reveal каждое окно через MsgType::SshaReveal.
@@ -313,7 +311,6 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     store: &store,
                     identity: &identity,
                     my_node,
-                    bootstrap_node_id,
                 }
             };
         }
@@ -867,7 +864,6 @@ struct NetCtx<'a> {
     store: &'a FsStore,
     identity: &'a crate::identity::Identity,
     my_node: mt_state::NodeId,
-    bootstrap_node_id: mt_state::NodeId,
 }
 
 /// Канонический агрегат подтверждений окна w: набор подтвердивших берётся из
@@ -881,12 +877,22 @@ fn cba_for(ctx: &NetCtx, w: u64) -> Hash32 {
     cba_from(ctx.bc_set_history, w)
 }
 
-/// Законный ведущий окна w по спецификации Lookback Leadership:
-/// первые два окна — узел-первопоселенец; далее победитель окна w-2,
-/// при молчании — каскад запасных по возрастанию взвешенного билета окна w-2.
+/// Законный ведущий окна w по спецификации Lookback Leadership: победитель окна
+/// w-2, при молчании — каскад запасных по возрастанию взвешенного билета окна
+/// w-2. Genesis = пустое окно 0: при отсутствии канонического ведущего
+/// (NO_PROPOSER — empty W-2, либо первые окна до накопления кандидатов)
+/// одиночный узел ведёт сам — self-admit (selection_slots(0)=1) + self-cement
+/// (quorum(1)=1) делают его собственное предложение цепочкой.
 fn expected_proposer(ctx: &NetCtx, w: u64, silence_secs: u64) -> (mt_state::NodeId, u8) {
+    let solo_or = |p: mt_state::NodeId| {
+        if p == mt_consensus::NO_PROPOSER {
+            ctx.my_node
+        } else {
+            p
+        }
+    };
     if w < 2 {
-        return (ctx.bootstrap_node_id, 1);
+        return (ctx.my_node, 1);
     }
     let depth_extra = (silence_secs / ctx.fallback_secs.max(1)).min(254) as u8;
     if depth_extra == 0 {
@@ -901,7 +907,7 @@ fn expected_proposer(ctx: &NetCtx, w: u64, silence_secs: u64) -> (mt_state::Node
         .unwrap_or_default();
     let depth = 1u8.saturating_add(depth_extra);
     (
-        mt_consensus::fallback_proposer(w, ctx.bootstrap_node_id, &sorted, depth),
+        solo_or(mt_consensus::fallback_proposer(&sorted, depth)),
         depth,
     )
 }
@@ -1302,9 +1308,8 @@ fn handle_protocol_message(
             let silence = ctx.last_cement_at.elapsed().as_secs();
             let (exp_now, _) = expected_proposer(ctx, w, silence);
             let (exp_next, _) = expected_proposer(ctx, w, silence + ctx.fallback_secs);
-            let proposer_ok = header.proposer_node_id == exp_now
-                || header.proposer_node_id == exp_next
-                || header.proposer_node_id == ctx.bootstrap_node_id;
+            let proposer_ok =
+                header.proposer_node_id == exp_now || header.proposer_node_id == exp_next;
             if !proposer_ok {
                 eprintln!(
                     "[consensus] w={w}: ведущий {} не является законным (ожидался {}) — skip",

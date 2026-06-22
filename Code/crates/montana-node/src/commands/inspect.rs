@@ -64,8 +64,8 @@ pub fn run(args: InspectArgs) -> Result<(), NodeError> {
     );
 
     if args.export_pubkeys {
-        // Full ML-DSA-65 public keys for genesis_active_operators baking.
-        // account_pk first, node_pk second — both 1952 bytes hex.
+        // Full ML-DSA-65 public keys (account_pk first, node_pk second — both
+        // 1952 bytes hex) for operator deployment / external verification.
         println!();
         println!(
             "account_pk_hex   : {}",

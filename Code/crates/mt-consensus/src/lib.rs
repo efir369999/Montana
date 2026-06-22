@@ -152,68 +152,41 @@ pub fn validate_header(
 
 // ============ Phase B: Lookback Leadership ============
 
-// spec, "Определение winner-а (Lookback Leadership)" строка 977:
+// spec, "Определение winner-а (Lookback Leadership)":
 //   proposer_W = winner_{W-2} (канонически из proposal_{W-1}).
-// Genesis bootstrap (строка 1007):
-//   proposer_0 и proposer_1 = bootstrap-узел.
-// Когда winner_{W-2} = account (winner_class=2, физически не подписывает proposal):
-//   proposer = ближайший node кандидат по weighted_ticket (строка 1315).
-//   Реализация: первый Candidate с class=Node в sorted candidates of W-2.
+//   proposer = ближайший node-кандидат по weighted_ticket — первый Candidate с
+//   class=Node в sorted candidates of W-2.
 //
-// **M4-INFO-10: degraded-mode behavior при empty W-2 cemented set.**
+// **Empty W-2 cemented set — нет канонического ведущего.**
 //
-// Если sorted_candidates_w_minus_2 пуст либо не содержит ни одного
-// `WINNER_CLASS_NODE` — fallback к bootstrap_node_id. Это означает что
-// при N consecutive окнах с empty W-2 cemented set (degenerate scenario:
-// все nodes одновременно offline или сеть в degraded mode) bootstrap
-// узел **в одиночку** генерирует proposals для этих окон.
+// Genesis = пустое окно 0: нет baked bootstrap-узла. Когда
+// sorted_candidates_w_minus_2 пуст либо не содержит ни одного
+// `WINNER_CLASS_NODE` (genesis cold-start до первого зацементированного
+// кандидата, либо degraded mode при одновременном offline всех confirmer-ов)
+// — канонического ведущего нет, возвращается NO_PROPOSER (zero NodeId).
 //
-// Это **defense-in-depth fallback**, не steady-state design:
-// - В стационарном режиме сеть имеет ≥1 cemented BundledConfirmation
-//   per окно от ~100 confirmer-узлов, sorted_candidates_w_minus_2
-//   гарантированно содержит ≥1 WINNER_CLASS_NODE entry
-// - Empty W-2 cemented set возникает только при network partition либо
-//   simultaneous offline всех confirmers — concentration-of-power у
-//   bootstrap acceptable как failsafe для liveness восстановления
-// - Operator monitoring: отдельный alert когда proposer_id N окон подряд
-//   == bootstrap_node_id post-genesis (current_window ≥ 2) — сигнал
-//   degraded mode либо attempted attack на bootstrap node
-//
-// Liveness threshold не специфицирован в spec — это design choice failsafe:
-// сеть продолжает производить proposals без cemented quorum, recovery
-// автоматическая когда any confirmer возобновит publishing BundledConfirmation.
-pub fn canonical_proposer(
-    current_window: u64,
-    bootstrap_node_id: NodeId,
-    sorted_candidates_w_minus_2: &[Candidate],
-) -> NodeId {
-    // Genesis bootstrap: первые два окна bootstrap_node
-    if current_window < 2 {
-        return bootstrap_node_id;
-    }
+// Solo cold-start закрывается через существующий admission path: одиночный узел
+// при нулевом Active-наборе self-admit-ит себя (selection_slots(0)=1) и
+// зацементирует собственную цепочку (quorum(1)=1); его собственное предложение и
+// есть цепочка. Распознавание NO_PROPOSER и подача собственного предложения —
+// ответственность вызывающей стороны (узел знает свой node_id).
+pub const NO_PROPOSER: NodeId = [0u8; 32];
+
+pub fn canonical_proposer(sorted_candidates_w_minus_2: &[Candidate]) -> NodeId {
     // Извлечь первого node-кандидата из sorted list (минимальный weighted_ticket среди nodes)
     for c in sorted_candidates_w_minus_2 {
         if c.class == WINNER_CLASS_NODE {
             return c.id;
         }
     }
-    // No node candidates в cemented set W-2 → extended genesis bootstrap
-    // (degraded mode failsafe — см. doc выше M4-INFO-10).
-    bootstrap_node_id
+    // No node candidates в cemented set W-2 — канонического ведущего нет.
+    NO_PROPOSER
 }
 
-// spec, "Fallback cascade" строка 1329:
+// spec, "Fallback cascade":
 //   fallback_1 = second_min(weighted_ticket) окна W-2, fallback_2 = third_min, etc.
 // fallback_depth 1 = canonical proposer, 2 = first fallback, и т.д.
-pub fn fallback_proposer(
-    current_window: u64,
-    bootstrap_node_id: NodeId,
-    sorted_candidates_w_minus_2: &[Candidate],
-    fallback_depth: u8,
-) -> NodeId {
-    if current_window < 2 {
-        return bootstrap_node_id;
-    }
+pub fn fallback_proposer(sorted_candidates_w_minus_2: &[Candidate], fallback_depth: u8) -> NodeId {
     let mut skip = (fallback_depth as usize).saturating_sub(1);
     for c in sorted_candidates_w_minus_2 {
         if c.class == WINNER_CLASS_NODE {
@@ -223,8 +196,8 @@ pub fn fallback_proposer(
             skip -= 1;
         }
     }
-    // Cascade exhausted — bootstrap (extended genesis behavior)
-    bootstrap_node_id
+    // Cascade exhausted — канонического ведущего нет.
+    NO_PROPOSER
 }
 
 // ============ Phase C: control_set формула ============
@@ -306,17 +279,11 @@ pub enum AcceptanceError {
 // (a) proposer canonical check.
 pub fn validate_proposer_is_canonical(
     header: &ProposalHeader,
-    bootstrap_node_id: NodeId,
     sorted_candidates_w_minus_2: &[Candidate],
 ) -> Result<(), AcceptanceError> {
     // При fallback_depth > 1 proposer = fallback_N, не canonical.
     // Валидация: proposer совпадает с fallback_proposer(depth).
-    let expected = fallback_proposer(
-        header.window_index,
-        bootstrap_node_id,
-        sorted_candidates_w_minus_2,
-        header.fallback_depth,
-    );
+    let expected = fallback_proposer(sorted_candidates_w_minus_2, header.fallback_depth);
     if header.proposer_node_id != expected {
         return Err(AcceptanceError::ProposerNotCanonical);
     }
@@ -360,13 +327,13 @@ pub fn validate_included_reveals(
 // в W-1; пустой cemented set = либо все nodes одновременно offline (degenerate
 // scenario, network в degraded mode), либо attacker подаёт fabricated proposal.
 //
-// **Для genesis bootstrap** (первые окна где cemented W-1 candidates пустые
+// **Для genesis cold-start** (первые окна где cemented W-1 candidates пустые
 // потому что сеть ещё не накопила SSHA_Reveals) caller ОБЯЗАН skip
-// `validate_winner` и применять fallback proposer logic из `canonical_proposer`
-// (которая возвращает bootstrap_node_id при `current_window < 2` либо при
-// empty W-2 cemented set). Genesis bypass — caller responsibility (mt-account
-// orchestrator знает window_index и может skip validate_winner для окон где
-// cemented W-1 set по design пуст).
+// `validate_winner`: при empty W-2 cemented set `canonical_proposer` возвращает
+// `NO_PROPOSER`, и одиночный узел подаёт собственное предложение (self-admit
+// через selection_slots(0)=1, self-cement через quorum(1)=1). Genesis bypass —
+// caller responsibility (mt-account orchestrator знает window_index и может skip
+// validate_winner для окон где cemented W-1 set по design пуст).
 //
 // Не вводим `validate_winner_genesis_aware` отдельно — это усложнит API
 // без structural benefit (caller всё равно знает window_index и canonical
@@ -778,79 +745,59 @@ mod tests {
     }
 
     #[test]
-    fn proposer_window_0_is_bootstrap() {
-        let bootstrap: NodeId = [0x42; 32];
-        assert_eq!(canonical_proposer(0, bootstrap, &[]), bootstrap);
+    fn proposer_empty_candidates_is_no_proposer() {
+        // Genesis cold-start / degraded mode: empty W-2 set → no canonical proposer.
+        assert_eq!(canonical_proposer(&[]), NO_PROPOSER);
     }
 
     #[test]
-    fn proposer_window_1_is_bootstrap() {
-        let bootstrap: NodeId = [0x42; 32];
-        let cands = vec![node_cand(100, 0x11)];
-        assert_eq!(canonical_proposer(1, bootstrap, &cands), bootstrap);
-    }
-
-    #[test]
-    fn proposer_window_2_is_first_node_candidate() {
-        let bootstrap: NodeId = [0x42; 32];
+    fn proposer_is_first_node_candidate() {
         let cands = vec![
             node_cand(100, 0x11),
             node_cand(200, 0x22),
             node_cand(300, 0x33),
         ];
-        let p = canonical_proposer(2, bootstrap, &cands);
+        let p = canonical_proposer(&cands);
         assert_eq!(p, [0x11; 32]);
     }
 
     #[test]
-    fn proposer_empty_candidates_falls_back_to_bootstrap() {
-        let bootstrap: NodeId = [0x42; 32];
-        assert_eq!(canonical_proposer(100, bootstrap, &[]), bootstrap);
-    }
-
-    #[test]
     fn fallback_depth_1_is_canonical() {
-        let bootstrap: NodeId = [0x42; 32];
         let cands = vec![
             node_cand(100, 0x11),
             node_cand(200, 0x22),
             node_cand(300, 0x33),
         ];
-        let canon = canonical_proposer(10, bootstrap, &cands);
-        let fallback_1 = fallback_proposer(10, bootstrap, &cands, 1);
+        let canon = canonical_proposer(&cands);
+        let fallback_1 = fallback_proposer(&cands, 1);
         assert_eq!(canon, fallback_1);
         assert_eq!(fallback_1, [0x11; 32]);
     }
 
     #[test]
     fn fallback_depth_2_is_second_node() {
-        let bootstrap: NodeId = [0x42; 32];
         let cands = vec![
             node_cand(100, 0x11),
             node_cand(200, 0x22),
             node_cand(300, 0x33),
         ];
-        let f2 = fallback_proposer(10, bootstrap, &cands, 2);
+        let f2 = fallback_proposer(&cands, 2);
         assert_eq!(f2, [0x22; 32]);
     }
 
     // spec: лотерея single-class, кандидаты только узлы; fallback_skips_accounts удалён как obsolete.
 
     #[test]
-    fn fallback_exhausted_goes_to_bootstrap() {
-        let bootstrap: NodeId = [0x42; 32];
+    fn fallback_exhausted_is_no_proposer() {
         let cands = vec![node_cand(100, 0x11), node_cand(200, 0x22)];
-        let f100 = fallback_proposer(10, bootstrap, &cands, 100);
-        assert_eq!(f100, bootstrap);
+        let f100 = fallback_proposer(&cands, 100);
+        assert_eq!(f100, NO_PROPOSER);
     }
 
     #[test]
-    fn fallback_genesis_bootstrap() {
-        let bootstrap: NodeId = [0x42; 32];
-        let cands = vec![node_cand(100, 0x11)];
-        // Even with candidates, window < 2 → bootstrap
-        assert_eq!(fallback_proposer(0, bootstrap, &cands, 5), bootstrap);
-        assert_eq!(fallback_proposer(1, bootstrap, &cands, 5), bootstrap);
+    fn fallback_empty_candidates_is_no_proposer() {
+        assert_eq!(fallback_proposer(&[], 5), NO_PROPOSER);
+        assert_eq!(fallback_proposer(&[], 1), NO_PROPOSER);
     }
 
     // ============ Phase C: control_set ============
@@ -960,39 +907,39 @@ mod tests {
 
     #[test]
     fn validate_proposer_canonical_depth_1() {
-        let bootstrap: NodeId = [0x42; 32];
         let cands = vec![node_cand(100, 0x11), node_cand(200, 0x22)];
         let (pk, sk) = keypair();
         let (node_id, rec) = make_node(*pk.as_bytes());
         let _ = (node_id, rec, pk, sk);
         let mut h = stub_header([0x11; 32]); // matches first node candidate
         h.fallback_depth = 1;
-        assert_eq!(
-            validate_proposer_is_canonical(&h, bootstrap, &cands),
-            Ok(())
-        );
+        assert_eq!(validate_proposer_is_canonical(&h, &cands), Ok(()));
     }
 
     #[test]
     fn validate_proposer_rejects_mismatch() {
-        let bootstrap: NodeId = [0x42; 32];
         let cands = vec![node_cand(100, 0x11), node_cand(200, 0x22)];
         let mut h = stub_header([0x99; 32]); // doesn't match
         h.fallback_depth = 1;
         assert_eq!(
-            validate_proposer_is_canonical(&h, bootstrap, &cands),
+            validate_proposer_is_canonical(&h, &cands),
             Err(AcceptanceError::ProposerNotCanonical)
         );
     }
 
     #[test]
-    fn validate_proposer_canonical_genesis() {
-        // window < 2: proposer_node_id must be bootstrap
-        let bootstrap: NodeId = [0x42; 32];
-        let mut h = stub_header(bootstrap);
-        h.window_index = 0;
+    fn validate_proposer_no_proposer_on_empty() {
+        // Genesis cold-start: empty W-2 set → expected proposer = NO_PROPOSER.
+        // A header claiming NO_PROPOSER as its proposer validates; any real id rejects.
+        let mut h = stub_header(NO_PROPOSER);
         h.fallback_depth = 1;
-        assert_eq!(validate_proposer_is_canonical(&h, bootstrap, &[]), Ok(()));
+        assert_eq!(validate_proposer_is_canonical(&h, &[]), Ok(()));
+        let mut h2 = stub_header([0x11; 32]);
+        h2.fallback_depth = 1;
+        assert_eq!(
+            validate_proposer_is_canonical(&h2, &[]),
+            Err(AcceptanceError::ProposerNotCanonical)
+        );
     }
 
     #[test]

@@ -487,7 +487,6 @@ fn cmd_hash() -> bool {
         ("mt-prekeys", domain::PREKEYS),
         ("mt-tunnel-online", domain::TUNNEL_ONLINE),
         ("mt-tunnel-mesh", domain::TUNNEL_MESH),
-        ("mt-bootstrap-pow", domain::BOOTSTRAP_POW),
         ("mt-recovery-fingerprint", domain::RECOVERY_FINGERPRINT),
     ];
     print_kv("registry size", format!("{}", all_domains.len()));

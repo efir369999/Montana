@@ -26,15 +26,10 @@ field candidate_expiry_windows 8 60480
 field adaptive_ssha_threshold 2 1
 field adaptive_ssha_multiplier 2 100
 field pruning_idle_windows 8 80640
-field bootstrap_pow_difficulty 4 65536
 field max_protocol_payload_bytes 4 1048576
 field max_sf_ciphertext_bytes 4 65536
-field bootstrap_account_pubkey 1952 -
-field bootstrap_node_pubkey 1952 -
-field n_seed 2 0
-field genesis_active_operators 0 -
 field genesis_content_app_id 32 -
 field genesis_content_data_hash 32 -
 
-# Derived KAT: canonical_encode(protocol_params) length for the reference singleton genesis (n_seed=0)
-kat params_encoded_size 4108
+# Derived KAT: canonical_encode(protocol_params) length for the empty-window-0 genesis
+kat params_encoded_size 198

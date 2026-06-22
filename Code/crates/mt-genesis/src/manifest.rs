@@ -8,10 +8,9 @@
 // (multiaddr, peer_id), не входит в Genesis Decree (`ProtocolParams`). Изменение
 // IP / port / replacement узла не требует ceremony — только переиздание manifest-а.
 //
-// Genesis Decree (`ProtocolParams::bootstrap_account_pubkey` /
-// `bootstrap_node_pubkey` / `target_zero` / `genesis_content_data_hash`) — это
-// immutable consensus binding, фиксируется ceremony-ой и попадает в
-// `compute_genesis_state_hash()`.
+// Genesis Decree (`ProtocolParams::target_zero` /
+// `genesis_content_data_hash`) — это immutable consensus binding, фиксируется
+// ceremony-ой и попадает в `compute_genesis_state_hash()`.
 
 use serde::{Deserialize, Serialize};
 

@@ -12,7 +12,6 @@ pub mod msg_type;
 pub mod nat;
 pub mod payloads;
 pub mod peers;
-pub mod pow;
 pub mod reachability;
 pub mod store_forward;
 
@@ -54,7 +53,6 @@ pub use peers::{
     check_diversity, DiversityViolation, PeerRecord, PeerRole, PeerTable, MAX_PEER_RECORDS,
     PRUNING_IDLE_TAU1_MULTIPLIER, ROTATION_PER_TAU2,
 };
-pub use pow::{pow_solve, pow_verify, PowError, Target, DOMAIN_BOOTSTRAP_POW, POW_HASH_SIZE};
 pub use reachability::{
     RankedEntry, ReachabilityAdvert, ReachabilityMap, MAX_OBSERVATIONS_PER_VANTAGE, PROFILE_MAX,
     REACHABILITY_ADVERT_SIZE, REACHABILITY_QUORUM,

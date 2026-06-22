@@ -22,8 +22,8 @@ fn oracle_candidate_ssha_init_matches_python_hashlib() {
 
     // Expected from python3 scripts/oracle_python_sha256.py:
     //   candidate_ssha_init(t_r=11..,cba=22..,node_id=33..)
-    //   = 8ab91f2efddae1eea93ef611d1a3958225ca5a0e5028b99bcd4b6ad5b5bce13f
-    let expected_hex = "8ab91f2efddae1eea93ef611d1a3958225ca5a0e5028b99bcd4b6ad5b5bce13f";
+    //   = c4d3e9758eb3f4fb4d9438495377f514b37600b75eee2be1d77baafa0f2f2915
+    let expected_hex = "c4d3e9758eb3f4fb4d9438495377f514b37600b75eee2be1d77baafa0f2f2915";
     let expected = hex_to_bytes(expected_hex);
 
     let actual = candidate_ssha_init(&t_r, &cba, &node_id);

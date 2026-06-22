@@ -1,9 +1,9 @@
 # Version
 
-**Implementation:** `1.2.0` (mainnet — reference singleton genesis: bootstrap is the sole genesis Active operator (n_seed=0, genesis_active_operators empty), sole canonical proposer with quorum=1 singleton-cementing per Network spec; PARAMS_ENCODED_SIZE 4108. Non-bootstrap operators (nicosia, mac) join post-genesis via the standard CandidateSsha → Registered → Active admission path; candidates disabled by default (observers sync+heartbeat, --enable-candidate to re-arm). Closes the n_seed=2 code-vs-doc drift left after REAUDIT-04 (code lagged docs). build sha tracked in git log per [C-1])
+**Implementation:** `1.2.0` (mainnet — Genesis = empty window 0: no baked bootstrap operator, no N_SEED cohort, no proof-of-work; PARAMS_ENCODED_SIZE 198. Account/Node/Candidate tables start empty; their roots are the empty sparse-Merkle root. The first node bootstraps via the existing admission path — at zero Active operators selection_slots(0)=1 self-admits the first candidate and quorum(1)=1 lets it cement its own chain. Every node starts as a candidate; candidates disabled by default (observers sync+heartbeat, --enable-candidate to re-arm). build sha tracked in git log per [C-1])
 **Spec target:** Montana Protocol v35.26.2 + Montana Network v1.4.0 + Montana App v3.12.0 (2026-06-15)
-**Release tag:** v1.2.0 (2026-06-19) — singleton mainnet genesis (n_seed=0, PARAMS_ENCODED_SIZE 4108); Genesis State Hash re-baked; one bootstrap proposer finalizes every window alone (quorum=1); conformance contract reconciled to singleton
-**Cohort:** singleton bootstrap on mainnet — protocol_params.n_seed = 0, genesis_active_operators empty; consensus starts from one bootstrap proposer (hash-bound in Genesis State Hash). The manifest nodes are discovery peers only.
+**Release tag:** v1.2.0 — Genesis = empty window 0 (PARAMS_ENCODED_SIZE 198); removed baked bootstrap operator + N_SEED cohort + proof-of-work; Genesis State Hash re-baked; the first node self-bootstraps via existing admission rules (selection_slots(0)=1, quorum(1)=1)
+**Cohort:** empty genesis on mainnet — Genesis State carries no baked operators. Consensus starts from the first node self-admitting through the standard candidate → admission path; the manifest nodes are discovery peers only.
 **Spec paths:**
 - Protocol: `../Montana Protocol v35.26.2.md`
 - Network:  `../Montana Network v1.4.0.md`

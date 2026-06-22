@@ -172,43 +172,36 @@ Closed `DEV-N` entries are kept in this file as a historical record with `Status
 ## DEV-010: genesis bootstrap mode without Candidate SSHA (auto-detected)
 
 **Crate:** `montana-node`
-**File:line:** `crates/montana-node/src/state.rs:32-66` (LocalState::bootstrap),
-              `crates/montana-node/src/node_lifecycle.rs:48-92` (NodeLifecycle::fresh_for + is_bootstrap_node),
-              `crates/montana-node/src/commands/start.rs:74-93` (Bootstrap → CandidateSsha transition)
-**Spec section:** «Genesis Decree» / «bootstrap_node_pubkey» / «Node activation»
-**Spec quote:** «`bootstrap_node_pubkey: [u8; PUBLIC_KEY_SIZE]` in `protocol_params` —
-                 the first node of the network is activated via genesis state, not via
-                 the Candidate SSHA + selection event cycle»
-**What the code does:** automatic detection of genesis vs candidate per spec:
-  - `NodeLifecycle::is_bootstrap_node(identity, params)` compares
-    `identity.node_pk` with `params.bootstrap_node_pubkey` byte by byte
-  - If `bootstrap_node_pubkey == [0u8; PUBLIC_KEY_SIZE]` (placeholder
-    pre-Genesis-ceremony) — **any** node is treated as genesis (singleton
-    legacy mode for the M5 development phase). This branch stops applying
-    after the Genesis ceremony when `bootstrap_node_pubkey` is finalized
-    with a concrete value
-  - If `bootstrap_node_pubkey` is finalized + `identity.node_pk` matches —
-    genesis path: phase=Active immediately, NodeRecord for self in NodeTable
-  - If `bootstrap_node_pubkey` is finalized + `identity.node_pk` does NOT match —
-    standard candidate path: phase=Bootstrap → CandidateSsha on the first window
-    → Registered (via apply_noderegistrations_batch once ssha_chain_length
-    ≥ τ₂) → Active (via apply_selection_event at the nearest W % selection_interval == 0).
-    The node does NOT appear in NodeTable bootstrap state — it is added only
-    via canonical apply_selection_event.
-**Severity:** acknowledged feature pre-Genesis-ceremony; production-ready
-              after the ceremony (auto-detection via canonical apply_proposal pipeline
-              for non-bootstrap nodes works byte-exact spec).
-**Closure path:** Genesis ceremony — set `params.bootstrap_node_pubkey`
-                  to a real value. After that DEV-010 closes
-                  automatically: the `is_bootstrap_node` check will identify exactly
-                  one genesis node; the rest will go through the standard candidate path.
-**Closure cost:** 0 after the Genesis ceremony (the code already implements auto-detection)
-**Status:** acknowledged (auto-detection in code, pre-ceremony placeholder
-            activates the singleton legacy branch for M5; post-ceremony — production
-            spec compliance)
-**Acknowledged:** author 2026-04-28 — «do we automatically detect
-                  the genesis node by conditions and the others?» → fix v1.15.0 [C-13]
-                  enforcement: the correct path immediately, without asking the author
+**File:line:** `crates/montana-node/src/state.rs` (LocalState::bootstrap),
+              `crates/montana-node/src/node_lifecycle.rs` (NodeLifecycle::fresh_for),
+              `crates/montana-node/src/commands/start.rs` (Bootstrap → CandidateSsha transition)
+**Spec section:** «Genesis Decree» / «Node activation»
+**Spec quote:** «Genesis = empty window 0. The first node bootstraps via the
+                 existing admission path: at zero Active operators
+                 selection_slots(0) = 1 self-admits the first candidate, and
+                 quorum(1) = 1 lets it cement its own chain.»
+**What the code does:** Genesis State is empty (no baked bootstrap account/node,
+  no N_SEED cohort, no proof-of-work). Every node starts as a candidate
+  (`NodeLifecycle::fresh_for` always returns `fresh_candidate`) and self-admits
+  via the standard path: phase=Bootstrap → CandidateSsha on the first window →
+  Registered (via apply_noderegistrations_batch) → Active (via
+  apply_selection_event; selection_slots(0)=1 accepts the first candidate
+  immediately). The node appears in NodeTable only via canonical
+  apply_selection_event — no genesis pre-seeding.
+**Severity:** obsolete (the deviation no longer exists).
+**Closure path:** «Genesis = empty window 0» refactor — removed the baked
+                  bootstrap operator (`bootstrap_account_pubkey`,
+                  `bootstrap_node_pubkey`, `n_seed`, `genesis_active_operators`,
+                  `bootstrap_pow_difficulty`) from `ProtocolParams`; rewrote
+                  `build_genesis_state` to yield empty tables; removed the
+                  `is_bootstrap_node` / `fresh_genesis` instant-Active path.
+**Closure cost:** done.
+**Status:** closed (obsolete) — superseded by «Genesis = empty window 0».
+            The instant-Active genesis path was removed; all nodes self-bootstrap
+            through the existing admission rules. No remaining deviation.
+**Acknowledged:** author — «Genesis = empty window 0»: remove the baked bootstrap
+                  operator and self-bootstrap via existing mechanisms
+                  (selection_slots(0)=1, quorum(1)=1)
 
 ---
 

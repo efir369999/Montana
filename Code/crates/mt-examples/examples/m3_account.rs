@@ -1,6 +1,6 @@
 // M3 — Account operations shakedown.
 // Subcommands:
-//   genesis-state        build_genesis_state(params): bootstrap acc + node + chain_length=1
+//   genesis-state        build_genesis_state(params): empty window 0 (no bootstrap operator)
 //   open-account         TransferActivation: sponsor → new account
 //   transfer-scenario    sponsor → A → B → Transfer A→B 50% balance
 //   change-key           ChangeKey: rotate pk; old pk → InvalidSignature на следующей op
@@ -151,7 +151,7 @@ fn mk_anchor(
 fn cmd_genesis_state() -> bool {
     print_section("GENESIS STATE — build_genesis_state(params) sanity");
     print_note(
-        "spec, раздел \"Genesis Decree\": bootstrap acc + bootstrap node creates initial state. node.chain_length = 1 (invariant ≥ 1).",
+        "spec, раздел \"Genesis Decree\": Genesis = пустое окно 0. Нет baked bootstrap operator — все три таблицы пусты; корни = корню пустого sparse-Merkle дерева. Первый узел self-admit-ит себя (selection_slots(0)=1) и self-cement (quorum(1)=1).",
     );
 
     let params = genesis_params();
@@ -161,7 +161,7 @@ fn cmd_genesis_state() -> bool {
         candidate_pool,
     } = build_genesis_state(params);
 
-    print_subsection("Tables population");
+    print_subsection("Tables population (empty genesis)");
     let acc_count = account_table.len();
     let node_count = node_table.len();
     let cand_count = candidate_pool.len();
@@ -169,28 +169,16 @@ fn cmd_genesis_state() -> bool {
     print_kv("NodeTable rows", format!("{node_count}"));
     print_kv("CandidatePool rows", format!("{cand_count}"));
 
-    print_subsection("Bootstrap account");
-    let bootstrap_acct_id = derive_account_id(
-        mt_account::GENESIS_SUITE_ID,
-        &params.bootstrap_account_pubkey,
-    );
-    let acct = account_table
-        .get(&bootstrap_acct_id)
-        .expect("bootstrap account in table");
-    print_kv("account_id", hex_full(&acct.account_id));
-    print_kv("balance", format!("{}", acct.balance));
-    print_kv("is_node_operator", format!("{}", acct.is_node_operator));
-    print_kv(
-        "account_chain_length",
-        format!("{}", acct.account_chain_length),
-    );
-
-    print_subsection("Bootstrap node");
-    let node_id_expected = mt_state::derive_node_id(&params.bootstrap_node_pubkey);
-    let node = node_table.get(&node_id_expected).expect("bootstrap node");
-    print_kv("node_id", hex_full(&node.node_id));
-    print_kv("chain_length", format!("{}", node.chain_length));
-    print_kv("operator_account_id", hex_full(&node.operator_account_id));
+    print_subsection("Empty sparse-Merkle roots");
+    let empty_root = mt_merkle::empty_internal(mt_merkle::TREE_DEPTH);
+    print_kv("account_table.root()", hex_full(&account_table.root()));
+    print_kv("node_table.root()", hex_full(&node_table.root()));
+    print_kv("candidate_pool.root()", hex_full(&candidate_pool.root()));
+    print_kv("empty_internal(256)", hex_full(&empty_root));
+    let roots_empty = account_table.root() == empty_root
+        && node_table.root() == empty_root
+        && candidate_pool.root() == empty_root;
+    print_kv("all three == empty_internal(256)", format!("{roots_empty}"));
 
     print_subsection("genesis_state_root determinism");
     let genesis_state = build_genesis_state(params);
@@ -201,13 +189,11 @@ fn cmd_genesis_state() -> bool {
     let det = r1 == r2;
     print_kv("byte-exact determinism", format!("{det}"));
 
-    let pass = acc_count == 1
-        && node_count == 1
-        && cand_count == 0
-        && acct.is_node_operator
-        && node.chain_length == 1
-        && node.operator_account_id == acct.account_id
-        && det;
+    print_subsection("Genesis State Hash");
+    let gsh = mt_genesis::compute_genesis_state_hash(&r1, params);
+    print_kv("compute_genesis_state_hash", hex_full(&gsh));
+
+    let pass = acc_count == 0 && node_count == 0 && cand_count == 0 && roots_empty && det;
     println!(
         "\n[result] GENESIS-STATE: {}",
         if pass { "PASS" } else { "FAIL" }
@@ -772,7 +758,7 @@ fn usage() {
     eprintln!();
     eprintln!("usage: m3_account <subcommand> [args]");
     eprintln!();
-    eprintln!("  genesis-state               build_genesis_state(params): bootstrap acc + node");
+    eprintln!("  genesis-state               build_genesis_state(params): empty window 0");
     eprintln!("  open-account                TransferActivation: sponsor → new account");
     eprintln!("  transfer-scenario           sponsor → A → B → Transfer A→B");
     eprintln!("  change-key                  ChangeKey: pk rotation + signature transition");

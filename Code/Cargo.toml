@@ -4,7 +4,7 @@ members = ["crates/mt-account", "crates/mt-codec", "crates/mt-conformance", "cra
     "crates/mt-sync", "crates/mt-store", "crates/mt-bindings"]
 
 [workspace.package]
-version = "1.1.0"
+version = "1.2.0"
 edition = "2021"
 rust-version = "1.70"
 license = "MIT OR Apache-2.0"

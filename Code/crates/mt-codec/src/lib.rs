@@ -81,7 +81,6 @@ pub mod domain {
     pub const LIBP2P_TRANSPORT_KEY: &[u8] = b"mt-libp2p-transport-key";
     pub const TUNNEL_ONLINE: &[u8] = b"mt-tunnel-online";
     pub const TUNNEL_MESH: &[u8] = b"mt-tunnel-mesh";
-    pub const BOOTSTRAP_POW: &[u8] = b"mt-bootstrap-pow";
     pub const RECOVERY_FINGERPRINT: &[u8] = b"mt-recovery-fingerprint";
 }
 
@@ -245,18 +244,13 @@ mod tests {
     }
 
     #[test]
-    fn domain_bootstrap_pow_ascii() {
-        assert_eq!(domain::BOOTSTRAP_POW, b"mt-bootstrap-pow");
-    }
-
-    #[test]
     fn domain_recovery_fingerprint_ascii() {
         assert_eq!(domain::RECOVERY_FINGERPRINT, b"mt-recovery-fingerprint");
     }
 
     #[test]
     fn all_domains_start_with_mt_dash() {
-        let all: [&[u8]; 33] = [
+        let all: [&[u8]; 32] = [
             domain::OP,
             domain::NODEREG,
             domain::PROPOSAL,
@@ -288,7 +282,6 @@ mod tests {
             domain::PREKEYS,
             domain::TUNNEL_ONLINE,
             domain::TUNNEL_MESH,
-            domain::BOOTSTRAP_POW,
             domain::RECOVERY_FINGERPRINT,
         ];
         for d in all {
@@ -297,8 +290,7 @@ mod tests {
                 "domain does not start with mt-: {d:?}"
             );
         }
-        // 33 = 31 previous + 2 (TUNNEL_ONLINE/TUNNEL_MESH split per Pass 14 prefix-free) + 1 (RECOVERY_FINGERPRINT for m1_mnemonic two-device validation) - 1 (TUNNEL replaced by 2)
-        assert_eq!(all.len(), 33);
+        assert_eq!(all.len(), 32);
     }
 
     // Property-style test: write → read roundtrip for 1000 deterministic u64 values.

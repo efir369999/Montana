@@ -13,7 +13,7 @@ use mt_account::{
 };
 use mt_codec::CanonicalEncode;
 use mt_crypto::{PublicKey, Signature, PUBLIC_KEY_SIZE, SIGNATURE_SIZE};
-use mt_state::{derive_account_id, derive_node_id, AccountRecord, AccountTable};
+use mt_state::{AccountRecord, AccountTable, NodeRecord, NodeTable};
 
 // ---------- Helpers ----------
 
@@ -62,6 +62,44 @@ fn sample_change_key(sender: [u8; 32]) -> ChangeKey {
         new_pubkey: PublicKey::from_array([0xDD; PUBLIC_KEY_SIZE]),
         signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
     }
+}
+
+// Synthetic genesis-less seed: empty genesis has no node, so emission tests
+// seed an operator account + its node directly.
+fn seed_operator(
+    accounts: &mut AccountTable,
+    nodes: &mut NodeTable,
+    op_byte: u8,
+    node_byte: u8,
+) -> ([u8; 32], [u8; 32]) {
+    let account_id = [op_byte; 32];
+    accounts.insert(AccountRecord {
+        account_id,
+        balance: 0,
+        suite_id: 1,
+        is_node_operator: true,
+        frontier_hash: [0u8; 32],
+        op_height: 0,
+        account_chain_length: 0,
+        account_chain_length_snapshot: 0,
+        current_pubkey: [op_byte; PUBLIC_KEY_SIZE],
+        creation_window: 0,
+        last_op_window: 0,
+        last_activation_window: 0,
+    });
+    let node_id = [node_byte; 32];
+    nodes.insert(NodeRecord {
+        node_id,
+        node_pubkey: [node_byte; PUBLIC_KEY_SIZE],
+        suite_id: 1,
+        operator_account_id: account_id,
+        start_window: 0,
+        chain_length: 1,
+        chain_length_snapshot: 1,
+        chain_length_checkpoints: [0u64; 6],
+        last_confirmation_window: 0,
+    });
+    (account_id, node_id)
 }
 
 // ---------- Encoded sizes match constants ([I-9] determinism) ----------
@@ -298,13 +336,15 @@ fn genesis_supply_zero() {
 }
 
 #[test]
-fn genesis_node_chain_length_is_one() {
-    // spec invariant: chain_length ≥ 1 для любого узла, включая genesis bootstrap.
+fn genesis_tables_are_empty() {
+    // spec: Genesis = empty window 0. No baked bootstrap operator: all three
+    // consensus tables start empty. The first node self-admits via the
+    // standard admission path (selection_slots(0)=1, quorum(1)=1).
     let p = mt_genesis::genesis_params();
     let g = build_genesis_state(p);
-    let node_id = derive_node_id(&p.bootstrap_node_pubkey);
-    let node = g.node_table.get(&node_id).expect("genesis node");
-    assert_eq!(node.chain_length, 1);
+    assert_eq!(g.account_table.len(), 0);
+    assert_eq!(g.node_table.len(), 0);
+    assert_eq!(g.candidate_pool.len(), 0);
 }
 
 // ---------- reward_moneta + supply_moneta consistency ----------
@@ -349,7 +389,9 @@ fn apply_proposal_deterministic() {
     let mut n2 = g2.node_table;
     let c2 = g2.candidate_pool;
 
-    let node_id = derive_node_id(&p.bootstrap_node_pubkey);
+    let (_acc, node_id) = seed_operator(&mut a1, &mut n1, 0xA1, 0xB1);
+    let _ = seed_operator(&mut a2, &mut n2, 0xA1, 0xB1);
+
     let input = ProposalSettle {
         window_w: 5,
         winner_id: node_id,
@@ -369,8 +411,7 @@ fn apply_proposal_emission_changes_balance() {
     let mut node_table = g.node_table;
     let candidate_pool = g.candidate_pool;
 
-    let account_id = derive_account_id(GENESIS_SUITE_ID, &p.bootstrap_account_pubkey);
-    let node_id = derive_node_id(&p.bootstrap_node_pubkey);
+    let (account_id, node_id) = seed_operator(&mut account_table, &mut node_table, 0xA2, 0xB2);
     let balance_before = account_table.get(&account_id).unwrap().balance;
 
     let input = ProposalSettle {
