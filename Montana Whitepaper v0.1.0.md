@@ -248,7 +248,7 @@ This is the security argument: monetary capital does not buy more time. The oper
 
 We have proposed a blockchain whose consensus security rests on post-quantum cryptographic primitives and whose anti-spam mechanism operates on time rather than fees. The construction does not require trusted setup, does not require a price feed, and does not impose a monetary barrier on participation. The architecture is designed to scale to billions of active accounts on commodity-disk hardware, subject to fast-sync benchmarks at milestone M7.
 
-The reference implementation in Rust is available at the cited URL under permissive license (Apache-2.0 / MIT). Further work includes expansion of the multi-node deployment beyond the three-node Genesis cohort, the snapshot-based fast synchronization (M7), formal liveness analysis and bootstrap equilibrium analysis as an academic publication (M9), and the conformance suite expansion to second implementations in independent languages (M9).
+The reference implementation in Rust is available at the cited URL under permissive license (Apache-2.0 / MIT). Further work includes expansion of the multi-node deployment as operators self-admit and the population grows from the empty genesis window, the snapshot-based fast synchronization (M7), formal liveness analysis and bootstrap equilibrium analysis as an academic publication (M9), and the conformance suite expansion to second implementations in independent languages (M9).
 
 
 ## References

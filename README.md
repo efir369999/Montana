@@ -117,7 +117,7 @@ curl -sSL https://raw.githubusercontent.com/efir369999/Montana/main/install.sh |
 The installer:
 - Wipes any prior native systemd install (idempotent re-runs supported)
 - Installs Docker
-- Brings up the `montana-node` container (`ghcr.io/efir369999/montana-node:latest`), listening P2P on `:8444`. By default it runs a singleton bootstrap TimeChain; mount a `genesis-manifest.json` with real peers to join an existing mesh
+- Brings up the `montana-node` container (`ghcr.io/efir369999/montana-node:latest`), listening P2P on `:8444`. By default it opens an empty genesis window 0 and self-admits as the sole operator, cementing its own TimeChain; mount a `genesis-manifest.json` with real peers to join an existing mesh
 - Auto-detects country / city / coords via `ip-api.com`
 - POSTs `/register` to the Moscow orchestrator (built-in admin token)
 - Prints the 24-word recovery mnemonic
@@ -136,7 +136,7 @@ docker run -d \
   ghcr.io/efir369999/montana-node:latest
 ```
 
-The container runs a node (singleton bootstrap by default), generates a 24-word mnemonic on first launch, and writes it to `/var/lib/montana/mnemonic.txt`. Retrieve it once and save it offline:
+The container runs a node (self-admitting as the sole operator from an empty genesis window 0 by default), generates a 24-word mnemonic on first launch, and writes it to `/var/lib/montana/mnemonic.txt`. Retrieve it once and save it offline:
 
 ```bash
 docker exec montana-node cat /var/lib/montana/mnemonic.txt
