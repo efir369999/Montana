@@ -5,7 +5,7 @@ use mt_conformance::harness::{
     build_ledger, count_by_status, parse_contract, verdict_green, Status,
 };
 
-const CONTRACT: &str = include_str!("../../../conformance/spec-v35.26.2.contract");
+const CONTRACT: &str = include_str!("../../../conformance/spec-v35.27.0.contract");
 const VERSION_MD: &str = include_str!("../../../VERSION.md");
 const AUDIT_MD: &str = include_str!("../../../AUDIT.md");
 const NODE_TOML: &str = include_str!("../../montana-node/Cargo.toml");

@@ -1,6 +1,6 @@
 # Montana — Network Layer Specification
 
-**Version:** 1.4.0 (2026-06-18) — FastSyncResponse chunk carries anchor_window; receiver binds reconstructed Merkle root to recent_roots[anchor_window] byte-exact (peer-head exact-anchor), single-anchor-per-session (REAUDIT-03)
+**Version:** 1.5.0 (2026-06-23) — reconciled to empty-window-0 genesis: hard-coded peers are discovery seeds (not consensus identity), proof-of-work bootstrap defense removed (handshake rate-limit retained), conformance KAT 50 to 47
 
 **Layer:** Network — sits between Protocol (low) and App (high).
 

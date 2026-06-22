@@ -1,6 +1,6 @@
 # Montana — Protocol Layer Specification
 
-**Version:** 35.26.2 (2026-06-16) — supply formula corrected to `EMISSION_moneta × W` (genesis window 0 has no emission; first payout at settle(1) to the window-0 winner); EXT-MON-01 closed
+**Version:** 35.27.0 (2026-06-23) — Genesis = empty window 0: baked bootstrap operator, N_SEED cohort and proof-of-work removed; first node self-admits via existing rules (selection_slots(0)=1, quorum(1)=1); Genesis State Hash and PARAMS_ENCODED_SIZE (198) re-baked
 
 
 ---

@@ -3,7 +3,7 @@
 **Alejandro Montana**
 [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
 
-**Version:** 0.1.0 (2026-05-21)
+**Version:** 0.1.1 (2026-06-23) — reconciled to empty-window-0 genesis (operators self-admit from the empty genesis window)
 
 
 ## Abstract

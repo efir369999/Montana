@@ -27,7 +27,7 @@ No classical Diffie-Hellman is present in the protocol layer. A passive observer
 
 The academic paper, written in the style of the Bitcoin paper and addressed to the Metzdowd Cryptography List audience, is the canonical entry point:
 
-📄 **[`Montana Whitepaper v0.1.0.md`](Montana%20Whitepaper%20v0.1.0.md)**
+📄 **[`Montana Whitepaper v0.1.1.md`](Montana%20Whitepaper%20v0.1.1.md)**
 
 The whitepaper covers, in present-tense factual form:
 
@@ -52,8 +52,8 @@ The whitepaper covers, in present-tense factual form:
 The protocol is specified as three layered documents — each independently auditable:
 
 | Layer | Spec | Scope |
-| 1. Protocol | [`Montana Protocol v35.26.2.md`](Montana%20Protocol%20v35.26.2.md) | State machine, crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256), sequential-delay TimeChain, lottery, Account / Node tables, Genesis Decree, `apply_proposal` pipeline, consensus operations |
-| 2. Network | [`Montana Network v1.4.0.md`](Montana%20Network%20v1.4.0.md) | libp2p transport, Noise_PQ XX (production), Identity-Bound Tunnel, transport randomness, PeerRecord, mesh transport, sync protocols, network-layer threat model, KAT vectors |
+| 1. Protocol | [`Montana Protocol v35.27.0.md`](Montana%20Protocol%20v35.27.0.md) | State machine, crypto primitives (ML-DSA-65, ML-KEM-768, SHA-256), sequential-delay TimeChain, lottery, Account / Node tables, Genesis Decree, `apply_proposal` pipeline, consensus operations |
+| 2. Network | [`Montana Network v1.5.0.md`](Montana%20Network%20v1.5.0.md) | libp2p transport, Noise_PQ XX (production), Identity-Bound Tunnel, transport randomness, PeerRecord, mesh transport, sync protocols, network-layer threat model, KAT vectors |
 | 3. App | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | UI, wallet, messenger (Double Ratchet PQ), channels, contacts, profile, Junona AI agent, browser, premium, application-layer economy |
 
 Layer dependency direction: Protocol (low) ← Network (mid) ← App (high). Each layer depends on layers below it; no upward dependency.
@@ -95,7 +95,7 @@ This is a public invitation. Every primitive, every consensus rule, every byte o
 
 - **Deploy a node** on any Linux VPS — one command, approximately five minutes, approximately five gibibytes of disk, one gibibyte of RAM. See [`Code/AGENTS.md`](Code/AGENTS.md) → *Deploy*.
 - **Run stress / chaos / fuzz suites** against your node. See [`Code/AGENTS.md`](Code/AGENTS.md) → *Stress test*.
-- **Audit the code against the spec.** [`Code/docs/SPEC_DEVIATIONS.md`](Code/docs/SPEC_DEVIATIONS.md) lists deviations, acknowledgments, and closures. The spec is the single source of truth: [`Montana Protocol v35.26.2.md`](Montana%20Protocol%20v35.26.2.md) + [`Montana Network v1.4.0.md`](Montana%20Network%20v1.4.0.md) + [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md).
+- **Audit the code against the spec.** [`Code/docs/SPEC_DEVIATIONS.md`](Code/docs/SPEC_DEVIATIONS.md) lists deviations, acknowledgments, and closures. The spec is the single source of truth: [`Montana Protocol v35.27.0.md`](Montana%20Protocol%20v35.27.0.md) + [`Montana Network v1.5.0.md`](Montana%20Network%20v1.5.0.md) + [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md).
 - **Send findings** as GitHub Issues or Pull Requests. No NDA, no engagement contract. The protocol gets stronger or it does not ship.
 
 **What this is NOT:**
@@ -180,9 +180,9 @@ The installer prints a 24-word recovery mnemonic for the node. Save it immediate
 ## Repository layout
 
 | Path | Contents |
-| [`Montana Whitepaper v0.1.0.md`](Montana%20Whitepaper%20v0.1.0.md) | Academic paper in the style of the Bitcoin paper. Metzdowd-list submission text |
-| [`Montana Protocol v35.26.2.md`](Montana%20Protocol%20v35.26.2.md) | Full protocol specification |
-| [`Montana Network v1.4.0.md`](Montana%20Network%20v1.4.0.md) | Network-layer specification (Noise_PQ XX, IBT, mesh, sync) |
+| [`Montana Whitepaper v0.1.1.md`](Montana%20Whitepaper%20v0.1.1.md) | Academic paper in the style of the Bitcoin paper. Metzdowd-list submission text |
+| [`Montana Protocol v35.27.0.md`](Montana%20Protocol%20v35.27.0.md) | Full protocol specification |
+| [`Montana Network v1.5.0.md`](Montana%20Network%20v1.5.0.md) | Network-layer specification (Noise_PQ XX, IBT, mesh, sync) |
 | [`Montana App v3.12.0.md`](Montana%20App%20v3.12.0.md) | Client application specification |
 | [`External-Audit/`](External-Audit/) | First external security review and the project's disposition |
 | [`Code/`](Code/) | Rust workspace — 17 crates, 9 milestones |
