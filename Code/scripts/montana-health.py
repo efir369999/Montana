@@ -7,7 +7,7 @@
   H-3: gap между proposer и followers ≤ 50 окон (после catchup)
   H-4: bundles per cement ≥ 1 (always); ≥ ceil(N_SEED/2) если honest mesh
   H-5: chain_length growing for ALL nodes (fairness)
-  H-6: candidate_pool empty на singleton genesis (n_seed=0, genesis_active_operators empty)
+  H-6: candidate_pool empty на пустом генезисе (Account/Node/Candidate tables начинают пустыми)
 
 Записывает результаты в /var/log/montana-health.json + alerts в /var/log/montana-health-alerts.log
 """
@@ -76,10 +76,10 @@ def check():
         if status.get("last_cemented_window", 0) == 0:
             alert("CRIT", "H-2 proposer stuck — last_cemented=0")
     if "_error" not in consensus:
-        n_seed = genesis.get("n_seed", 0)
         active = consensus.get("active_nodes", 0)
-        if active != n_seed + 1:
-            alert("WARN", f"H-1 active={active} != n_seed+1={n_seed+1} (some operators not in NodeTable)")
+        # Empty genesis (no baked operators): active grows from 0 as nodes self-admit;
+        # no fixed expected count to assert against.
+        report["checks"]["H-1_active"] = {"active_nodes": active}
         total_cl = consensus.get("total_chain_length", 0)
         dist = consensus.get("chain_length_distribution", [])
         # H-5: fairness — top operator share < 90%

@@ -248,13 +248,12 @@ def api_genesis():
     try:
         with open(MANIFEST_PATH) as f:
             m = json.load(f)
-        # Singleton reference: consensus starts with genesis_active_operators empty
-        # (protocol_params.n_seed = 0). Manifest peers are discovery-only metadata.
-        n_seed = 0
+        # Empty genesis (window 0): no baked operators in protocol_params. Manifest
+        # peers are discovery-only metadata; consensus starts with the first node
+        # self-admitting from the empty genesis window.
         return {
             "network_name": m.get("network_name"),
             "peer_count": len(m.get("peers", [])),
-            "n_seed": n_seed,
             "peers": [
                 {
                     "label": p["label"], "multiaddr": p["multiaddr"], "peer_id": p["peer_id"],

@@ -969,3 +969,17 @@ deterministic) is used, so the race does not trigger with all nodes healthy. The
 fallback path nonetheless violates [I-3] determinism; a deterministic tie-break for
 fallback depth (e.g. derived from cemented state, not wall-clock) is the proper fix.
 Mitigated by DEV-042: a divergence triggered by this race is now rejected and resynced instead of crashing the node. Full deterministic fix (fallback depth derived from cemented state / header-declared depth verification rather than per-node wall-clock) touches consensus leadership and is deferred to a deliberate spec+code change; it does not trigger at spec cadence with homogeneous nodes.
+
+
+## DEV-044 (open, acknowledged): devnet ssha_entry_windows / selection_interval = 1 (production = 20160 / 336)
+
+**Crate:**           mt-genesis
+**File:line:**       crates/mt-genesis/src/lib.rs (genesis_params)
+**Spec section:**    "Genesis Decree → protocol_params"
+**Spec quote:**      "ssha_entry_windows (8B) 20 160 (= τ₂)"; "selection_interval (8B) 336"
+**Что делает код:**  ssha_entry_windows = 1, selection_interval = 1 (TEST CONFIG, devnet) — кандидат входит за 1 окно, приём в Active каждое окно; для быстрого локального запуска узла.
+**Severity:**        средний (devnet-only; не входит в structural genesis layout / Genesis State Hash composition).
+**Closure path:**    для mainnet вернуть genesis_params на 20 160 / 336 (боевые из спеки); conformance-контракт тогда совпадёт, conformance-gate станет зелёным по этим двум строкам.
+**Closure cost:**    минуты (две константы); re-bake Genesis State Hash не требуется.
+**Status:**          открыто (devnet override, author-acknowledged для локального тестирования)
+**Acknowledged:**    автор явно выбрал «оставляет 1 для теста» (2026-06-23)
