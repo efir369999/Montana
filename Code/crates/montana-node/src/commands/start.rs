@@ -487,9 +487,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // next_window-2; при молчании — каскад запасных по
                 // возрастанию взвешенного билета (спецификация Lookback).
                 let silence = last_cement_at.elapsed().as_secs();
-                let (acting, my_depth) = {
+                let (acting, my_depth, canonical_proposer) = {
                     let ctx = net_ctx!();
-                    expected_proposer(&ctx, next_window, silence)
+                    let (acting, depth) = expected_proposer(&ctx, next_window, silence);
+                    let (canonical, _) = canonical_proposer_at(&ctx, next_window, silence);
+                    (acting, depth, canonical)
                 };
                 if acting != my_node {
                     break 'active_arm;
@@ -519,7 +521,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         included_reveals_root: [0u8; 32],
                         winner_endpoint: [0u8; 32],
                         winner_id: my_node,
-                        proposer_node_id: my_node,
+                        proposer_node_id: canonical_proposer,
                         target: timechain.lottery_target,
                         fallback_depth: my_depth,
                         signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
@@ -681,7 +683,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     included_reveals_root,
                     winner_endpoint,
                     winner_id,
-                    proposer_node_id: my_node,
+                    proposer_node_id: canonical_proposer,
                     target: timechain.lottery_target,
                     fallback_depth: my_depth,
                     signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
@@ -877,39 +879,81 @@ fn cba_for(ctx: &NetCtx, w: u64) -> Hash32 {
     cba_from(ctx.bc_set_history, w)
 }
 
-/// Законный ведущий окна w по спецификации Lookback Leadership: победитель окна
-/// w-2, при молчании — каскад запасных по возрастанию взвешенного билета окна
-/// w-2. Genesis = пустое окно 0: при отсутствии канонического ведущего
-/// (NO_PROPOSER — empty W-2, либо первые окна до накопления кандидатов)
+/// Глубина каскада запасных по молчанию законного ведущего: каждый интервал
+/// fallback_secs без цементирования сдвигает роль на следующего запасного.
+fn fallback_depth_at(silence_secs: u64, fallback_secs: u64) -> u8 {
+    let depth_extra = (silence_secs / fallback_secs.max(1)).min(254) as u8;
+    1u8.saturating_add(depth_extra)
+}
+
+/// КАНОНИЧЕСКИЙ ведущий окна w по спецификации «Lookback Leadership»:
+///   proposer_W = первый node-кандидат (class=Node) по возрастанию
+///   weighted_ticket в отсортированных кандидатах окна W-2; при молчании — N-й
+///   по каскаду (fallback_depth). Возвращается КАНОНИЧЕСКОЕ значение
+///   (NO_PROPOSER при пустом / без node-кандидатов наборе W-2 — Genesis
+///   cold-start), которое записывается в поле proposer_node_id заголовка и
+///   ПРОВЕРЯЕТСЯ validate_proposer_is_canonical против тех же кандидатов W-2.
+///
+/// Источник — ровно тот же (отсортированные кандидаты W-2 через fallback_proposer),
+/// что и у валидатора: заголовок и проверка согласованы по построению. winner_history
+/// здесь НЕ используется (его значение — общий победитель лотереи, включая class=Account,
+/// а каноничный ведущий — первый node-кандидат, что не обязано совпадать).
+fn canonical_proposer_at(ctx: &NetCtx, w: u64, silence_secs: u64) -> (mt_state::NodeId, u8) {
+    canonical_proposer_lookback(
+        w,
+        fallback_depth_at(silence_secs, ctx.fallback_secs),
+        ctx.lottery_history
+            .get(&w.wrapping_sub(2))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]),
+    )
+}
+
+/// Чистая lookback-логика канонического ведущего, отделённая от NetCtx для
+/// unit-тестирования. sorted_w_minus_2 — отсортированные кандидаты окна w-2.
+/// Возвращает (canonical_proposer, depth): NO_PROPOSER при пустом / без
+/// node-кандидатов наборе W-2 (Genesis cold-start), иначе node_id запасного
+/// слота fallback_depth.
+fn canonical_proposer_lookback(
+    w: u64,
+    fallback_depth: u8,
+    sorted_w_minus_2: &[mt_lottery::Candidate],
+) -> (mt_state::NodeId, u8) {
+    if w < 2 {
+        return (mt_consensus::NO_PROPOSER, 1);
+    }
+    (
+        mt_consensus::fallback_proposer(sorted_w_minus_2, fallback_depth),
+        fallback_depth,
+    )
+}
+
+/// Законный ведущий, КОТОРЫМ ДЕЙСТВУЕТ узел в окне w. Решение «вести самому»:
+/// при отсутствии канонического ведущего (NO_PROPOSER — Genesis cold-start)
 /// одиночный узел ведёт сам — self-admit (selection_slots(0)=1) + self-cement
-/// (quorum(1)=1) делают его собственное предложение цепочкой.
+/// (quorum(1)=1) делают его собственное предложение цепочкой. Для быстрого пути
+/// (depth=1) допускается winner_history[W-2] как операционная подсказка о том,
+/// кому пробовать вести; on-chain поле proposer_node_id берётся ОТДЕЛЬНО из
+/// canonical_proposer_at (только отсортированные кандидаты W-2), поэтому
+/// расхождение winner_history ↔ lottery_history не попадает в заголовок.
+/// Возвращает (acting, depth).
 fn expected_proposer(ctx: &NetCtx, w: u64, silence_secs: u64) -> (mt_state::NodeId, u8) {
-    let solo_or = |p: mt_state::NodeId| {
-        if p == mt_consensus::NO_PROPOSER {
-            ctx.my_node
-        } else {
-            p
-        }
-    };
     if w < 2 {
         return (ctx.my_node, 1);
     }
-    let depth_extra = (silence_secs / ctx.fallback_secs.max(1)).min(254) as u8;
-    if depth_extra == 0 {
+    let depth = fallback_depth_at(silence_secs, ctx.fallback_secs);
+    if depth == 1 {
         if let Some(p) = ctx.winner_history.get(&(w - 2)) {
             return (*p, 1);
         }
     }
-    let sorted = ctx
-        .lottery_history
-        .get(&(w - 2))
-        .cloned()
-        .unwrap_or_default();
-    let depth = 1u8.saturating_add(depth_extra);
-    (
-        solo_or(mt_consensus::fallback_proposer(&sorted, depth)),
-        depth,
-    )
+    let (canonical, depth) = canonical_proposer_at(ctx, w, silence_secs);
+    let acting = if canonical == mt_consensus::NO_PROPOSER {
+        ctx.my_node
+    } else {
+        canonical
+    };
+    (acting, depth)
 }
 
 /// Разбор 3722-байтного заголовка предложения из канонического layout.
@@ -1315,6 +1359,24 @@ fn handle_protocol_message(
                     "[consensus] w={w}: ведущий {} не является законным (ожидался {}) — skip",
                     hex16(&header.proposer_node_id),
                     hex16(&exp_now)
+                );
+                return Ok(());
+            }
+            // Каноничность ведущего (спецификация «Canonical acceptance» (a)):
+            // proposer_node_id обязан равняться fallback_proposer(W-2, depth) при
+            // объявленной заголовком fallback_depth. При пустом наборе W-2
+            // (Genesis cold-start) каноническое значение — NO_PROPOSER; подделка
+            // реального node_id при пустом W-2 отклоняется здесь.
+            let sorted_w_minus_2 = ctx
+                .lottery_history
+                .get(&w.saturating_sub(2))
+                .cloned()
+                .unwrap_or_default();
+            if let Err(e) = mt_consensus::validate_proposer_is_canonical(&header, &sorted_w_minus_2)
+            {
+                eprintln!(
+                    "[consensus] w={w}: ведущий {} не каноничен ({e:?}) — skip",
+                    hex16(&header.proposer_node_id)
                 );
                 return Ok(());
             }
@@ -1977,8 +2039,11 @@ pub struct NetworkHandle {
 
 #[cfg(test)]
 mod tests {
+    use super::canonical_proposer_lookback;
     use super::resolve_fast_sync_lag_threshold as resolve;
     use super::FAST_SYNC_LAG_THRESHOLD as DEFAULT;
+    use mt_consensus::{validate_proposer_is_canonical, NO_PROPOSER};
+    use mt_lottery::{Candidate, WINNER_CLASS_NODE};
 
     #[test]
     fn lag_threshold_override_resolution() {
@@ -1988,5 +2053,82 @@ mod tests {
         assert_eq!(resolve(Some("0".to_string())), DEFAULT);
         assert_eq!(resolve(Some("abc".to_string())), DEFAULT);
         assert_eq!(resolve(Some(String::new())), DEFAULT);
+    }
+
+    fn node_cand(ticket: u128, id_byte: u8) -> Candidate {
+        Candidate {
+            ticket,
+            class: WINNER_CLASS_NODE,
+            id: [id_byte; 32],
+        }
+    }
+
+    // Genesis cold-start: при пустом наборе W-2 (или первых окнах w<2)
+    // канонический ведущий = NO_PROPOSER — именно это значение должно лечь в
+    // поле proposer_node_id заголовка. Орхестрация в таком случае ведёт сама
+    // (acting = my_node), но HEADER несёт NO_PROPOSER, чтобы пройти
+    // validate_proposer_is_canonical против пустого W-2.
+    #[test]
+    fn cold_start_canonical_proposer_is_no_proposer() {
+        // w < 2: до накопления любых окон.
+        assert_eq!(canonical_proposer_lookback(0, 1, &[]), (NO_PROPOSER, 1));
+        assert_eq!(canonical_proposer_lookback(1, 1, &[]), (NO_PROPOSER, 1));
+        // w >= 2 но W-2 пуст: нет node-кандидатов → NO_PROPOSER.
+        assert_eq!(canonical_proposer_lookback(2, 1, &[]), (NO_PROPOSER, 1));
+    }
+
+    // Орхестрация (canonical header value) и валидатор согласованы для
+    // cold-start: header с NO_PROPOSER проходит против пустого W-2; реальный
+    // node_id против пустого W-2 отклоняется.
+    #[test]
+    fn cold_start_header_value_agrees_with_validator() {
+        let (canonical, _depth) = canonical_proposer_lookback(1, 1, &[]);
+        assert_eq!(canonical, NO_PROPOSER);
+        // Заголовок с этим каноническим значением проходит валидацию.
+        let mut h = stub_proposer_header(canonical);
+        h.fallback_depth = 1;
+        assert_eq!(validate_proposer_is_canonical(&h, &[]), Ok(()));
+        // Подделка реального node_id при пустом W-2 — отклоняется.
+        let mut forged = stub_proposer_header([0x42; 32]);
+        forged.fallback_depth = 1;
+        assert!(validate_proposer_is_canonical(&forged, &[]).is_err());
+    }
+
+    // Steady-state: канонический ведущий = первый node-кандидат W-2; header,
+    // несущий это значение, проходит validate_proposer_is_canonical против тех
+    // же кандидатов W-2 (заголовок и валидатор согласованы по построению — один
+    // источник, отсортированные кандидаты W-2).
+    #[test]
+    fn steady_state_canonical_proposer_is_first_node_candidate() {
+        let cands = vec![node_cand(100, 0x11), node_cand(200, 0x22)];
+        let (canonical, depth) = canonical_proposer_lookback(5, 1, &cands);
+        assert_eq!(canonical, [0x11u8; 32]);
+        assert_eq!(depth, 1);
+        let mut h = stub_proposer_header(canonical);
+        h.fallback_depth = depth;
+        assert_eq!(validate_proposer_is_canonical(&h, &cands), Ok(()));
+    }
+
+    fn stub_proposer_header(proposer: mt_state::NodeId) -> mt_consensus::ProposalHeader {
+        use mt_crypto::{Signature, SIGNATURE_SIZE};
+        mt_consensus::ProposalHeader {
+            prev_proposal_hash: [0u8; 32],
+            window_index: 1,
+            protocol_version: 1,
+            control_root: [0u8; 32],
+            node_root: [0u8; 32],
+            candidate_root: [0u8; 32],
+            account_root: [0u8; 32],
+            state_root: [0u8; 32],
+            timechain_value: [0u8; 32],
+            included_bundles_root: [0u8; 32],
+            included_reveals_root: [0u8; 32],
+            winner_endpoint: [0u8; 32],
+            winner_id: [0u8; 32],
+            proposer_node_id: proposer,
+            target: 0,
+            fallback_depth: 1,
+            signature: Signature::from_array([0u8; SIGNATURE_SIZE]),
+        }
     }
 }
