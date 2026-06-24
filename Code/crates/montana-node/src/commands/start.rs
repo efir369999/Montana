@@ -222,7 +222,11 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // M7 fast-sync: held across loop iterations while a snapshot is in flight.
     let fast_sync_lag_threshold =
         resolve_fast_sync_lag_threshold(std::env::var("MONTANA_FASTSYNC_LAG_THRESHOLD").ok());
-    println!("fast-sync lag    : threshold {fast_sync_lag_threshold} windows");
+    // Networked mode only: a solo node has no peers to lag behind, so the
+    // fast-sync threshold is meaningless noise in the singleton banner.
+    if network_handle.is_some() {
+        println!("fast-sync lag    : threshold {fast_sync_lag_threshold} windows");
+    }
     let mut fast_sync: Option<mt_sync::FastSyncClient> = None;
     let mut fast_sync_deadline: Option<Instant> = None;
     // M7 fast-sync: recent cemented bootstrap state_roots (window -> root),
