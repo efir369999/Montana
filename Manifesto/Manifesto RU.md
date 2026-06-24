@@ -135,7 +135,7 @@
 
 ---
 
-**Эталонная реализация:** Rust, Apache-2.0 / MIT. Двадцать три крейта, включая `mt-timechain`, `mt-consensus`, `mt-lottery`, `mt-crypto`, `mt-net`, `mt-noise-pq`. Спецификация: [Montana Whitepaper v0.1.0.md](../Montana%20Whitepaper%20v0.1.0.md) и [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
+**Эталонная реализация:** Rust, Apache-2.0 / MIT. Двадцать три крейта, включая `mt-timechain`, `mt-consensus`, `mt-lottery`, `mt-crypto`, `mt-net`, `mt-noise-pq`. Спецификация: [Montana Whitepaper.md](../Montana%20Whitepaper.md) и [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md).
 
 **Символ:** **Ɉ** — Монтана, reward-юнит уровня протокола. `moneta` — наименьшая неделимая единица (`1 Ɉ = 10⁹ moneta`). **Тикер:** `MONT`.
 

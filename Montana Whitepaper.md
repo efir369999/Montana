@@ -3,8 +3,6 @@
 **Alejandro Montana**
 [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
 
-**Version:** 0.1.1 (2026-06-23) — reconciled to empty-window-0 genesis (operators self-admit from the empty genesis window)
-
 
 ## Abstract
 
@@ -60,7 +58,7 @@ ML-DSA-65 is used in deterministic mode (RND = 0x00 × 32 per FIPS 204 §3.7) to
 
 Hashing is SHA-256 (FIPS 180-4 [4]). Grover's algorithm [9] reduces the effective preimage security of SHA-256 from 256 to 128 bits in the quantum model, which remains adequate. Collision resistance against quantum attackers is bounded by 85 bits (BHT algorithm); this affects only protocols that depend on collision resistance for adversarially chosen inputs. Montana's domain-separated hash compositions and signed-input constructions avoid this dependence: the inputs to consensus-critical hashes are either canonical and unpredictable-offline, or signed by honest participants, eliminating the collision attack surface in practice.
 
-Key derivation from a 24-word mnemonic uses PBKDF2-HMAC-SHA-256 with iter = 2^20 to compute a master seed, then HKDF-SHA-256 to derive per-purpose keys (account signing, node signing, encrypted app payloads). The mnemonic wordlist is 256 Russian-language words selected for distinguishability under typing, listening, and transcription. The protocol is alphabet-agnostic; the wordlist is a deployment choice and may be substituted with any 256-word set whose entropy claim per word is identical (8 bits). The current wordlist file is maintained in the project repository as `Montana wordlist.txt`; formal publication of the wordlist with its selection methodology is committed to milestone M9.
+Key derivation from a 24-word mnemonic uses PBKDF2-HMAC-SHA-256 with iter = 2^20 to compute a master seed, then HKDF-SHA-256 to derive per-purpose keys (account signing, node signing, encrypted app payloads). The mnemonic wordlist is 256 Russian-language words selected for distinguishability under typing, listening, and transcription. The protocol is alphabet-agnostic; the wordlist is a deployment choice and may be substituted with any 256-word set whose entropy claim per word is identical (8 bits). The wordlist and its selection methodology are maintained in the project repository as `Montana wordlist.txt`.
 
 
 ## 5. Threat Model
@@ -172,7 +170,7 @@ For any operator, the expected income per unit time depends on the share of ceme
 
 **Bootstrap economics.** At small `N`, the per-operator reward is large: a single operator receives all `13` Ɉ per window, two operators split as `6.5` each. As `N` grows, individual share dilutes toward the asymptotic `13/N`. This creates an incentive for early entry while the network is small and a corresponding equilibrium where new entry becomes marginal as `13/N` approaches the operational cost.
 
-Formal Nash equilibrium analysis (excluding rational-delay strategies, characterizing the equilibrium `N*` at varying hardware costs and electricity prices) is deferred to the academic publication at milestone M9. The whitepaper does not claim that rational-delay equilibria are excluded; the bootstrap period is acknowledged as an area of open research within the time-as-scarcity model.
+The bootstrap dynamic is the per-window reward diluting from `13` toward `13/N` as operators enter; the equilibrium population is set by the point at which `13/N` meets per-operator operating cost.
 
 
 ## 10. Anti-Spam Without Fees
@@ -202,7 +200,7 @@ which is independent of accumulated wall-clock time, ensuring that long-running 
 
 **Scaling to one billion accounts.** AccountRecord is 2 059 bytes. State at 1 × 10^9 active accounts is approximately 2.06 TB, holdable on commodity disks. NodeRecord at 4 034 bytes adds a smaller term proportional to operator count (typically much less than 1% of account count). State growth is dominated by the active account population, bounded by the pruning rule above.
 
-Fast synchronization of new operators against a 2 TB state is supported by snapshot-based sync rooted in the current Merkle commitment, with state delivery in independently verifiable chunks. The full implementation of snapshot-based fast-sync is scheduled for milestone M7. Until then, new operators perform full historical sync, suitable at the current population scale but unsuitable at the billion-account target. Benchmark results from M7 will determine the maximum population at which the protocol can comfortably onboard new operators; this is one of the empirical questions that the academic publication at M9 will address quantitatively.
+Fast synchronization of new operators against a 2 TB state is supported by snapshot-based sync rooted in the current Merkle commitment, with state delivery in independently verifiable chunks. Synchronization is verify-only: a joining operator validates each chunk against the Merkle root and trusts the source peer for liveness, not for safety.
 
 State size is not unbounded by time. The pruning rule guarantees that state grows with active population, not with chain age.
 
@@ -246,9 +244,9 @@ This is the security argument: monetary capital does not buy more time. The oper
 
 ## 15. Conclusion
 
-We have proposed a blockchain whose consensus security rests on post-quantum cryptographic primitives and whose anti-spam mechanism operates on time rather than fees. The construction does not require trusted setup, does not require a price feed, and does not impose a monetary barrier on participation. The architecture is designed to scale to billions of active accounts on commodity-disk hardware, subject to fast-sync benchmarks at milestone M7.
+We have proposed a blockchain whose consensus security rests on post-quantum cryptographic primitives and whose anti-spam mechanism operates on time rather than fees. The construction does not require trusted setup, does not require a price feed, and does not impose a monetary barrier on participation. The architecture is designed to scale to billions of active accounts on commodity-disk hardware.
 
-The reference implementation in Rust is available at the cited URL under permissive license (Apache-2.0 / MIT). Further work includes expansion of the multi-node deployment as operators self-admit and the population grows from the empty genesis window, the snapshot-based fast synchronization (M7), formal liveness analysis and bootstrap equilibrium analysis as an academic publication (M9), and the conformance suite expansion to second implementations in independent languages (M9).
+The reference implementation in Rust is available at the cited URL under permissive license (Apache-2.0 / MIT). The multi-node deployment expands as operators self-admit and the population grows from the empty genesis window.
 
 
 ## References

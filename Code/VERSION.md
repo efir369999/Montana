@@ -8,4 +8,4 @@
 - Protocol: `../Montana Protocol v35.27.0.md`
 - Network:  `../Montana Network v1.5.0.md`
 - App:        `../Montana App v3.12.0.md`
-- Whitepaper: `../Montana Whitepaper v0.1.1.md`
+- Whitepaper: `../Montana Whitepaper.md`

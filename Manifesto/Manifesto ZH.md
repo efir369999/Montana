@@ -135,7 +135,7 @@
 
 ---
 
-**参考实现：** Rust，Apache-2.0 / MIT。二十三个 crate，包括 `mt-timechain`、`mt-consensus`、`mt-lottery`、`mt-crypto`、`mt-net`、`mt-noise-pq`。规范：[Montana Whitepaper v0.1.0.md](../Montana%20Whitepaper%20v0.1.0.md) 与 [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md)。
+**参考实现：** Rust，Apache-2.0 / MIT。二十三个 crate，包括 `mt-timechain`、`mt-consensus`、`mt-lottery`、`mt-crypto`、`mt-net`、`mt-noise-pq`。规范：[Montana Whitepaper.md](../Montana%20Whitepaper.md) 与 [Montana Protocol v35.25.1](../Montana%20Protocol%20v35.25.1.md)。
 
 **符号：** **Ɉ**——蒙塔纳，协议层的奖励单位。`moneta`——最小不可分单位（`1 Ɉ = 10⁹ moneta`）。**代码：** `MONT`。
 

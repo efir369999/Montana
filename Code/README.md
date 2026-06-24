@@ -74,7 +74,7 @@ The installer prints back the 24-word recovery mnemonic for the node. Save it im
 | [`docs/security-cards.md`](docs/security-cards.md) | Per-primitive security analysis |
 | [`docs/SPEC_DEVIATIONS.md`](docs/SPEC_DEVIATIONS.md) | Known deviations, acknowledgments, and closures |
 | [`docs/build-from-source.md`](docs/build-from-source.md) | Reproducible build instructions |
-| [`../Montana Whitepaper v0.1.0.md`](../Montana Whitepaper v0.1.0.md) | Whitepaper in Satoshi style |
+| [`../Montana Whitepaper.md`](../Montana Whitepaper.md) | Whitepaper in Satoshi style |
 | [`CLAUDE.md`](CLAUDE.md) | Architect role for code (process, not normative) |
 | [`CRITIC.md`](CRITIC.md) | Critic role for implementation review |
 
