@@ -15,7 +15,7 @@ pub fn run(args: InitArgs) -> Result<(), NodeError> {
     let identity = match (args.mnemonic.as_deref(), args.entropy_hex.as_deref()) {
         (Some(_), Some(_)) => {
             return Err(NodeError::InvalidArguments(
-                "укажите либо --mnemonic, либо --entropy, не оба сразу".into(),
+                "specify either --mnemonic or --entropy, not both".into(),
             ))
         },
         (Some(m), None) => Identity::from_mnemonic(m.trim())?,
@@ -38,21 +38,21 @@ pub fn run(args: InitArgs) -> Result<(), NodeError> {
     println!("data-dir         : {}", data_dir.display());
     println!("identity         : {}", path.display());
     println!("file size        : {IDENTITY_FILE_SIZE} bytes");
-    println!("mode             : 0600 (только владелец)");
+    println!("mode             : 0600 (owner only)");
     println!();
-    println!("--- мнемоника (24 слова — запишите в надёжное место) ---");
+    println!("--- mnemonic (24 words — write down in a safe place) ---");
     print_mnemonic_grid(&identity.mnemonic);
     println!();
-    println!("--- терминальные идентификаторы ---");
+    println!("--- terminal identifiers ---");
     println!("account_id       : {}", hex_lower(&identity.account_id()));
     println!("node_id          : {}", hex_lower(&identity.node_id()));
     println!(
-        "master_seed_fp   : {} (8-байтный отпечаток, не секрет)",
+        "master_seed_fp   : {} (8-byte fingerprint, not secret)",
         hex_lower(&identity.master_seed_fingerprint())
     );
     println!();
-    println!("Секретные ключи (account_sk/node_sk/mlkem_sk) сохранены в identity.bin");
-    println!("и не выводятся на экран. Для backup используйте мнемонику выше.");
+    println!("Secret keys (account_sk/node_sk/mlkem_sk) saved in identity.bin");
+    println!("and are not printed. For backup use the mnemonic above.");
 
     Ok(())
 }

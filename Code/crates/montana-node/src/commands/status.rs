@@ -36,7 +36,7 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
         crate::node_lifecycle::NodePhase::CandidateSsha
     ) {
         println!(
-            "candidate SSHA         : {}/{} (осталось {} окон)",
+            "candidate SSHA         : {}/{} ({} windows left)",
             lifecycle.candidate_progress,
             lifecycle.target_chain_length,
             lifecycle
@@ -51,7 +51,7 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
         println!("registration_window   : {}", lifecycle.registration_window);
     }
     println!();
-    println!("--- ваша identity ---");
+    println!("--- your identity ---");
     println!("account_id            : {}", hex_lower(&my_account));
     println!("node_id               : {}", hex_lower(&my_node));
     println!(
@@ -63,14 +63,14 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
         hex_lower(identity.account_pk.as_bytes())
     );
     println!();
-    println!("--- размеры таблиц локального state ---");
-    println!("AccountTable          : {} записей", state.accounts.len());
+    println!("--- local state table sizes ---");
+    println!("AccountTable          : {} records", state.accounts.len());
     println!(
-        "NodeTable             : {} записей (активные узлы)",
+        "NodeTable             : {} records (active nodes)",
         state.nodes.len()
     );
     println!(
-        "CandidatePool         : {} записей (ожидают selection event)",
+        "CandidatePool         : {} records (awaiting selection event)",
         state.candidates.len()
     );
     println!();
@@ -79,23 +79,23 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
     let in_candidate_pool = state.candidates.contains(&my_node);
     let operator_record = state.accounts.get(&my_account);
 
-    println!("--- ваш статус ---");
+    println!("--- your status ---");
     if let Some(rec) = operator_record {
-        println!("operator account     : найден в AccountTable");
+        println!("operator account     : found in AccountTable");
         println!("balance               : {} nɈ", rec.balance);
         println!("is_node_operator      : {}", rec.is_node_operator);
         println!("account_chain_length  : {}", rec.account_chain_length);
     } else {
-        println!("operator account      : НЕ НАЙДЕН (state не bootstrapped)");
+        println!("operator account      : NOT FOUND (state not bootstrapped)");
     }
 
     if in_node_table {
-        println!("узел в Node Table     : ДА — активен");
+        println!("node in Node Table    : YES — active");
         let n = state.nodes.get(&my_node).unwrap();
         println!("  start_window         : {}", n.start_window);
         println!("  chain_length         : {}", n.chain_length);
     } else if in_candidate_pool {
-        println!("узел в Candidate Pool : ДА — ожидает selection event");
+        println!("node in Candidate Pool: YES — awaiting selection event");
         let c = state.candidates.get(&my_node).unwrap();
         println!("  w_start              : {}", c.w_start);
         println!("  ssha_chain_length     : {}", c.ssha_chain_length);
@@ -103,24 +103,24 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
         println!("  expires (window)     : {}", c.expires);
         println!("  proof_endpoint       : {}", hex_lower(&c.proof_endpoint));
     } else {
-        println!("узел                  : НЕ ЗАРЕГИСТРИРОВАН");
-        println!("                        запустите «start» — узел пройдёт через");
-        println!("                        candidate SSHA (τ₂ окон) → registered → active");
+        println!("node                  : NOT REGISTERED");
+        println!("                        run 'start' — the node will go through");
+        println!("                        candidate SSHA (τ₂ windows) → registered → active");
     }
     println!();
 
-    println!("--- параметры протокола ---");
-    println!("τ₂ (окон в эпохе)    : {}", params.tau2_windows);
+    println!("--- protocol parameters ---");
+    println!("τ₂ (windows per epoch): {}", params.tau2_windows);
     println!(
-        "selection interval   : каждые {} окон",
+        "selection interval   : every {} windows",
         params.selection_interval
     );
     println!(
-        "admission divisor    : {} (1/{} активных узлов / selection)",
+        "admission divisor    : {} (1/{} active nodes / selection)",
         params.admission_divisor, params.admission_divisor
     );
     println!(
-        "candidate expiry     : {} окон от регистрации",
+        "candidate expiry     : {} windows from registration",
         params.candidate_expiry_windows
     );
     println!(
@@ -137,7 +137,7 @@ pub fn run(args: StatusArgs) -> Result<(), NodeError> {
 
     let total_balances: u128 = state.accounts.iter().map(|a| a.balance).sum();
     println!();
-    println!("--- балансы AccountTable ---");
+    println!("--- AccountTable balances ---");
     println!(
         "Σ balances           : {} nɈ ({} Ɉ)",
         total_balances,

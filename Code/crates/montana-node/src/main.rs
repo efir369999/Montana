@@ -23,7 +23,7 @@ fn main() -> ExitCode {
         },
         "version" | "--version" | "-V" => {
             println!(
-                "Montana Ядро 0.1 — montana-node {} (git {} {})",
+                "Montana Core 0.1 — montana-node {} (git {} {})",
                 env!("CARGO_PKG_VERSION"),
                 env!("MONTANA_GIT_SHA"),
                 env!("MONTANA_GIT_COMMIT_DATE"),
@@ -31,7 +31,7 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         },
         other => {
-            eprintln!("неизвестная команда: {other}");
+            eprintln!("unknown command: {other}");
             eprintln!();
             eprintln!("{}", help_text());
             return ExitCode::from(2);
@@ -41,7 +41,7 @@ fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("ошибка: {e}");
+            eprintln!("error: {e}");
             ExitCode::from(1)
         },
     }
@@ -49,11 +49,11 @@ fn main() -> ExitCode {
 
 fn help_text() -> String {
     String::from(
-        "montana-node — узел Montana (singleton либо cross-machine M8 mode)\n\
+        "montana-node — Montana node (singleton or cross-machine M8 mode)\n\
          \n\
-         Использование:\n\
+         Usage:\n\
          \n\
-           montana-node init    [--data-dir <PATH>] [--mnemonic \"<24 слова>\"]\n\
+           montana-node init    [--data-dir <PATH>] [--mnemonic \"<24 words>\"]\n\
                                  [--mnemonic-stdin] [--entropy <hex32>] [--force]\n\
          \n\
            montana-node inspect [--data-dir <PATH>] [--reveal-master-seed]\n\
@@ -66,53 +66,53 @@ fn help_text() -> String {
                                  [--d-test-override <N>]\n\
                                  [--listen <multiaddr>] [--genesis-manifest <PATH>]\n\
          \n\
-         Команды:\n\
+         Commands:\n\
          \n\
-           init      Создать identity (мнемоника + ключи) и сохранить в identity.bin.\n\
-                     Если ни --mnemonic, ни --entropy не указаны — генерируется\n\
-                     случайная энтропия через системный ГСЧ.\n\
+           init      Create identity (mnemonic + keys) and save to identity.bin.\n\
+                     If neither --mnemonic nor --entropy is given, random\n\
+                     entropy is generated via the system CSPRNG.\n\
          \n\
-           inspect   Прочитать identity.bin и вывести account_id / node_id /\n\
-                     fingerprint. Секретные ключи на экран не выводятся.\n\
+           inspect   Read identity.bin and print account_id / node_id /\n\
+                     fingerprint. Secret keys are not printed.\n\
          \n\
-           status    Показать содержимое локального state: AccountTable,\n\
-                     NodeTable, CandidatePool, статус узла, current_window,\n\
+           status    Show local state: AccountTable,\n\
+                     NodeTable, CandidatePool, node status, current_window,\n\
                      phase lifecycle (Bootstrap/CandidateSsha/Registered/Active),\n\
-                     supply, балансы.\n\
+                     supply, balances.\n\
          \n\
-           time      Показать current_window локального узла, ближайшее\n\
-                     selection-окно, эпоху τ₂.\n\
+           time      Show local current_window, next\n\
+                     selection window, τ₂ epoch.\n\
          \n\
-           start     БОЕВОЙ РЕЖИМ — запуск узла Montana через canonical\n\
-                     apply_proposal pipeline. Узел проходит lifecycle:\n\
-                       Bootstrap → CandidateSsha (тикает SSHA до ssha_chain_length\n\
-                                                   ≥ τ₂ = 20160 окон, ~10 часов\n\
-                                                   wall-clock на M-class Mac)\n\
-                       CandidateSsha → Registered (формирует NodeRegistration\n\
+           start     PRODUCTION MODE — run the Montana node via the canonical\n\
+                     apply_proposal pipeline. The node goes through the lifecycle:\n\
+                       Bootstrap → CandidateSsha (ticks SSHA until ssha_chain_length\n\
+                                                   ≥ τ₂ = 20160 windows, ~10 hours\n\
+                                                   wall-clock on an M-class Mac)\n\
+                       CandidateSsha → Registered (builds NodeRegistration\n\
                                                    через apply_noderegistrations_batch)\n\
-                       Registered → Active (через apply_selection_event на\n\
-                                            следующем W % 336 == 0)\n\
-                       Active: per окно SshaReveal + BundledConfirmation +\n\
+                       Registered → Active (via apply_selection_event at\n\
+                                            the next W % 336 == 0)\n\
+                       Active: per window SshaReveal + BundledConfirmation +\n\
                                ProposalHeader + apply_proposal + archive_proposal,\n\
-                               state_root self-verify, эмиссия 13 Ɉ оператору\n\
-                     Ctrl-C — корректная остановка с сохранением state.\n\
+                               state_root self-verify, 13 Ɉ emission to the operator\n\
+                     Ctrl-C — graceful shutdown with state save.\n\
          \n\
-         Опции:\n\
+         Options:\n\
          \n\
-           --data-dir <PATH>          Каталог данных узла. По умолчанию на macOS:\n\
+           --data-dir <PATH>          Node data directory. Default on macOS:\n\
                                       $HOME/Library/Application Support/Montana/node\n\
-           --mnemonic \"...\"           Восстановить identity из 24-словной фразы. ВНИМАНИЕ:\n\
-                                       видна в `ps aux` другим пользователям системы.\n\
-                                       Для production используйте --mnemonic-stdin.\n\
-           --mnemonic-stdin           Прочитать 24-словную фразу из stdin (без leak\n\
-                                       через ps aux).\n\
-           --entropy <hex32>          Использовать 32-байтную энтропию (64 hex).\n\
-           --force                    Перезаписать существующий identity.bin.\n\
-           --reveal-master-seed       В inspect: показать полный master_seed.\n\
-           --max-windows <N>          В start: остановиться после N окон.\n\
-           --d-test-override <N>      В start: TEST-ONLY override D = N итераций.\n\
-                                      Production использует params.d0 (Genesis Decree, значение из mt-genesis).\n\
-                                      Override используется в тестах для скорости.\n",
+           --mnemonic \"...\"           Recover identity from a 24-word phrase. WARNING:\n\
+                                       visible in `ps aux` to other system users.\n\
+                                       For production use --mnemonic-stdin.\n\
+           --mnemonic-stdin           Read the 24-word phrase from stdin (no leak\n\
+                                       via ps aux).\n\
+           --entropy <hex32>          Use 32-byte entropy (64 hex).\n\
+           --force                    Overwrite existing identity.bin.\n\
+           --reveal-master-seed       In inspect: show the full master_seed.\n\
+           --max-windows <N>          In start: stop after N windows.\n\
+           --d-test-override <N>      In start: TEST-ONLY override D = N iterations.\n\
+                                      Production uses params.d0 (Genesis Decree, value from mt-genesis).\n\
+                                      Override is used in tests for speed.\n",
     )
 }
 
@@ -157,7 +157,7 @@ fn parse_init(args: &[String]) -> Result<init::InitArgs, NodeError> {
             },
             other => {
                 return Err(NodeError::InvalidArguments(format!(
-                    "неизвестный флаг для init: {other}"
+                    "unknown flag for init: {other}"
                 )))
             },
         }
@@ -191,7 +191,7 @@ fn parse_inspect(args: &[String]) -> Result<inspect::InspectArgs, NodeError> {
             },
             other => {
                 return Err(NodeError::InvalidArguments(format!(
-                    "неизвестный флаг для inspect: {other}"
+                    "unknown flag for inspect: {other}"
                 )))
             },
         }
@@ -214,7 +214,7 @@ fn parse_status(args: &[String]) -> Result<status::StatusArgs, NodeError> {
             },
             other => {
                 return Err(NodeError::InvalidArguments(format!(
-                    "неизвестный флаг для status: {other}"
+                    "unknown flag for status: {other}"
                 )))
             },
         }
@@ -233,7 +233,7 @@ fn parse_time(args: &[String]) -> Result<time::TimeArgs, NodeError> {
             },
             other => {
                 return Err(NodeError::InvalidArguments(format!(
-                    "неизвестный флаг для time: {other}"
+                    "unknown flag for time: {other}"
                 )))
             },
         }
@@ -257,7 +257,7 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
             },
             "--max-windows" => {
                 max_windows = Some(expect_value(args, i, "--max-windows")?.parse().map_err(
-                    |_| NodeError::InvalidArguments("--max-windows должен быть u64".into()),
+                    |_| NodeError::InvalidArguments("--max-windows must be u64".into()),
                 )?);
                 i += 2;
             },
@@ -266,7 +266,7 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
                     expect_value(args, i, "--d-test-override")?
                         .parse()
                         .map_err(|_| {
-                            NodeError::InvalidArguments("--d-test-override должен быть u64".into())
+                            NodeError::InvalidArguments("--d-test-override must be u64".into())
                         })?,
                 );
                 i += 2;
@@ -286,14 +286,14 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
             },
             other => {
                 return Err(NodeError::InvalidArguments(format!(
-                    "неизвестный флаг для start: {other}"
+                    "unknown flag for start: {other}"
                 )))
             },
         }
     }
     if listen_multiaddr.is_some() != genesis_manifest.is_some() {
         return Err(NodeError::InvalidArguments(
-            "--listen и --genesis-manifest должны указываться вместе (cross-machine mode)              либо оба отсутствовать (singleton mode)"
+            "--listen and --genesis-manifest must be given together (cross-machine mode) or both omitted (singleton mode)"
                 .into(),
         ));
     }
@@ -310,5 +310,5 @@ fn parse_start(args: &[String]) -> Result<start::StartArgs, NodeError> {
 fn expect_value<'a>(args: &'a [String], i: usize, flag: &str) -> Result<&'a str, NodeError> {
     args.get(i + 1)
         .map(|s| s.as_str())
-        .ok_or_else(|| NodeError::InvalidArguments(format!("флаг {flag} требует значения")))
+        .ok_or_else(|| NodeError::InvalidArguments(format!("flag {flag} requires a value")))
 }

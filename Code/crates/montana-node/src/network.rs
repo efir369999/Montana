@@ -200,12 +200,12 @@ pub async fn run_network_loop(
                     swarm.behaviour_mut().request_response.send_request(&peer_id, broadcast_msg.clone());
                 }
                 eprintln!(
-                    "[network] broadcast {msg_type_dbg:?} request_id={rid} к {peer_count} peer(s)",
+                    "[network] broadcast {msg_type_dbg:?} request_id={rid} to {peer_count} peer(s)",
                     rid = broadcast_msg.request_id
                 );
             }
             _ = tokio::signal::ctrl_c() => {
-                eprintln!("[network] Ctrl-C, выход");
+                eprintln!("[network] Ctrl-C, exiting");
                 return Ok(());
             }
         }

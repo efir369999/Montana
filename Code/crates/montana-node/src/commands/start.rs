@@ -151,14 +151,14 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         save_lifecycle(&data_dir, &lifecycle)?;
     }
 
-    println!("=== montana-node start — узел Montana ===");
+    println!("=== montana-node start — Montana node ===");
     println!();
     println!("data-dir         : {}", data_dir.display());
     println!("account_id       : {}", hex16(&my_account));
     println!("node_id          : {}", hex16(&my_node));
     println!("phase            : {:?}", lifecycle.phase);
     println!("current_window   : {current}");
-    println!("D                : {} итераций SHA-256 / окно", effective_d);
+    println!("D                : {} SHA-256 iterations / window", effective_d);
     println!("T_r              : {}", hex16(&timechain.t_r));
     println!(
         "balance start    : {} nɈ ({} Ɉ)",
@@ -167,7 +167,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     );
     if let Some(stop) = stop_at {
         println!(
-            "stop_at          : окно {stop} (через {} окон)",
+            "stop_at          : window {stop} (in {} windows)",
             stop - current
         );
     } else {
@@ -178,12 +178,12 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             .target_chain_length
             .saturating_sub(lifecycle.candidate_progress);
         println!(
-            "candidate SSHA    : прогресс {}/{}, осталось {} окон до регистрации",
+            "candidate SSHA    : progress {}/{}, {} windows left to registration",
             lifecycle.candidate_progress, lifecycle.target_chain_length, remaining
         );
     }
     println!();
-    println!("--- SSHA тикает ---");
+    println!("--- SSHA ticking ---");
     println!();
 
     let session_start = Instant::now();
@@ -222,7 +222,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     // M7 fast-sync: held across loop iterations while a snapshot is in flight.
     let fast_sync_lag_threshold =
         resolve_fast_sync_lag_threshold(std::env::var("MONTANA_FASTSYNC_LAG_THRESHOLD").ok());
-    println!("fast-sync lag    : порог {fast_sync_lag_threshold} окон");
+    println!("fast-sync lag    : threshold {fast_sync_lag_threshold} windows");
     let mut fast_sync: Option<mt_sync::FastSyncClient> = None;
     let mut fast_sync_deadline: Option<Instant> = None;
     // M7 fast-sync: recent cemented bootstrap state_roots (window -> root),
@@ -245,7 +245,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     handle
                         .broadcast_tx
                         .send(ProtocolMessage::new(MsgType::Proposal, current, env));
-                eprintln!("[consensus] перевещаю архивный конверт w={current} после рестарта");
+                eprintln!("[consensus] replaying archived envelope w={current} after restart");
             }
         }
     }
@@ -321,13 +321,13 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
 
         if STOP.load(Ordering::SeqCst) {
             println!();
-            println!("[shutdown] получен SIGINT/SIGTERM, сохраняю состояние...");
+            println!("[shutdown] received SIGINT/SIGTERM, saving state...");
             break;
         }
         if let Some(stop) = stop_at {
             if current >= stop {
                 println!();
-                println!("[stop_at] достигнуто целевое окно {stop}");
+                println!("[stop_at] reached target window {stop}");
                 break;
             }
         }
@@ -350,7 +350,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     if let Some(ref mut handle) = network_handle {
                         let mut ctx = net_ctx!();
                         if let Err(e) = drain_network(&mut ctx, handle) {
-                            eprintln!("[drain] посреди витка: {e:?}");
+                            eprintln!("[drain] mid-iteration: {e:?}");
                         }
                     }
                 },
@@ -361,7 +361,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
             if let Some(known) = t_r_history.get(&next_window) {
                 if *known != next_t_r {
                     return Err(NodeError::InvalidArguments(format!(
-                        "расхождение цепочки времени в окне {next_window}: сеть ≠ локально"
+                        "timechain divergence at window {next_window}: network != local"
                     )));
                 }
             }
@@ -408,7 +408,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
         }
 
         match lifecycle.phase {
-            NodePhase::Bootstrap => unreachable!("Bootstrap → CandidateSsha transition выше"),
+            NodePhase::Bootstrap => unreachable!("Bootstrap → CandidateSsha transition above"),
             NodePhase::CandidateSsha => {
                 lifecycle.candidate_endpoint = ssha_step_chunked(
                     &lifecycle.candidate_endpoint,
@@ -535,7 +535,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 let propose_w = next_window;
                 if my_depth > 1 {
                     eprintln!(
-                        "[lookback W={propose_w}] вступаю как запасной ведущий (глубина {my_depth})"
+                        "[lookback W={propose_w}] acting as fallback leader (depth {my_depth})"
                     );
                 }
 
@@ -673,7 +673,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 let included_reveals_root = meta_root(&reveal_entries);
 
                 eprintln!(
-                    "[lottery W={prev_w}] кандидатов={} победитель={}",
+                    "[lottery W={prev_w}] candidates={} winner={}",
                     candidates_prev.len(),
                     hex16(&winner_id)
                 );
@@ -690,7 +690,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                         cemented.len() as u64,
                         None,
                     )?
-                    .expect("режим ведущего: expected_root=None всегда коммитит")
+                    .expect("leader mode: expected_root=None always commits")
                 };
                 let recomputed = compute_state_root(
                     &state.nodes.root(),
@@ -745,7 +745,7 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // падение процесса — после рестарта он перевещается из архива.
                 if let Err(e) = store.archive_proposal_envelope(propose_w, &envelope_payload) {
                     eprintln!(
-                        "[archive] ОТКАЗ записи конверта w={propose_w} в {}/proposals: {e:?}",
+                        "[archive] FAILED to write envelope w={propose_w} to {}/proposals: {e:?}",
                         data_dir.display()
                     );
                 }
@@ -782,15 +782,15 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
 
     let elapsed = session_start.elapsed();
     println!();
-    println!("--- сессия завершена ---");
+    println!("--- session ended ---");
     println!("phase            : {:?}", lifecycle.phase);
     println!(
         "candidate SSHA    : {}/{}",
         lifecycle.candidate_progress, lifecycle.target_chain_length
     );
-    println!("обработано окон  : {session_windows} (только в Active phase)");
+    println!("windows processed : {session_windows} (Active phase only)");
     println!(
-        "выплачено        : {} nɈ ({} Ɉ)",
+        "emitted          : {} nɈ ({} Ɉ)",
         session_emitted,
         session_emitted / 1_000_000_000
     );
@@ -1187,7 +1187,7 @@ fn settle_and_bookkeep(
     ctx.state.nodes = nodes;
     ctx.state.candidates = candidates;
     if activated_count > 0 {
-        println!("[selection W={settled_w}] активировано {activated_count} узл(ов)");
+        println!("[selection W={settled_w}] activated {activated_count} node(s)");
     }
     ctx.timechain.tau2_reveal_count = ctx
         .timechain
@@ -1212,7 +1212,7 @@ fn settle_and_bookkeep(
         );
         if new_target != ctx.timechain.lottery_target {
             println!(
-                "[target W={settled_w}] {:#x} → {:#x} (билетов за τ₂: {})",
+                "[target W={settled_w}] {:#x} → {:#x} (tickets in τ₂: {})",
                 ctx.timechain.lottery_target, new_target, ctx.timechain.tau2_reveal_count
             );
             ctx.timechain.lottery_target = new_target;
@@ -1262,7 +1262,7 @@ fn handle_protocol_message(
             if let Some(known) = ctx.t_r_history.get(&w) {
                 if *known != header.timechain_value {
                     eprintln!(
-                        "[consensus] РАСХОЖДЕНИЕ ЦЕПОЧКИ ВРЕМЕНИ w={w}: конверт ≠ локально — skip"
+                        "[consensus] TIMECHAIN DIVERGENCE w={w}: envelope != local — skip"
                     );
                     return Ok(());
                 }
@@ -1293,7 +1293,7 @@ fn handle_protocol_message(
                                 env,
                             ));
                             eprintln!(
-                                "[consensus] отстал (голова {}, сеть собирает {w}) — сигналю своим конвертом",
+                                "[consensus] behind (head {}, network at {w}) — signaling with own envelope",
                                 *ctx.current
                             );
                         }
@@ -1348,7 +1348,7 @@ fn handle_protocol_message(
             if w != *ctx.current + 1 {
                 if w > *ctx.current {
                     eprintln!(
-                        "[consensus] cemented w={w} gap (current={}) — жду последовательного цементирования или быстрой синхронизации",
+                        "[consensus] cemented w={w} gap (current={}) — awaiting sequential cementing or fast-sync",
                         *ctx.current
                     );
                 } else if header.proposer_node_id != ctx.my_node {
@@ -1369,7 +1369,7 @@ fn handle_protocol_message(
                     }
                     if served > 0 {
                         eprintln!(
-                            "[consensus] сосед на устаревшем окне {w} — повторно раздал {served} конверт(ов) до {upto}"
+                            "[consensus] peer on stale window {w} — re-served {served} envelope(s) up to {upto}"
                         );
                     }
                 }
@@ -1380,7 +1380,7 @@ fn handle_protocol_message(
             if let Err(e) =
                 mt_consensus::validate_header(&header, &ctx.state.nodes, *ctx.current, 1, 1)
             {
-                eprintln!("[consensus] header w={w} отклонён: {e:?}");
+                eprintln!("[consensus] header w={w} rejected: {e:?}");
                 return Ok(());
             }
             // Законность ведущего (Lookback + каскад). Терпимость ±1 уровень
@@ -1392,7 +1392,7 @@ fn handle_protocol_message(
                 header.proposer_node_id == exp_now || header.proposer_node_id == exp_next;
             if !proposer_ok {
                 eprintln!(
-                    "[consensus] w={w}: ведущий {} не является законным (ожидался {}) — skip",
+                    "[consensus] w={w}: leader {} not legitimate (expected {}) — skip",
                     hex16(&header.proposer_node_id),
                     hex16(&exp_now)
                 );
@@ -1411,19 +1411,19 @@ fn handle_protocol_message(
             if let Err(e) = mt_consensus::validate_proposer_is_canonical(&header, &sorted_w_minus_2)
             {
                 eprintln!(
-                    "[consensus] w={w}: ведущий {} не каноничен ({e:?}) — skip",
+                    "[consensus] w={w}: leader {} not canonical ({e:?}) — skip",
                     hex16(&header.proposer_node_id)
                 );
                 return Ok(());
             }
             if header.target != ctx.timechain.lottery_target {
                 eprintln!(
-                    "[consensus] w={w}: target конверта ≠ локальному — расхождение калибровки, skip"
+                    "[consensus] w={w}: envelope target != local — calibration divergence, skip"
                 );
                 return Ok(());
             }
             let Some((bundles_prev, evidence)) = parse_envelope_bundles(&msg.payload) else {
-                eprintln!("[consensus] cemented w={w}: хвост конверта не разобран — skip");
+                eprintln!("[consensus] cemented w={w}: envelope tail not parsed — skip");
                 return Ok(());
             };
             let active_cl = active_chain_length_at(&ctx.state.nodes, w, ctx.params);
@@ -1455,13 +1455,13 @@ fn handle_protocol_message(
                     }
                     if mt_consensus::validate_bundles_threshold(sum, active_cl).is_err() {
                         eprintln!(
-                            "[consensus] w={w}: included_bundles {sum} < кворума {} — skip",
+                            "[consensus] w={w}: included_bundles {sum} < quorum {} — skip",
                             quorum(active_cl)
                         );
                         return Ok(());
                     }
                 } else if !bundles_prev.is_empty() {
-                    eprintln!("[consensus] w={w}: разногласие endpoint в included_bundles — skip");
+                    eprintln!("[consensus] w={w}: endpoint disagreement in included_bundles — skip");
                     return Ok(());
                 }
             }
@@ -1483,7 +1483,7 @@ fn handle_protocol_message(
             let need_quorum = quorum(active_cl);
             if w >= 1 && ev_sum < need_quorum {
                 eprintln!(
-                    "[consensus] w={w}: улики цементации {ev_sum} < кворума {need_quorum} — skip"
+                    "[consensus] w={w}: cementing evidence {ev_sum} < quorum {need_quorum} — skip"
                 );
                 return Ok(());
             }
@@ -1512,13 +1512,13 @@ fn handle_protocol_message(
                 }
                 if w >= 1 && !candidates_prev.is_empty() {
                     if let Err(e) = mt_consensus::validate_winner(&header, &candidates_prev) {
-                        eprintln!("[consensus] w={w}: победитель не сходится ({e:?}) — skip");
+                        eprintln!("[consensus] w={w}: winner mismatch ({e:?}) — skip");
                         return Ok(());
                     }
                 }
             } else {
                 eprintln!(
-                    "[consensus] w={w}: пул билетов неполон ({}/{}) — победитель принят по кворуму",
+                    "[consensus] w={w}: ticket pool incomplete ({}/{}) — winner accepted by quorum",
                     reveal_entries.len(),
                     cemented.len()
                 );
@@ -1536,7 +1536,7 @@ fn handle_protocol_message(
             .is_none()
             {
                 eprintln!(
-                    "[consensus] w={w}: расхождение state_root — окно отклонено, восстановление через fast-sync"
+                    "[consensus] w={w}: state_root divergence — window rejected, recovery via fast-sync"
                 );
                 return Ok(());
             }
@@ -1553,7 +1553,7 @@ fn handle_protocol_message(
             // громко (с путём), узел продолжает работу.
             if let Err(e) = ctx.store.archive_proposal_envelope(w, &msg.payload) {
                 eprintln!(
-                    "[archive] ОТКАЗ записи конверта w={w} в {}/proposals: {e:?}",
+                    "[archive] FAILED to write envelope w={w} to {}/proposals: {e:?}",
                     ctx.data_dir.display()
                 );
             }
@@ -1689,7 +1689,7 @@ fn handle_protocol_message(
                         .or_default()
                         .insert(nid, rec_reveal);
                     bound_map(ctx.reveal_pool);
-                    eprintln!("[lottery] принят билет от {} за окно {rw}", hex16(&nid));
+                    eprintln!("[lottery] accepted ticket from {} for window {rw}", hex16(&nid));
                     // Дозревание подтверждения: наше BC окна rw+1 несёт хэши
                     // билетов окна rw. Опоздавший билет дополняет набор —
                     // переиздаём BC, чтобы у всех confirmer-ов сошёлся
@@ -1739,7 +1739,7 @@ fn handle_protocol_message(
                     }
                 } else {
                     eprintln!(
-                        "[lottery] билет {} w={rw} не прошёл проверку",
+                        "[lottery] ticket {} w={rw} failed validation",
                         hex16(&rec_reveal.node_id)
                     );
                 }
@@ -1766,7 +1766,7 @@ fn handle_protocol_message(
                         .or_default()
                         .insert(node_id, bc);
                     eprintln!(
-                        "[bc] принято подтверждение от {} за окно {bw}",
+                        "[bc] accepted confirmation from {} for window {bw}",
                         hex16(&node_id)
                     );
                     // Подтверждение за уже закрытое окно = сосед отстал на
@@ -1785,14 +1785,14 @@ fn handle_protocol_message(
                             }
                         }
                         eprintln!(
-                            "[consensus] сосед {} отстал (окно {bw} ≤ {}), повторно раздал конверты",
+                            "[consensus] peer {} behind (window {bw} <= {}), re-served envelopes",
                             hex16(&node_id),
                             *ctx.current
                         );
                     }
                 } else {
                     eprintln!(
-                        "[bc] подтверждение {} w={bw} не прошло проверку",
+                        "[bc] confirmation {} w={bw} failed validation",
                         hex16(&bc.node_id)
                     );
                 }
@@ -1857,7 +1857,7 @@ fn publish_window_artifacts(
             let _ = tx.send(ProtocolMessage::new(MsgType::SshaReveal, w, payload));
         }
     } else {
-        eprintln!("[lottery] окно {w}: взвешенный билет выше цели — не кандидат");
+        eprintln!("[lottery] window {w}: weighted ticket above target — not a candidate");
     }
     // Подтверждение окна w: хэши билетов предыдущего окна (двухоконный конвейер).
     let mut bc_reveal_hashes: Vec<Hash32> = if w >= 1 {
@@ -1943,7 +1943,7 @@ fn ssha_step_chunked<F: FnMut()>(
         let bar = progress_bar(boundary, d, 30);
         let elapsed = chunk_start.elapsed().as_secs_f64();
         let line = format!(
-            "окно {window:>5} {label:<14} {} {:>3}% | {:>4}/{:>4} M | {:>5.1}s",
+            "window {window:>5} {label:<14} {} {:>3}% | {:>4}/{:>4} M | {:>5.1}s",
             bar,
             percent,
             boundary / 1_000_000,

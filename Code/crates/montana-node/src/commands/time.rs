@@ -27,15 +27,15 @@ pub fn run(args: TimeArgs) -> Result<(), NodeError> {
     println!();
     println!("current_window        : {window}");
     println!(
-        "эпоха τ₂              : {epoch} (окно {in_epoch} из {})",
+        "epoch τ₂              : {epoch} (window {in_epoch} of {})",
         params.tau2_windows
     );
     println!(
-        "ближайший selection   : окно {next_selection} (через {} окон)",
+        "next selection        : window {next_selection} (in {} windows)",
         next_selection.saturating_sub(window)
     );
     println!(
-        "selection_interval    : каждые {} окон",
+        "selection_interval    : every {} windows",
         params.selection_interval
     );
 
