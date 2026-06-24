@@ -481,7 +481,43 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                     );
                 }
             },
-            NodePhase::Registered => {},
+            NodePhase::Registered => {
+                // Cold-start самоприём: при пустом Active-наборе (genesis, нет
+                // ни одного Active-оператора) registered-узел сам проводит
+                // selection_event на selection-окне. selection_slots(0)=1
+                // принимает его (единственного кандидата) → Node Table; далее
+                // Active-арм ведёт окна сам (свой BC даёт quorum при active=0/1).
+                // Если Active-набор НЕ пуст — узел ждёт обычного admission
+                // существующими Active (здесь no-op). Это bootstrap первого узла
+                // соло-цепи; admission-as-cemented-proposal для multi-node —
+                // отдельный путь (см. cold-start finding критика).
+                if state.nodes.is_empty()
+                    && state.candidates.len() > 0
+                    && next_window % params.selection_interval == 0
+                {
+                    let cba_w_minus_2 =
+                        cba_from(&bc_set_history, next_window.saturating_sub(2));
+                    let t_r_w = *t_r_history.get(&next_window).unwrap_or(&timechain.t_r);
+                    let admitted = apply_selection_event(
+                        &mut state.candidates,
+                        &mut state.nodes,
+                        &mut state.accounts,
+                        &t_r_w,
+                        &cba_w_minus_2,
+                        0,
+                        next_window,
+                        params,
+                    );
+                    if state.nodes.contains(&my_node) {
+                        lifecycle.phase = NodePhase::Active;
+                        last_cement_at = Instant::now();
+                        println!(
+                            "[cold-start W={next_window}] self-admit \u{2192} Active (admitted={})",
+                            admitted.len()
+                        );
+                    }
+                }
+            },
             NodePhase::Active => 'active_arm: {
                 // Законный ведущий окна next_window: победитель окна
                 // next_window-2; при молчании — каскад запасных по
