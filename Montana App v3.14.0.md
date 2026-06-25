@@ -1404,188 +1404,188 @@ The chunking format and Manifest are defined in the protocol spec (see "Client l
 >
 > This specification (Montana App) describes the application layer: UI, wallet, messenger, channels, contacts, profile, Juno, browser, premium, voice calls, application economy.
 
-## 12. Модель безопасности
+## 12. Security model
 
-### 12.1 Модель угроз
+### 12.1 Threat model
 
-Montana App обороняется против следующих угроз.
+Montana App defends against the following threats.
 
-**Сетевые атакующие:**
-- Пассивное подслушивание — содержимое сообщений защищено через Double Ratchet PQ
-- Активный MITM — защита через подписи ML-DSA-65 и подписи pre-key
-- Анализ трафика — частично смягчено через Dandelion++ и Transport Obfuscation (уровень протокола)
+**Network attackers:**
+- Passive eavesdropping — message content is protected through Double Ratchet PQ
+- Active MITM — protected through ML-DSA-65 signatures and pre-key signatures
+- Traffic analysis — partially mitigated through Dandelion++ and Transport Obfuscation (protocol layer)
 
-**Компрометация устройства:**
-- Украденное устройство — защита через шифрование устройства и пароль или биометрию приложения
-- Вредоносное ПО — ограниченно (приложение не может защититься от вредоносной ОС)
-- Дамп памяти — чувствительные ключи минимизированы в памяти, обнуляются после использования
+**Device compromise:**
+- A stolen device — protected through device encryption and the application password or biometrics
+- Malware — limited (the app cannot protect against a malicious OS)
+- Memory dump — sensitive keys are minimized in memory and zeroized after use
 
-**Атаки на уровне протокола:**
-- Захват аккаунта — невозможен без компрометации ключей
-- Подделка транзакции — невозможна без приватного ключа аккаунта
-- Front-running — неприменимо (операции публичные, MEV в Montana нет)
+**Protocol-layer attacks:**
+- Account takeover — impossible without compromising the keys
+- Transaction forgery — impossible without the account private key
+- Front-running — not applicable (operations are public; there is no MEV in Montana)
 
-**Социальные атаки:**
-- Фишинг — защита через верификацию QR, подписанные профили
-- Выдача себя за другого — частично (отображаемые имена могут совпадать, но `account_id` уникален)
-- Социальная инженерия пользователя — вне области технического решения
+**Social attacks:**
+- Phishing — protected through QR verification and signed profiles
+- Impersonation — partial (display names may coincide, but `account_id` is unique)
+- Social engineering of the user — outside the scope of a technical solution
 
-**После компрометации:**
-- При компрометации одного сообщения — forward secrecy ограничивает ущерб
-- При компрометации сессии — post-compromise security восстанавливает защиту после шага храповика
-- При компрометации сида — катастрофический, пользователь теряет аккаунт
+**Post-compromise:**
+- On compromise of a single message — forward secrecy limits the damage
+- On compromise of a session — post-compromise security restores protection after a ratchet step
+- On compromise of the seed — catastrophic; the user loses the account
 
-**Приватность метаданных — известные ограничения (неотъемлемые свойства протокола).**
+**Metadata privacy — known limitations (inherent properties of the protocol).**
 
-Метки очереди сессии из 5.2 и 5.8 закрывают анонимность со стороны получателя — внешний наблюдатель цепочки не может связать конкретный blob Anchor с конкретным получателем без знания `initial_root_key`. Два ограничения **не закрываются** одним лишь механизмом меток очереди и должны явно осознаваться пользователем.
+The session queue labels from 5.2 and 5.8 close anonymity on the recipient side — an external chain observer cannot link a specific Anchor blob to a specific recipient without knowing `initial_root_key`. Two limitations are **not closed** by the queue-label mechanism alone and must be explicitly understood by the user.
 
-- **Видимость тайминга со стороны отправителя.** Поле `Anchor.account_id` — часть подписанного протокольного объекта и публично наблюдаемо по инварианту [I-2] протокола (открытость финансового слоя). Внешний наблюдатель цепочки видит что `account_id_X` публикует Anchor-ы в определённом ритме — это позволяет анализ тайминга: определение часового пояса, режима дня, корреляция с публично известной активностью других аккаунтов. Адресат сообщения скрыт (эфемерная метка очереди), но факт активности отправителя — нет. Это **неотъемлемое свойство** публичного финансового слоя Montana, не дефект реализации. Смягчается через ротацию хоста (11.5.4), но не устраняется архитектурно без слома [I-2].
+- **Sender-side timing visibility.** The `Anchor.account_id` field is part of a signed protocol object and is publicly observable per protocol invariant [I-2] (openness of the financial layer). An external chain observer sees that `account_id_X` publishes Anchors at a certain rhythm — this enables timing analysis: determining the time zone, the daily schedule, correlation with the publicly known activity of other accounts. The message recipient is hidden (an ephemeral queue label), but the fact of the sender's activity is not. This is an **inherent property** of Montana's public financial layer, not an implementation defect. It is mitigated through host rotation (11.5.4) but is not eliminated architecturally without breaking [I-2].
 
-- **Корреляция через единый хост.** Хостящий узел видит подключения своих клиентов к конкретным меткам очереди (через IBT уровень 3, подписка Content Layer). Если Алиса и Боб используют **разных** хостов, ни один хост не видит обе стороны переписки. Если **одного и того же** хоста — он наблюдает `pubkey_alice → публикация на app_id X`, одновременно `pubkey_bob → подписка на app_id X` → восстановление связи метаданных на уровне инсайдера. Эфемерная метка очереди не помогает против коллокации на одном хосте. Смягчается через рекомендацию разнообразия хостов (см. 11.5 и подсказку в интерфейсе 13.3). Полное закрытие требует многохопового лукового маршрутизирования для blob-ов мессенджера — отдельное архитектурное расширение, не часть текущей спецификации.
+- **Correlation through a shared host.** The hosting node sees its clients' connections to specific queue labels (through IBT level 3, the Content Layer subscription). If Alice and Bob use **different** hosts, no single host sees both sides of the conversation. If the **same** host — it observes `pubkey_alice → publishing on app_id X` and at the same time `pubkey_bob → subscribing to app_id X` → reconstruction of the metadata link at an insider level. The ephemeral queue label does not help against colocation on one host. It is mitigated through the host-diversity recommendation (see 11.5 and the interface hint 13.3). Full closure requires multi-hop onion routing for messenger blobs — a separate architectural extension, not part of the current specification.
 
-Оба ограничения документированы явно — пользователь в контекстах высокого риска (журналист под давлением, активист в авторитарном режиме) должен осознавать что Montana App защищает **содержимое** сообщений на уровне SimpleX / Signal PQ-ratchet и закрывает анонимность получателя для внешнего наблюдателя, но тайминг отправителя и инсайдерское наблюдение хостящего узла остаются открытыми поверхностями при конфигурации с единым хостом.
+Both limitations are documented explicitly — a user in high-risk contexts (a journalist under pressure, an activist in an authoritarian regime) must understand that Montana App protects the **content** of messages at the SimpleX / Signal PQ-ratchet level and closes recipient anonymity against an external observer, but sender timing and insider observation by the hosting node remain open surfaces in a single-host configuration.
 
-**Угрозы специфичные для mesh-транспорта (активируются при использовании 11.6).**
+**Threats specific to the mesh transport (activated when 11.6 is used).**
 
-Mesh-транспорт вводит новый класс поверхностей когда активирован (режим «по требованию» или «всегда включён»). Эти угрозы отсутствуют в режиме только через интернет.
+The mesh transport introduces a new class of surfaces when activated ("on demand" or "always on" mode). These threats are absent in internet-only mode.
 
-- **Подслушивание через физическую близость.** Атакующий в радиусе Bluetooth (≈ 10–100 м) использует стандартные BLE-снифферы (железо ≈ $20–100) для записи всех кадров mesh. Защита: все полезные нагрузки зашифрованы сквозным шифрованием через ключи сессии; `mesh_session_id` не раскрывает долговременную идентичность; доказательство IBT для mesh содержит привязку `session_nonce` (защита от повтора за пределами одной сессии). Атакующий может наблюдать факт наличия устройства Montana в радиусе, но не может читать сообщения или выдавать себя за идентичность.
+- **Eavesdropping through physical proximity.** An attacker within Bluetooth range (≈ 10–100 m) uses standard BLE sniffers (hardware ≈ $20–100) to record all mesh frames. Defense: all payloads are end-to-end encrypted with session keys; `mesh_session_id` does not reveal a long-term identity; the IBT proof for mesh contains a `session_nonce` binding (replay protection beyond a single session). The attacker can observe the presence of a Montana device within range, but cannot read messages or impersonate an identity.
 
-- **Трекинг через MAC BLE.** Аппаратный MAC-адрес устройства может использоваться для физического трекинга пользователя по Bluetooth — «устройство с MAC X было в кафе A в 14:00, затем в офисе B в 15:30». Платформы (iOS, Android) реализуют рандомизацию MAC на уровне ОС (iOS с 2020, Android с Android 8+), которая применяется автоматически когда Montana не запрашивает явный MAC. Приложение **не требует** стабильного MAC — `mesh_session_id` и идентичность приложения ортогональны MAC.
+- **Tracking through the BLE MAC.** A device's hardware MAC address can be used to physically track a user over Bluetooth — "the device with MAC X was in café A at 14:00, then in office B at 15:30". Platforms (iOS, Android) implement OS-level MAC randomization (iOS since 2020, Android since Android 8+), which is applied automatically when Montana does not request an explicit MAC. The app **does not require** a stable MAC — `mesh_session_id` and the application identity are orthogonal to the MAC.
 
-- **Снятие отпечатков устройства через рекламу BLE.** Уникальный паттерн данных рекламы (UUID сервиса, данные производителя, тайминг) может использоваться для идентификации устройства даже при рандомизации MAC. Защита: полезная нагрузка рекламы mesh содержит только обобщённый UUID сервиса Montana и `mesh_session_id` (случайный), без специфичного для устройства отпечатка. Ротация `mesh_session_id` на каждую новую сессию разрывает долговременную возможность трекинга.
+- **Device fingerprinting through BLE advertising.** A unique advertising-data pattern (service UUID, manufacturer data, timing) can be used to identify a device even with MAC randomization. Defense: the mesh advertising payload contains only a generic Montana service UUID and `mesh_session_id` (random), with no device-specific fingerprint. Rotating `mesh_session_id` on each new session breaks the long-term tracking capability.
 
-- **DoS через флуд mesh.** Атакующий с несколькими устройствами BLE в радиусе цели может флудить локальный буфер mesh. Защита (уровень протокола): квота на отправителя (10 кадров в минуту), подписанные подтверждения ограничения темпа, приоритетная очередь с защитой своих и известных контактов, мягкий чёрный список с экспоненциальной отсрочкой. Атака дорогая (физическое присутствие с несколькими устройствами) и ограниченная (воздействует только на устройства в радиусе атакующего, не на всю mesh-сеть).
+- **DoS through mesh flooding.** An attacker with several BLE devices within range of a target can flood the local mesh buffer. Defense (protocol layer): a per-sender quota (10 frames per minute), signed rate-limit acknowledgments, a priority queue protecting one's own and known contacts, a soft blacklist with exponential backoff. The attack is expensive (physical presence with several devices) and limited (it affects only devices within the attacker's range, not the whole mesh network).
 
-- **Выдача себя за шлюз.** Атакующий контролирующий устройство с одновременным mesh и интернет-доступом может заявлять роль шлюза и мониторить весь межзональный трафик проходящий через него. Защита: сквозное шифрование сообщений (шлюз видит шифротекст); топология с несколькими шлюзами когда доступно (кадры рассылаются через несколько шлюзов одновременно, атакующий-шлюз видит только часть трафика); модель доверия — оператору шлюза не доверяется содержимое, только пересылка.
+- **Gateway impersonation.** An attacker controlling a device with simultaneous mesh and internet access can claim the gateway role and monitor all inter-zone traffic passing through it. Defense: end-to-end message encryption (the gateway sees ciphertext); a multi-gateway topology when available (frames are broadcast through several gateways at once, an attacker gateway sees only part of the traffic); a trust model — the gateway operator is not trusted with content, only with forwarding.
 
-- **Физическое давление на оператора шлюза.** В репрессивной юрисдикции госорган может принудить оператора шлюза раскрыть логи mesh. Защита: шлюз хранит только записи пересылки для отладки ≤ 24 часов (политика истечения буфера mesh); зашифрованные полезные нагрузки приложения нелокальны шлюзу; `mesh_session_id` не раскрывает идентичность пар; при скомпрометированном шлюзе атакующий узнаёт тайминг и объём трафика mesh, но не содержимое, не идентичность, не социальный граф. Если шлюз подвергается принуждению — пользователь может отключить использование этого шлюза через настройки («Mesh → Доверенные шлюзы»).
+- **Physical coercion of a gateway operator.** In a repressive jurisdiction a state body may compel a gateway operator to disclose mesh logs. Defense: the gateway keeps only forwarding records for debugging ≤ 24 hours (the mesh buffer expiry policy); encrypted application payloads are non-local to the gateway; `mesh_session_id` does not reveal pair identities; with a compromised gateway the attacker learns the timing and volume of mesh traffic, but not the content, not identities, not the social graph. If a gateway is under coercion — the user can disable use of this gateway through settings ("Mesh → Trusted gateways").
 
-**Риск окна устарелости.** Доказательство IBT для mesh принимается с `cached_window_index` до 5 дней давности. Если устройство длительно офлайн (> 5 дней) — пиры mesh отвергают его доказательство IBT до обновления `cached_window_index` через любой онлайн-контакт. Это защита от повтора захваченного доказательства, но требует периодической онлайн-синхронизации (хотя бы раз в 5 дней).
+**Staleness window risk.** The IBT proof for mesh is accepted with a `cached_window_index` up to 5 days old. If a device is offline for a long time (> 5 days) — mesh peers reject its IBT proof until `cached_window_index` is updated through any online contact. This protects against replay of a captured proof, but requires periodic online synchronization (at least once every 5 days).
 
-### 12.2 Управление ключами
+### 12.2 Key management
 
-**Обращение с сидом:**
-- Сид генерируется из CSPRNG на устройстве
-- Никогда не отправляется по сети
-- Никогда не логируется
-- Хранится зашифрованным (опционально) или требует ввода мнемоники при каждом открытии
-- При восстановлении — обнуляется в памяти после вывода всех keypair
+**Seed handling:**
+- The seed is generated from a CSPRNG on the device
+- Never sent over the network
+- Never logged
+- Stored encrypted (optionally) or requires entering the mnemonic on each open
+- On recovery — zeroized in memory after deriving all keypairs
 
-**Приватные ключи в памяти:**
-- Загружаются из защищённого хранилища только при необходимости
-- Минимальное время в памяти
-- Обнуляются после использования (безопасное стирание памяти)
-- Не включаются в дампы памяти (платформо-специфичные флаги)
+**Private keys in memory:**
+- Loaded from secure storage only when needed
+- Minimal time in memory
+- Zeroized after use (secure memory wipe)
+- Excluded from memory dumps (platform-specific flags)
 
-**Ключи сессии (Double Ratchet):**
-- Хранятся в зашифрованной базе SQLite
-- Удаляются по мере продвижения храповика (forward secrecy)
-- Ключи пропущенных сообщений имеют лимит (защита от исчерпания памяти)
+**Session keys (Double Ratchet):**
+- Stored in the encrypted SQLite database
+- Deleted as the ratchet advances (forward secrecy)
+- Skipped-message keys have a limit (protection against memory exhaustion)
 
-### 12.3 Безопасность резервных копий
+### 12.3 Backup security
 
-**Зашифрованные резервные копии:**
-- Файл экспорта шифруется симметричным ключом, выведенным из пароля пользователя
-- Вывод ключа: Argon2id с высокими параметрами (защита от перебора)
-- Файл имеет проверку целостности (AEAD)
-- Резервная копия содержит: историю чата, контакты, предпочтения, но не сид (сид — отдельная резервная копия через мнемонику)
+**Encrypted backups:**
+- The export file is encrypted with a symmetric key derived from the user's password
+- Key derivation: Argon2id with high parameters (protection against brute force)
+- The file has an integrity check (AEAD)
+- The backup contains: chat history, contacts, preferences, but not the seed (the seed is a separate backup through the mnemonic)
 
-**Облачная резервная копия:**
-- Опциональная функция
-- Пользователь может сохранить зашифрованную резервную копию в iCloud / Google Drive / другом
-- Ключ шифрования резервной копии — отдельный от сида, выбирается пользователем
-- Компрометация облака не раскрывает резервную копию без пароля
+**Cloud backup:**
+- An optional feature
+- The user may store an encrypted backup in iCloud / Google Drive / elsewhere
+- The backup encryption key is separate from the seed and chosen by the user
+- Cloud compromise does not reveal the backup without the password
 
-### 12.4 Многоустройственные конфигурации
+### 12.4 Multi-device configurations
 
-**Текущие ограничения многоустройственных конфигураций:**
-- Разные устройства не синхронизируют состояние Double Ratchet
-- Сообщения отправленные на одно устройство не видны на другом
-- Алиса может видеть чат на телефоне, но десктоп показывает только новые сообщения с момента установки
+**Current limitations of multi-device configurations:**
+- Different devices do not synchronize the Double Ratchet state
+- Messages sent to one device are not visible on another
+- Alice may see a chat on the phone, but the desktop shows only new messages since installation
 
-**Временный обходной путь:**
-- Одно «основное устройство» для мессенджера
-- Другие устройства в основном для кошелька и просмотра контента
-- Явный экспорт и импорт истории чата между устройствами
+**Temporary workaround:**
+- One "primary device" for the messenger
+- Other devices mainly for the wallet and content viewing
+- Explicit export and import of chat history between devices
 
-**Перспектива:**
-- Полноценная многоустройственная синхронизация через межустройственное зашифрованное хранилище
-- Каждое устройство имеет свой ключ устройства
-- Сессии содержат зашифрованное состояние для всех авторизованных устройств
-- Синхронизация в реальном времени через опубликованные обновления
+**Outlook:**
+- Full multi-device synchronization through cross-device encrypted storage
+- Each device has its own device key
+- Sessions contain encrypted state for all authorized devices
+- Real-time synchronization through published updates
 
 ---
 
-## 13. Правила интерфейса и взаимодействия
+## 13. Interface and interaction rules
 
-### 13.1 Первичная настройка
+### 13.1 Onboarding
 
-**Первый запуск:**
+**First launch:**
 
-1. **Экран приветствия** — краткое вступление в Montana App, кнопки «Создать новый» и «Восстановить»
-2. **Создание нового:**
-   - Генерация сида (в фоне)
-   - Показ мнемоники 24 слова с инструкцией «Запишите это надёжно»
-   - Верификация — пользователь вводит 3 случайных слова
-   - Объяснение безопасности (нет автоматической облачной копии, потеря = навсегда)
-   - Установка пароля устройства или включение биометрии
-3. **Восстановление:**
-   - Пользователь вводит 24 слова мнемоники
-   - Верификация — проверка контрольной суммы BIP-39
-   - Установка пароля устройства или включение биометрии
-4. **Предпочтения приватности:**
-   - Настройки профиля (имя, аватар — всё опционально)
-5. **Разрешения:**
-   - Камера (для QR-кодов)
-   - Уведомления
-   - Хранилище
-6. **Первая синхронизация:**
-   - Загрузка книги Montana (обязательный genesis-контент)
-   - Загрузка релевантных частей Таблицы аккаунтов
-   - Индикатор прогресса
-7. **Экран готовности** — «Добро пожаловать в Montana, Alice» с опциями быстрого знакомства
+1. **Welcome screen** — a brief introduction to Montana App, "Create new" and "Restore" buttons
+2. **Creating new:**
+   - Seed generation (in the background)
+   - Showing the 24-word mnemonic with the instruction "Write this down securely"
+   - Verification — the user enters 3 random words
+   - A security explanation (no automatic cloud copy, loss = forever)
+   - Setting a device password or enabling biometrics
+3. **Restore:**
+   - The user enters the 24-word mnemonic
+   - Verification — a BIP-39 checksum check
+   - Setting a device password or enabling biometrics
+4. **Privacy preferences:**
+   - Profile settings (name, avatar — all optional)
+5. **Permissions:**
+   - Camera (for QR codes)
+   - Notifications
+   - Storage
+6. **First synchronization:**
+   - Downloading the Montana book (mandatory genesis content)
+   - Downloading relevant parts of the Account Table
+   - A progress indicator
+7. **Ready screen** — "Welcome to Montana, Alice" with quick-start options
 
-### 13.2 Структура навигации
+### 13.2 Navigation structure
 
-**Основная навигация (нижняя панель вкладок на мобильном):**
+**Main navigation (bottom tab bar on mobile):**
 
-1. **Кошелёк** — баланс, отправка, приём, история
-2. **Мессенджер** — список чатов, активные чаты
-3. **Контент** — подписанные каналы, книга Montana, обозреватель файлов
-4. **Контакты** — адресная книга, поиск друзей, QR-коды
-5. **Настройки** — профиль, безопасность, предпочтения, дополнительно
+1. **Wallet** — balance, send, receive, history
+2. **Messenger** — chat list, active chats
+3. **Content** — subscribed channels, the Montana book, file browser
+4. **Contacts** — address book, find friends, QR codes
+5. **Settings** — profile, security, preferences, advanced
 
-На десктопе: боковая панель вместо нижней, больше места для контента.
+On desktop: a side panel instead of the bottom one, more room for content.
 
-### 13.3 Индикаторы приватности
+### 13.3 Privacy indicators
 
-Чёткие визуальные индикаторы:
+Clear visual indicators:
 
-- **Значок «зашифровано»** — в заголовке чата показывает что сообщения защищены сквозным шифрованием
-- **Значок «подписано»** — рядом с именем отправителя подтверждает верификацию подписи
-- **Индикатор публичного режима** — в настройках профиля показывает текущий публичный или приватный статус
-- **Индикатор соединения** — онлайн / офлайн статус в заголовке
-- **Статус синхронизации** — время последней синхронизации, ожидающие операции
-- **Подсказка разнообразия хостов** — в заголовке чата, когда контакт подключён к тому же хостящему узлу что и пользователь, отображается мягкое предупреждение: «Вы и {имя контакта} используете один узел-хост. Метаданные переписки видны его оператору. Рекомендуется выбрать другой хост в Настройки → Сеть → Хостинг аккаунта». Действие по нажатию — прямой переход к выбору хоста (11.5). Проверка выполняется локально путём сопоставления текущего активного множества соединений пользователя с информацией о хосте контакта из профиля (если контакт публиковал её) или через прямой запрос контакту через мессенджер (опционально, по согласию).
-- **Индикатор ожидания сессии** — для офлайн-платежей через mesh-транспорт (см. 5.6): чёткое отличие состояний «ожидает / применено / отклонено», тайминг до финального разрешения, предупреждение при приёме платежа от ненадёжного контакта без онлайн-цементирования.
+- **"Encrypted" badge** — in the chat header, shows that messages are protected by end-to-end encryption
+- **"Signed" badge** — next to the sender's name, confirms signature verification
+- **Public-mode indicator** — in profile settings, shows the current public or private status
+- **Connection indicator** — online / offline status in the header
+- **Sync status** — time of the last synchronization, pending operations
+- **Host-diversity hint** — in the chat header, when the contact is connected to the same hosting node as the user, a soft warning is shown: "You and {contact name} use the same host node. Your conversation metadata is visible to its operator. It is recommended to choose a different host in Settings → Network → Account hosting". The tap action is a direct jump to host selection (11.5). The check is performed locally by comparing the user's current active set of connections with the contact's host information from the profile (if the contact published it) or through a direct request to the contact via the messenger (optional, with consent).
+- **Session-pending indicator** — for offline payments over the mesh transport (see 5.6): a clear distinction between "pending / applied / rejected" states, the timing until final resolution, a warning when accepting a payment from an untrusted contact without online cementing.
 
-### 13.4 Обработка ошибок
+### 13.4 Error handling
 
-**Понятные пользователю ошибки:**
-- «Не удалось отправить сообщение: получатель не найден» — без технического жаргона
-- «Недостаточно баланса» — просто и понятно
-- «Сетевое соединение недоступно» — с кнопкой повтора
+**User-friendly errors:**
+- "Could not send the message: recipient not found" — no technical jargon
+- "Insufficient balance" — simple and clear
+- "Network connection unavailable" — with a retry button
 
-**Технические ошибки (для отладки):**
-- Логи в «Настройки → Дополнительно → Логи»
-- Анонимизированная отправка отчётов об ошибках (по согласию)
-- Не показывать стек вызовов обычным пользователям
+**Technical errors (for debugging):**
+- Logs under "Settings → Advanced → Logs"
+- Anonymized error-report submission (with consent)
+- Do not show the call stack to ordinary users
 
-**Критические ошибки:**
-- «Мнемоника выглядит неверной» — при неудачном восстановлении
-- «Хранилище ключей скомпрометировано» — при явном обнаружении подделки
-- «Обнаружено разделение сети» — если узлы сообщают несогласованное состояние
+**Critical errors:**
+- "The mnemonic appears invalid" — on a failed recovery
+- "Key storage compromised" — on explicit tamper detection
+- "Network partition detected" — if nodes report inconsistent state
 
 ---
 
