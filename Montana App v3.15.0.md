@@ -1,6 +1,6 @@
 # Montana App — Application Specification
 
-**Version:** 3.14.0 (2026-06-25) — account creation deduplicated to the Montana Protocol SSOT: section 4.1 is now wallet UX plus a pointer to the protocol's account creation via `Transfer`; the separate `TransferActivation` opcode description and references are removed
+**Version:** 3.15.0 (2026-06-25) — account creation kept only in the Montana Protocol spec; section 4.1 reduced to minimal first-entry UX with a single pointer; the mechanism restatement (opcode / payload / binding / cooldown / sponsor nodes) and the operation-set creation detail removed from the app
 
 
 ---
@@ -63,7 +63,7 @@ Montana App is the **reference implementation**. Other applications may implemen
 
 Montana App is a **client** of the protocol. The application uses the protocol API through a Rust core and has no direct access to consensus logic. All state operations go through the protocol:
 
-- The wallet creates Transfer (including the first-entry activation transfer) and ChangeKey operations
+- The wallet creates Transfer and ChangeKey operations
 - The messenger publishes an Anchor with the `data_hash` of the encrypted message
 - Discovery reads the Account Table through the protocol API
 - The content browser uses the Content Layer (ContentRequest, ChunkRequest)
@@ -299,23 +299,16 @@ A user can run Montana App on several devices at once (phone + desktop). Each de
 
 ## 4. Wallet module
 
-### 4.1 Account activation (first entry)
+### 4.1 First entry
 
-The protocol has no self-service account creation. An `AccountRecord` is created only by an incoming transfer from an existing account to an `account_id` that does not yet exist — the protocol creates the record atomically with the credit. A new user therefore needs one existing contact (a relative, a friend, or a public sponsor node) to send the first transfer. The opcode, the payload layout, the binding rule and the per-sponsor creation rate limit are defined normatively in the Montana Protocol specification (account creation via `Transfer`); the wallet invokes that mechanism and does not redefine it.
-
-First-entry flow:
+A new user has no account until an existing account sends them a first transfer; the creation mechanism is defined in the Montana Protocol specification. The wallet handles only the first-entry UX:
 
 1. The user completes onboarding and derives the seed (section 3).
 2. The app computes `account_id = SHA-256("mt-account" || suite_id || account_pubkey)`.
 3. The app checks, through the protocol API, whether this account already exists.
-4. If it exists (re-recovery from the mnemonic) — steps 5–9 are skipped and the user gets immediate access.
-5. If it does not exist — the app shows the "Receive your first transfer from a contact" screen.
-6. The user shares their `account_id` and `account_pubkey` with the contact (QR code, deep link, or mesh message); the contact needs the public key to send the creating transfer.
-7. The contact sends the first transfer to the new `account_id` from their wallet. The protocol creates the `AccountRecord` and credits the amount (see the Montana Protocol spec, account creation via `Transfer`).
-8. Once the transfer is cemented, the new account exists with the credited balance.
-9. The user sees "account activated" and can send and receive Montana.
-
-**Public sponsor nodes.** Community nodes that send first-entry transfers with a minimal amount are a standard early-period practice. The list of public sponsors is maintained as a community advisory registry (analogous to the public host list, see 11.5.5). The protocol's per-sponsor creation rate limit applies to them as to any account.
+4. If it exists (re-recovery from the mnemonic) — the user gets immediate access.
+5. If it does not — the app shows a "Receive your first transfer from a contact" screen; the user shares their `account_id` and `account_pubkey` (QR code, deep link, or mesh message), and a contact sends the first transfer.
+6. Once the transfer is cemented, the account exists and the user can send and receive Montana.
 
 ### 4.2 Sending Montana
 
@@ -342,7 +335,7 @@ The transfer-sending process:
 - `sender != receiver` (self-transfer is forbidden by the protocol)
 - `amount > 0`
 - `balance >= amount`
-- The recipient exists in the Account Table (if not yet present, this same `Transfer` creates the recipient account — first entry, see 4.1)
+- The recipient exists in the Account Table (if not, this is a first-entry transfer, see 4.1)
 
 If something fails, the app shows the error before sending.
 

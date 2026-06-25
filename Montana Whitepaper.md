@@ -115,7 +115,7 @@ AccountRecord {
 }
 ```
 
-Total AccountRecord size is 2 059 bytes including all fields. Operations transform state through `apply_proposal(state, proposal) → state'`. The transformation is deterministic, byte-exact reproducible by any node from the same `(state, proposal)` pair. The protocol defines a closed set of operation classes — value transfer (which also creates the recipient account on first receipt), key change, content anchoring, node registration, and account closure — each with a fixed canonical encoding, validation rule, and apply function specified normatively in the protocol specification.
+Total AccountRecord size is 2 059 bytes including all fields. Operations transform state through `apply_proposal(state, proposal) → state'`. The transformation is deterministic, byte-exact reproducible by any node from the same `(state, proposal)` pair. The protocol defines a closed set of operation classes — value transfer, key change, content anchoring, node registration, and account closure — each with a fixed canonical encoding, validation rule, and apply function specified normatively in the protocol specification.
 
 Each account chain is restricted to one operation per τ_1 window. Two operations with the same `prev_hash` from the same sender constitute equivocation; both operations are marked equivocated and neither is cemented. The intra-window ordering problem is eliminated by construction at N = 1, removing both subjective ordering surface (violation of [I-3] determinism) and additional consensus seed surface ([I-8]).
 
@@ -188,7 +188,7 @@ These mechanisms together close DoS without monetary barriers. The protocol cont
 
 ## 11. State Lifecycle and Scaling
 
-Every persistent record in consensus state has either a cost-based barrier, a lifecycle bound, or a hard quota. Account creation requires the creator to submit an opening operation whose validation includes a chain-length precondition. Accounts whose balance has reached zero and whose `last_active_window` precedes the current window by more than `4 × 20 160` windows (`4 × τ₂`, the protocol parameter `pruning_idle_windows` for AccountRecord pruning) are removed by `apply_candidate_expiry` at the next epoch boundary.
+Every persistent record in consensus state has either a cost-based barrier, a lifecycle bound, or a hard quota. Accounts whose balance has reached zero and whose `last_active_window` precedes the current window by more than `4 × 20 160` windows (`4 × τ₂`, the protocol parameter `pruning_idle_windows` for AccountRecord pruning) are removed by `apply_candidate_expiry` at the next epoch boundary.
 
 Pruning is not optional; it is part of the canonical state transition. Two honest nodes following the protocol prune identically. The Account Table size is bounded above by
 

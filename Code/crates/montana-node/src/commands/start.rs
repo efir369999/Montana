@@ -1317,7 +1317,14 @@ fn handle_protocol_message(
             if ctx.fast_sync.is_some() {
                 return Ok(());
             }
-            if w.saturating_sub(*ctx.current) > ctx.fast_sync_lag_threshold {
+            // Fresh join: a node with an empty Node Table cannot validate any
+            // proposal — the proposer is never in its table, so validate_header
+            // returns UnknownProposer and sequential apply can never bootstrap the
+            // active set. Such a node MUST fast-sync the canonical state first,
+            // regardless of the lag threshold.
+            if ctx.state.nodes.is_empty()
+                || w.saturating_sub(*ctx.current) > ctx.fast_sync_lag_threshold
+            {
                 let mut fs_payload = Vec::new();
                 mt_net::FastSyncRequest {
                     anchor_window: w,
