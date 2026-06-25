@@ -2600,129 +2600,129 @@ The developer's income on an SPA is converted into infrastructure / fiat / reinv
 
 ---
 
-## 20. Голосовые и видеозвонки
+## 20. Voice and video calls
 
-Off-chain P2P аудио / видеокоммуникации с оплатой через app-level Pattern C (streaming Transfer, см. §19.4). Технический стек — WebRTC или аналог; транспорт — mesh либо прямое P2P через реле TimeChain. Pricing определяет провайдер сервиса (приложение), не протокол.
+Off-chain P2P audio / video communication paid through the app-level Pattern C (streaming Transfer, see §19.4). The technical stack is WebRTC or an equivalent; transport is mesh or direct P2P through a TimeChain relay. Pricing is set by the service provider (the application), not the protocol.
 
-### 20.1 Инициация звонка
+### 20.1 Call initiation
 
-Из экрана контакта или мессенджера:
+From the contact screen or the messenger:
 
-- Кнопка «Позвонить» → выбор типа (голос / видео)
-- Проверка `balance >= minimum_session_deposit` (если приложение использует pre-pay model — например 1 минута upfront)
-- Выбор качества видео: 360p (базовое) / 720p (стандартное) / 1080p (премиум, доступно не всем устройствам)
-- Запрос звонка через канал мессенджера — собеседник принимает или отклоняет
+- A "Call" button → choose the type (voice / video)
+- A check `balance >= minimum_session_deposit` (if the application uses a pre-pay model — for example 1 minute upfront)
+- Video quality choice: 360p (basic) / 720p (standard) / 1080p (premium, not available on all devices)
+- A call request through the messenger channel — the other party accepts or rejects
 
-### 20.2 Установление соединения
+### 20.2 Connection establishment
 
-- Установление P2P-соединения:
-  - Первичная попытка через mesh (если оба клиента в зоне mesh-обнаружения)
-  - Запасной путь через реле TimeChain через узлы-операторы
-  - Шифрование выведено из существующих публичных ключей ML-KEM-768 (в `EncryptionKeyBlob`)
-  - Аудиокодек: Opus 24 kbps (базовое качество)
-  - Видеокодек: VP9 или H.264 (зависит от устройства)
-- Согласование ICE с запасными путями через несколько транспортов
+- Establishing a P2P connection:
+  - The first attempt is through mesh (if both clients are in the mesh-discovery zone)
+  - The fallback is through a TimeChain relay via operator nodes
+  - Encryption is derived from existing ML-KEM-768 public keys (in `EncryptionKeyBlob`)
+  - Audio codec: Opus 24 kbps (basic quality)
+  - Video codec: VP9 or H.264 (device-dependent)
+- ICE negotiation with fallback paths across several transports
 
-### 20.3 Метеринг и оплата
+### 20.3 Metering and payment
 
-Pricing model и payment flow — выбор приложения. Канонические варианты:
+The pricing model and payment flow are the application's choice. Canonical variants:
 
-- **Free P2P calls.** Приложение не берёт денег за P2P звонки между users — звонки идут direct между устройствами без оплаты приложению. App revenue идёт от другиx сервисов (премиум-функции через §21, marketplace и т.п.). Это default для базового мессенджера.
-- **App-charged streaming.** Если приложение даёт value-added сервис (TURN-relay через свою инфраструктуру, transcription, recording) — Pattern C streaming Transfer от user к app SPA. Клиент локально tracks usage метрику (elapsed minutes) и публикует cumulative `Transfer(unit_price × consumed_minutes_since_last, link=app_SPA)` каждые N минут.
-- **Tip / donation.** Pattern D — voluntary `Transfer` от участника звонка к собеседнику (например, благодарность за консультацию).
+- **Free P2P calls.** The application charges nothing for P2P calls between users — calls go directly between devices with no payment to the application. App revenue comes from other services (premium features through §21, a marketplace, etc.). This is the default for a basic messenger.
+- **App-charged streaming.** If the application provides a value-added service (a TURN relay through its infrastructure, transcription, recording) — Pattern C streaming Transfer from the user to the app SPA. The client locally tracks a usage metric (elapsed minutes) and publishes a cumulative `Transfer(unit_price × consumed_minutes_since_last, link=app_SPA)` every N minutes.
+- **Tip / donation.** Pattern D — a voluntary `Transfer` from a call participant to the other party (for example, gratitude for a consultation).
 
-Если приложение использует app-charged streaming — клиент должен соблюдать §19.10 Antipatterns: cancel мгновенный, payment lag не блокирует disconnection, refund при abnormal termination через `Transfer(SPA → user)`.
+If the application uses app-charged streaming — the client must follow §19.10 Antipatterns: cancel is instant, payment lag does not block disconnection, a refund on abnormal termination through `Transfer(SPA → user)`.
 
-### 20.4 Завершение звонка
+### 20.4 Call termination
 
-- При завершении звонка (любой стороной или при обрыве) — финальный cumulative `Transfer` за оставшиеся неоплаченные минуты (если используется app-charged streaming)
-- Экран после звонка: итоги (длительность, потрачено Ɉ если applicable, качество звонка)
-- Опциональная оценка собеседника (только локально, для личной истории)
+- On call termination (by either side or on a drop) — a final cumulative `Transfer` for the remaining unpaid minutes (if app-charged streaming is used)
+- A post-call screen: a summary (duration, Ɉ spent if applicable, call quality)
+- An optional rating of the other party (local only, for personal history)
 
-### 20.5 Групповые звонки
+### 20.5 Group calls
 
-- Поддержка до 8 участников в одной комнате
-- Cost split определяет приложение: инициатор оплачивает full session, либо «равная доля» — каждый публикует свой `Transfer` к app SPA, либо participant-counted streaming
-- Реализация позже (milestone после базового 1-на-1)
+- Support for up to 8 participants in one room
+- The cost split is the application's choice: the initiator pays for the full session, or "equal share" — each publishes their own `Transfer` to the app SPA, or participant-counted streaming
+- Implementation later (a milestone after the basic 1-to-1)
 
-### 20.6 Приватность звонка
+### 20.6 Call privacy
 
-- Вся аудио / видеосвязь идёт **прямо между устройствами**, не через хранилище протокола
-- Метаданные (кто кому звонил, когда, сколько минут) видны в `Transfer` операциях user → app SPA в цепочке (если app использует streaming Transfer billing) — стандартная цена открытого финансового слоя [I-2]. Если приложение использует free P2P calls — метаданные звонка вообще не попадают в chain
-- Содержимое звонка (аудио / видео поток байт) — защищено сквозным шифрованием, никогда не записывается в хранилище Монтаны
-- Пользователь может включить локальную запись (на своём устройстве) — но это функция клиента, не влияет на протокол
-
----
-
-## 21. Премиум-подписки
-
-Модель подписок реализуется через app-level Pattern B (recurring `Transfer` от user к Service Provider Account, см. §19.3). Pricing определяет провайдер сервиса; period выбирается приложением. Никакого protocol-level subscription opcode нет — подписка это off-chain agreement, mediated через паттерн incoming Transfers к SPA.
-
-### 21.1 Премиум-профиль
-
-- **Provider:** разработчик базового приложения, через свой App SPA (см. §19.1)
-- **Pricing:** определяется разработчиком; example default — 10 Ɉ/мес
-- **Преимущества (UX-side, не protocol):**
-  - Значок верификации в профиле (флаг на стороне клиента приложения, не consensus state)
-  - Расширенная биография (до 2 KB вместо базовых 256 байт)
-  - Аватар высокого разрешения (до 512×512 пикселей вместо 128×128)
-  - Кратковременная строка статуса («В отпуске до 15 мая»)
-- **Период:** monthly (~43 200 окон при τ₁ ≈ 60s) — выбор приложения, не protocol invariant
-- **Автоматическое продление:** client-side scheduler публикует `Transfer(amount=10 Ɉ, link=app_SPA)` ежемесячно
-- **Отмена:** в любой момент через UI — disable scheduler; pending due Transfer не публикуется; premium функции expire после `2 × period_windows` без incoming Transfer ожидаемой суммы
-
-### 21.2 Подписки создателей (платные каналы)
-
-- **Provider:** creator (физическое лицо) через свой personal account либо отдельный creator SPA
-- **Pricing:** определяется самим creator (без protocol-level minimum); приложение может рекомендовать convention (например ≥ 0.1 Ɉ/мес для anti-spam при discovery), но это soft guideline на app layer
-- **Распределение платежа:** **прямой `Transfer` к creator account** — полная сумма доходит до creator. Никакого burn / split с приложением (если приложение хочет take commission — это Pattern E marketplace через explicit split, см. §19.6, и должно быть disclosed user-у в UI)
-- **Подписчик** получает доступ к каналу; creator-side service tracks active subscriptions через слежение за incoming Transfers per account; отсутствие оплаты в следующем месяце → revoke access (creator-side enforcement, не protocol)
-- Клиент подписчика отслеживает активные подписки и публикует месячный `Transfer(creator_account_id)`
-
-### 21.3 Интерфейс управления подписками
-
-- Экран «Мои подписки» — список активных (премиум-профиль, каналы создателей, subscriptions других приложений)
-- Для каждой: получатель Ɉ (SPA либо creator account), периодическая стоимость, период, дата следующего продления (next_due_window), переключатель автопродления
-- История прошлых платежей за последние N месяцев — local view incoming Transfers пользователя в `AccountChain`
-- Cancel — single click, scheduler disable, expire происходит автоматически через `2 × period`
-- Re-subscribe — re-enable scheduler; новая подписка стартует с момента следующего published Transfer
+- All audio / video communication goes **directly between devices**, not through the protocol's storage
+- Metadata (who called whom, when, how many minutes) is visible in the `Transfer` operations user → app SPA on the chain (if the app uses streaming Transfer billing) — the standard cost of the open financial layer [I-2]. If the application uses free P2P calls — call metadata does not enter the chain at all
+- Call content (the audio / video byte stream) — protected by end-to-end encryption, never recorded into Montana's storage
+- The user can enable local recording (on their own device) — but this is a client feature and does not affect the protocol
 
 ---
 
-## 22. Персональный интернет — архитектурная модель
+## 21. Premium subscriptions
 
-Montana App реализует модель персонального интернета: мои данные на моём узле, телефон как клиент.
+The subscription model is implemented through the app-level Pattern B (a recurring `Transfer` from the user to a Service Provider Account, see §19.3). Pricing is set by the service provider; the period is chosen by the application. There is no protocol-level subscription opcode — a subscription is an off-chain agreement, mediated through the pattern of incoming Transfers to the SPA.
 
-### 22.1 Узел как хранилище владельца
+### 21.1 Premium profile
 
-Узел Montana — это компьютер пользователя (десктоп, сервер, VPS). Он выполняет две функции:
+- **Provider:** the developer of the base application, through their App SPA (see §19.1)
+- **Pricing:** set by the developer; example default — 10 Ɉ/month
+- **Benefits (UX-side, not protocol):**
+  - A verification badge in the profile (a flag on the application client side, not consensus state)
+  - An extended bio (up to 2 KB instead of the base 256 bytes)
+  - A high-resolution avatar (up to 512×512 pixels instead of 128×128)
+  - A short-lived status line ("On vacation until May 15")
+- **Period:** monthly (~43 200 windows at τ₁ ≈ 60s) — the application's choice, not a protocol invariant
+- **Automatic renewal:** a client-side scheduler publishes `Transfer(amount=10 Ɉ, link=app_SPA)` monthly
+- **Cancellation:** at any time through the UI — disable the scheduler; the pending due Transfer is not published; premium features expire after `2 × period_windows` without an incoming Transfer of the expected amount
 
-1. **Консенсус.** Тикает SSHA, валидирует операции, публикует `BundledConfirmation`, участвует в лотерее, зарабатывает Монтана. Это протокольный слой.
-2. **Хранилище владельца.** Хранит личные данные оператора: фото, резервные копии сообщений, файлы, медиа. Данные зашифрованы ключом владельца. Без ключа — шум. Это клиентский слой.
+### 21.2 Creator subscriptions (paid channels)
 
-Данные владельца не покидают узел. Сеть видит Anchor (32 байта `data_hash`). Содержание — только на узле владельца.
+- **Provider:** a creator (a natural person) through their personal account or a separate creator SPA
+- **Pricing:** set by the creator themselves (without a protocol-level minimum); the application may recommend a convention (for example ≥ 0.1 Ɉ/month for anti-spam at discovery), but this is a soft guideline at the app layer
+- **Payment distribution:** a **direct `Transfer` to the creator account** — the full amount reaches the creator. No burn / split with the application (if the application wants to take a commission — this is Pattern E marketplace through an explicit split, see §19.6, and must be disclosed to the user in the UI)
+- **A subscriber** gets access to the channel; the creator-side service tracks active subscriptions by watching incoming Transfers per account; no payment in the next month → revoke access (creator-side enforcement, not protocol)
+- The subscriber's client tracks active subscriptions and publishes a monthly `Transfer(creator_account_id)`
 
-### 22.2 Телефон как клиент узла
+### 21.3 Subscription management interface
 
-Montana App на телефоне подключается к своему узлу:
+- A "My subscriptions" screen — a list of active ones (premium profile, creator channels, subscriptions of other applications)
+- For each: the Ɉ recipient (an SPA or a creator account), the periodic cost, the period, the next renewal date (next_due_window), an auto-renewal toggle
+- A history of past payments over the last N months — a local view of the user's incoming Transfers in `AccountChain`
+- Cancel — a single click, scheduler disable, expiry happens automatically after `2 × period`
+- Re-subscribe — re-enable the scheduler; a new subscription starts from the next published Transfer
 
-1. **Привязка.** При первой настройке пользователь указывает адрес своего узла (IP или домен и `node_id`). Телефон авторизуется через keypair аккаунта (challenge-response ML-DSA-65).
-2. **Операции.** Перевод, Anchor, ChangeKey — телефон формирует, подписывает и отправляет через узел в P2P-сеть.
-3. **Данные.** Фото → шифрует → отправляет на свой узел. Узел хранит. Телефон кэширует локально что нужно.
-4. **Почтовый ящик.** Входящие сообщения хранятся на узле пока телефон офлайн. Телефон забирает при подключении.
-5. **Синхронизация.** Несколько устройств (телефон + планшет + десктоп) подключаются к одному узлу. Узел — единый источник данных.
+---
 
-### 22.3 Потеря устройств
+## 22. Personal internet — architectural model
 
-- **Потеря телефона.** Сид восстанавливает ключи. Баланс в Таблице аккаунтов публичен. Данные на узле целы. Полное восстановление.
-- **Потеря узла.** Сид восстанавливает аккаунт. Состояние консенсуса — через быструю синхронизацию. Личные данные (фото, сообщения) — ответственность оператора (резервная копия, RAID, репликация между своими узлами).
-- **Потеря обоих.** Сид восстанавливает аккаунт и баланс. Личные данные утрачены без резервной копии.
+Montana App implements the personal-internet model: my data on my node, the phone as a client.
 
-### 22.4 Публичный контент — добровольная репликация
+### 22.1 The node as the owner's storage
 
-Персональные данные — только на моём узле. Публичный контент (каналы, книга Montana, MIPs) — другая модель: автор сознательно публикует, подписчики добровольно реплицируют.
+A Montana node is the user's computer (a desktop, a server, a VPS). It performs two functions:
 
-Узел подписанный на канал хранит его контент и отдаёт другим подписчикам. Отписка — удаление. Это решение оператора, не протокола. Протокол видит Anchor (32 байта), не контент.
+1. **Consensus.** It ticks SSHA, validates operations, publishes `BundledConfirmation`, participates in the lottery, earns Montana. This is the protocol layer.
+2. **The owner's storage.** It stores the operator's personal data: photos, message backups, files, media. The data is encrypted with the owner's key. Without the key — noise. This is the client layer.
+
+The owner's data does not leave the node. The network sees an Anchor (a 32-byte `data_hash`). The content — only on the owner's node.
+
+### 22.2 The phone as a client of the node
+
+Montana App on the phone connects to its node:
+
+1. **Pairing.** On first setup the user specifies the address of their node (an IP or domain and `node_id`). The phone authenticates through the account keypair (an ML-DSA-65 challenge-response).
+2. **Operations.** Transfer, Anchor, ChangeKey — the phone builds, signs, and sends them through the node into the P2P network.
+3. **Data.** A photo → encrypted → sent to its node. The node stores it. The phone caches locally what it needs.
+4. **Mailbox.** Incoming messages are stored on the node while the phone is offline. The phone fetches them on connection.
+5. **Synchronization.** Several devices (phone + tablet + desktop) connect to one node. The node is the single source of data.
+
+### 22.3 Device loss
+
+- **Phone loss.** The seed recovers the keys. The balance in the Account Table is public. The data on the node is intact. Full recovery.
+- **Node loss.** The seed recovers the account. The consensus state — through fast synchronization. Personal data (photos, messages) — the operator's responsibility (backup, RAID, replication across one's own nodes).
+- **Loss of both.** The seed recovers the account and the balance. Personal data is lost without a backup.
+
+### 22.4 Public content — voluntary replication
+
+Personal data — only on my node. Public content (channels, the Montana book, MIPs) — a different model: the author publishes deliberately, subscribers replicate voluntarily.
+
+A node subscribed to a channel stores its content and serves it to other subscribers. Unsubscribing — deletion. This is the operator's decision, not the protocol's. The protocol sees an Anchor (32 bytes), not the content.
 
 ---
 
