@@ -2726,47 +2726,47 @@ A node subscribed to a channel stores its content and serves it to other subscri
 
 ---
 
-## 23. Стандарты совместимости
+## 23. Compatibility standards
 
-Следующие стандарты определяют клиентское поведение и форматы для совместимости между приложениями Montana. Приложения следующие этим стандартам совместимы по обмену профилями, сообщениями, контентом.
+The following standards define client behavior and formats for compatibility between Montana applications. Applications following these standards are compatible for the exchange of profiles, messages, and content.
 
-### 23.1 Реестр канонических `app_id`
+### 23.1 Registry of canonical `app_id`s
 
-| Функция | Формула |
+| Function | Formula |
 |---|---|
-| genesis-контент | `SHA-256("mt-app" \|\| "montana")` |
-| профиль | `SHA-256("mt-app" \|\| "profile")` |
-| ключи шифрования | `SHA-256("mt-app" \|\| "encryption-keys")` |
-| pre-key мессенджера | `SHA-256("mt-app" \|\| "messenger-prekeys")` |
-| очередь сессии мессенджера | `SHA-256("mt-app" \|\| queue_label)`, где `queue_label` — 32 B, выведен из сессии (см. 23.2) |
+| genesis content | `SHA-256("mt-app" \|\| "montana")` |
+| profile | `SHA-256("mt-app" \|\| "profile")` |
+| encryption keys | `SHA-256("mt-app" \|\| "encryption-keys")` |
+| messenger pre-key | `SHA-256("mt-app" \|\| "messenger-prekeys")` |
+| messenger session queue | `SHA-256("mt-app" \|\| queue_label)`, where `queue_label` is 32 B, derived from the session (see 23.2) |
 
-Пользовательские каналы: `SHA-256("mt-app" || channel_name)`.
+User channels: `SHA-256("mt-app" || channel_name)`.
 
-### 23.2 Канонический вывод метки очереди сессии (ротируемая версия)
+### 23.2 Canonical derivation of the session queue label (rotated version)
 
-Обязательный стандарт для всех клиентов мессенджера Montana. Два клиента реализующие этот стандарт совместимы — рукопожатие между ними даёт идентичные метки очереди на обеих сторонах, для одного и того же окна.
+A mandatory standard for all Montana messenger clients. Two clients that implement this standard are compatible — a handshake between them yields identical queue labels on both sides, for the same window.
 
-**Ротация per τ₁.** Метки очереди ротируются детерминистически каждое окно на основе текущего `window_index`. Это закрывает класс long-term session identification хостящим узлом (см. раздел 5.8 и [Montana Network spec](Montana%20Network%20v1.0.0.md) → раздел «Label Rotation + Range Subscribe Protocol»).
+**Rotation per τ₁.** Queue labels rotate deterministically each window based on the current `window_index`. This closes the class of long-term session identification by the hosting node (see section 5.8 and the [Montana Network spec](Montana%20Network%20v1.5.0.md) → "Label Rotation + Range Subscribe Protocol" section).
 
-Входы вывода:
-- `initial_root_key` — 32 B, результат multi-KEM рукопожатия из раздела 5.2 (выводится один раз в момент установки сессии, не меняется при последующих шагах KEM-храповика)
-- `pubkey_self`, `pubkey_contact` — 1952 B публичные ключи ML-DSA-65 своего аккаунта и контакта (`current_pubkey` из Таблицы аккаунтов)
-- `W` — текущий `window_index` (u64 little-endian)
+Derivation inputs:
+- `initial_root_key` — 32 B, the result of the multi-KEM handshake from section 5.2 (derived once at session establishment, unchanged by subsequent KEM-ratchet steps)
+- `pubkey_self`, `pubkey_contact` — 1952 B ML-DSA-65 public keys of one's own account and the contact (`current_pubkey` from the Account Table)
+- `W` — the current `window_index` (u64 little-endian)
 
-Канонический порядок участников:
+Canonical participant order:
 
 ```
 if pubkey_self < pubkey_contact:       # byte-lexicographic compare
-    direction_send_byte    = 0x00      # self = lower, send от lower к higher
+    direction_send_byte    = 0x00      # self = lower, send from lower to higher
     direction_receive_byte = 0x01
 else:
-    direction_send_byte    = 0x01      # self = higher, send от higher к lower
+    direction_send_byte    = 0x01      # self = higher, send from higher to lower
     direction_receive_byte = 0x00
 
-session_id = lower_pubkey || higher_pubkey    # 1952 + 1952 = 3904 байта (ML-DSA-65)
+session_id = lower_pubkey || higher_pubkey    # 1952 + 1952 = 3904 bytes (ML-DSA-65)
 ```
 
-Вывод ротируемой метки очереди:
+Derivation of the rotated queue label:
 
 ```
 queue_label(W) = HKDF-SHA-256(
@@ -2777,83 +2777,83 @@ queue_label(W) = HKDF-SHA-256(
 )
 ```
 
-`app_id` для публикации Anchor в текущем окне:
+The `app_id` for publishing an Anchor in the current window:
 
 ```
 app_id(W) = SHA-256("mt-app" || queue_label(W))
 ```
 
-Это удовлетворяет протокольному инварианту `app_id = SHA-256("mt-app" || app_name)` из определения Anchor — ротируемая метка очереди сессии подставляется как `app_name`.
+This satisfies the protocol invariant `app_id = SHA-256("mt-app" || app_name)` from the Anchor definition — the rotated session queue label is substituted as `app_name`.
 
-**Поведение при ротации.**
+**Rotation behavior.**
 
-- **Отправитель:** публикует blob с `queue_label(W_current)` где `W_current` — текущее окно на момент публикации
-- **Получатель:** подписан на `app_id(W)` для `W ∈ {W_current, W_current − 1}` — двухоконная tolerance к clock skew между участниками
-- На каждом переходе `W → W + 1` клиент обновляет subscription: удаляет `app_id(W − 1)`, добавляет `app_id(W + 1)`
+- **Sender:** publishes a blob with `queue_label(W_current)` where `W_current` is the current window at the time of publishing
+- **Receiver:** is subscribed to `app_id(W)` for `W ∈ {W_current, W_current − 1}` — a two-window tolerance to clock skew between participants
+- On each transition `W → W + 1` the client updates the subscription: removes `app_id(W − 1)`, adds `app_id(W + 1)`
 
-**Catch-up после offline** — если клиент был offline более 2 окон, он должен использовать `RangeSubscribeRequest` (protocol message 0x63) для получения blobs из пропущенных окон. См. раздел 5.8.1.
+**Catch-up after offline** — if the client was offline for more than 2 windows, it must use `RangeSubscribeRequest` (protocol message 0x63) to retrieve blobs from the missed windows. See section 5.8.1.
 
-Integer-форма (для соответствия [I-9]):
-- HKDF-SHA-256 и SHA-256 integer-specified в спеке протокола (разделы «HKDF-Expand — integer-спецификация» и «Consensus encoding layer»)
-- Все операнды u32 / u64, никакого float
-- Конкатенация байтов в `info`: `"mt-queue-rotation"` = 17 байт ASCII, `direction_byte` = 1 байт, `W.to_le_bytes(8)` = 8 байт, итого `info` = 26 байт
+Integer form (for [I-9] compliance):
+- HKDF-SHA-256 and SHA-256 are integer-specified in the protocol spec (the "HKDF-Expand — integer specification" and "Consensus encoding layer" sections)
+- All operands are u32 / u64, no float
+- Byte concatenation in `info`: `"mt-queue-rotation"` = 17 bytes ASCII, `direction_byte` = 1 byte, `W.to_le_bytes(8)` = 8 bytes, total `info` = 26 bytes
 
-Test-vectors для канонического вывода (binding):
+Test vectors for the canonical derivation (binding):
 
 ```
-TV-1: минимальный случай
+TV-1: minimal case
   initial_root_key = 0x00 × 32
   pubkey_lower     = 0x00 × 1952
   pubkey_higher    = 0x01 || 0x00 × 1951
-  expected queue_label_l2h = <значение вычисленное эталонной
-    реализацией> (placeholder; conformance pending)
+  expected queue_label_l2h = <value computed by the reference
+    implementation> (placeholder; conformance pending)
   expected queue_label_h2l = <placeholder; conformance pending>
 
-TV-2: случайные ключи
+TV-2: random keys
   initial_root_key = <32 random bytes>
-  pubkey_lower     = <1952 bytes, лексикографический порядок соблюдён>
-  pubkey_higher    = <1952 bytes, больше lower>
+  pubkey_lower     = <1952 bytes, lexicographic order respected>
+  pubkey_higher    = <1952 bytes, greater than lower>
   expected queue_label_l2h = <placeholder>
   expected queue_label_h2l = <placeholder>
 
-TV-3: граница byte-lex ordering
+TV-3: byte-lex ordering boundary
   pubkey_a = 0xFF × 1951 || 0x00
   pubkey_b = 0xFF × 1951 || 0x01
-  ordering: pubkey_a < pubkey_b (последний байт решает)
+  ordering: pubkey_a < pubkey_b (the last byte decides)
   expected queue_label_l2h = <placeholder>
 ```
 
-Значения test-vectors — со статусом «conformance pending» в текущем релизе спеки приложения, финализируются одновременно с эталонной реализацией.
+The test-vector values have the status "conformance pending" in the current release of the application spec and are finalized together with the reference implementation.
 
-Равенство `pubkey_self == pubkey_contact` невозможно — разные аккаунты имеют разные ключи по построению (`account_id = SHA-256("mt-account" || suite_id || pubkey)`, коллизия публичного ключа означала бы коллизию `account_id`).
+Equality `pubkey_self == pubkey_contact` is impossible — different accounts have different keys by construction (`account_id = SHA-256("mt-account" || suite_id || pubkey)`; a public-key collision would mean an `account_id` collision).
 
-**Инварианты вывода метки очереди сессии:**
-- `initial_root_key` — ровно 32 байта
-- `pubkey_self`, `pubkey_contact` — ровно 1952 байт каждая (ML-DSA-65 padded serialization)
+**Invariants of the session queue label derivation:**
+- `initial_root_key` — exactly 32 bytes
+- `pubkey_self`, `pubkey_contact` — exactly 1952 bytes each (ML-DSA-65 padded serialization)
 - `pubkey_self != pubkey_contact` (byte-equality)
 - `direction_byte ∈ {0x00, 0x01}`
-- `queue_label` — ровно 32 байта
-- `app_id = SHA-256("mt-app" || queue_label)` — ровно 32 байта
+- `queue_label` — exactly 32 bytes
+- `app_id = SHA-256("mt-app" || queue_label)` — exactly 32 bytes
 
 ### 23.3 Chunking Standard
 
-Стандарт чанкования файлов для хранения и обмена между узлами. Domain separators `"mt-content-chunk"` и `"mt-content-manifest"` канонически определены в реестре domain separators спеки протокола.
+A standard for chunking files for storage and exchange between nodes. The domain separators `"mt-content-chunk"` and `"mt-content-manifest"` are canonically defined in the domain separators registry of the protocol spec.
 
 ```
 chunk_size = 256 KB
 
-формат чанка: chunk_index (4 B, u32) || chunk_data (≤ 262 144 байт)
+chunk format: chunk_index (4 B, u32) || chunk_data (≤ 262 144 bytes)
 chunk_hash   = SHA-256("mt-content-chunk" || chunk_data)
 ```
 
-Манифест содержит метаданные файла:
+The manifest contains the file metadata:
 
 ```
 Manifest {
-  version:       u16    (текущая — 1)
-  file_name:     строка (UTF-8, с префиксом длины, максимум 256 байт)
+  version:       u16    (current — 1)
+  file_name:     string (UTF-8, length-prefixed, at most 256 bytes)
   file_size:     u64
-  mime_type:     строка (UTF-8, с префиксом длины, максимум 64 байт)
+  mime_type:     string (UTF-8, length-prefixed, at most 64 bytes)
   chunk_count:   u32
   chunk_hashes:  [32 B × chunk_count]
 }
@@ -2861,11 +2861,11 @@ Manifest {
 data_hash = SHA-256("mt-content-manifest" || canonical_serialization(Manifest))
 ```
 
-`data_hash` записывается в Anchor. Маленький файл (меньше `chunk_size`) — один чанк, манифест с `chunk_count = 1`.
+The `data_hash` is recorded in an Anchor. A small file (smaller than `chunk_size`) — a single chunk, a manifest with `chunk_count = 1`.
 
 ### 23.4 Content Request Protocol
 
-P2P-сообщения libp2p для обмена данными между узлами:
+libp2p P2P messages for data exchange between nodes:
 
 ```
 ContentRequest:   app_id (32 B) + data_hash (32 B)
@@ -2874,34 +2874,34 @@ ChunkRequest:     data_hash (32 B) + chunk_index (4 B)
 ChunkResponse:    status (1 B) + chunk_data (variable)
 ```
 
-Верификация: пересчёт хэшей при получении, сравнение с манифестом и Anchor. Несовпадение — отклонить, запросить у другого пира.
+Verification: recompute hashes on receipt, compare with the manifest and the Anchor. A mismatch — reject, request from another peer.
 
 ### 23.5 Content Discovery
 
-Два механизма поиска провайдеров:
+Two mechanisms for finding providers:
 
-- **Публикация и поиск через DHT (Kademlia).** Узел, хранящий `app_id`, публикует запись в DHT. Запрашивающий делает поиск.
-- **Анонс через gossip.** При соединении с пиром — объявление списка своих `app_id`. Пир запоминает привязку.
+- **Publishing and lookup through the DHT (Kademlia).** A node storing an `app_id` publishes a record in the DHT. The requester performs a lookup.
+- **Announcement through gossip.** On connecting to a peer — an announcement of the list of one's `app_id`s. The peer remembers the binding.
 
-Content Discovery — локальное сетевое состояние, не консенсус.
+Content Discovery is local network state, not consensus.
 
-### 23.6 Рекомендуемые криптопримитивы
+### 23.6 Recommended cryptographic primitives
 
-| Примитив | Применение |
+| Primitive | Use |
 |---|---|
-| ML-KEM-768 | Инкапсуляция ключа для мессенджера и шифрования файлов |
-| ChaCha20-Poly1305 | Симметричное AEAD-шифрование |
-| HKDF-SHA-256 | Вывод ключей из общего секрета KEM |
+| ML-KEM-768 | Key encapsulation for the messenger and file encryption |
+| ChaCha20-Poly1305 | Symmetric AEAD encryption |
+| HKDF-SHA-256 | Key derivation from the KEM shared secret |
 
-### 23.7 Genesis-контент
+### 23.7 Genesis content
 
-`genesis_content_data_hash` — протокольная константа в Genesis Decree. Загрузка и хранение книги Montana — конвенция эталонной реализации:
+`genesis_content_data_hash` — a protocol constant in the Genesis Decree. Downloading and storing the Montana book is a convention of the reference implementation:
 
-1. При быстрой синхронизации: запросить манифест по `genesis_content_data_hash`
-2. Скачать чанки, верифицировать SHA-256
-3. Пересчитать корень Merkle → сравнить с `genesis_content_data_hash`
+1. During fast synchronization: request the manifest by `genesis_content_data_hash`
+2. Download the chunks, verify SHA-256
+3. Recompute the Merkle root → compare with `genesis_content_data_hash`
 
-Обновление книги: новый Anchor в `genesis_content_app_id`. Узлы скачивают новую версию. Старые версии в истории proposals навсегда.
+Book update: a new Anchor in `genesis_content_app_id`. Nodes download the new version. Older versions remain in the proposals history forever.
 
 ---
 
