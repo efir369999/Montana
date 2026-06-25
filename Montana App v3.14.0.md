@@ -1198,211 +1198,211 @@ If the recipient uses a different application with a different namespace — the
 
 ---
 
-## 8. Модуль профиля
+## 8. Profile module
 
-### 8.1 Публикация ProfileBlob
+### 8.1 ProfileBlob publication
 
-Пользователь создаёт или обновляет свой публичный профиль:
+A user creates or updates their public profile:
 
-1. Пользователь в настройках заполняет поля профиля: отображаемое имя, аватар (изображение), биография
-2. Если есть аватар:
-   - Изображение кодируется в JPEG или PNG, сжимается
-   - Сохраняется как персистентный blob, получает `avatar_hash`
-   - Опциональное чанкование если изображение большое
-3. Приложение формирует `ProfileBlob`:
+1. In settings the user fills in the profile fields: display name, avatar (image), bio
+2. If there is an avatar:
+   - The image is encoded as JPEG or PNG and compressed
+   - Stored as a persistent blob, receiving an `avatar_hash`
+   - Optional chunking if the image is large
+3. The app builds a `ProfileBlob`:
    ```
    ProfileBlob {
      version       1
      display_name  "Alice"
-     avatar_hash   <хэш blob изображения> или 0x00..00
+     avatar_hash   <hash of the image blob> or 0x00..00
      bio           "Montana enthusiast"
-     updated_at    <текущая временная метка Unix>
+     updated_at    <current Unix timestamp>
    }
    ```
-4. Сериализует канонически
+4. Serializes it canonically
 5. `data_hash = SHA-256("mt-profile" || serialized)`
-6. `store_blob(app_id_profile, data_hash, serialized)` через Content Layer
-7. `publish_anchor(app_id_profile, data_hash)` — создаёт операцию Anchor
-8. После цементирования профиль виден в сети всем, кто хочет его найти
+6. `store_blob(app_id_profile, data_hash, serialized)` through the Content Layer
+7. `publish_anchor(app_id_profile, data_hash)` — creates an Anchor operation
+8. After cementing the profile is visible on the network to anyone who wants to find it
 
-**Обновление профиля:**
-- То же самое, новый Anchor с новым `data_hash`
-- Старые blob-ы профиля остаются в proposals навсегда
-- Другие приложения читают последний Anchor
+**Updating the profile:**
+- The same, a new Anchor with a new `data_hash`
+- Old profile blobs remain in proposals forever
+- Other applications read the latest Anchor
 
-### 8.2 Запрос профиля контакта
+### 8.2 Requesting a contact's profile
 
-Приложение показывает информацию о контакте:
+The app shows information about a contact:
 
-1. `list_content(app_id_profile, sender = contact_account_id)` → список `data_hash`
-2. Взять последний по временной метке в Anchor
+1. `list_content(app_id_profile, sender = contact_account_id)` → a list of `data_hash`
+2. Take the latest one by the timestamp in the Anchor
 3. `fetch_blob(app_id_profile, latest_data_hash)`
-4. Десериализовать `ProfileBlob`
-5. Если `avatar_hash != 0x00..00` — загрузить аватар отдельным запросом
-6. Кэшировать локально
+4. Deserialize the `ProfileBlob`
+5. If `avatar_hash != 0x00..00` — download the avatar in a separate request
+6. Cache locally
 
-**Обновления в реальном времени:**
-- Приложение подписано на обновления Anchor в `app_id` профиля через потоки протокола
-- При новом Anchor от известного контакта — автоматически перечитывает профиль
-- Интерфейс обновляется (новый аватар, новое имя)
+**Real-time updates:**
+- The app is subscribed to Anchor updates in the profile `app_id` through protocol streams
+- On a new Anchor from a known contact — it automatically re-reads the profile
+- The interface updates (new avatar, new name)
 
-### 8.3 Локальный и опубликованный профиль
+### 8.3 Local and published profile
 
-**Структура отображения имён в интерфейсе:**
-
-```
-Приоритет для отображения:
-  1. Локальный petname пользователя
-  2. Опубликованный ProfileBlob.display_name (если контакт опубликовал)
-  3. Сокращённый account_id (mt4ZGfe... если ничего выше)
-```
-
-Аватар:
+**Name display structure in the interface:**
 
 ```
-Приоритет:
-  1. Локальный переопределённый аватар (если пользователь установил локальный)
-  2. Опубликованный аватар (из ProfileBlob)
-  3. Обобщённый плейсхолдер (первая буква имени и цвет из хэша account_id)
+Display priority:
+  1. The user's local petname
+  2. The published ProfileBlob.display_name (if the contact published one)
+  3. The shortened account_id (mt4ZGfe... if nothing above)
 ```
 
-### 8.4 Хранение аватара
+Avatar:
 
-Аватары — файлы изображений — хранятся через Content Layer.
+```
+Priority:
+  1. A locally overridden avatar (if the user set a local one)
+  2. The published avatar (from ProfileBlob)
+  3. A generic placeholder (the first letter of the name and a color from the hash of account_id)
+```
 
-**Размер:**
-- Рекомендуется: 256×256 или 512×512 пикселей
-- Формат: JPEG (качество 85) или PNG (для прозрачности)
-- Ограничение размера: 128 KB (иначе отклоняется)
+### 8.4 Avatar storage
 
-**Хранение:**
-- Локально: файловый кэш в директории приложения (с вытеснением при нехватке места)
-- В сети: персистентный blob в `app_id` профиля (тот же `app_id`, что и `ProfileBlob`)
-- Загрузка по требованию при первом просмотре контакта
-- Обновление при ротации аватара через новый `ProfileBlob` с новым `avatar_hash`
+Avatars — image files — are stored through the Content Layer.
+
+**Size:**
+- Recommended: 256×256 or 512×512 pixels
+- Format: JPEG (quality 85) or PNG (for transparency)
+- Size limit: 128 KB (otherwise rejected)
+
+**Storage:**
+- Locally: a file cache in the application directory (with eviction when space runs out)
+- On the network: a persistent blob in the profile `app_id` (the same `app_id` as the `ProfileBlob`)
+- Downloaded on demand at the first view of a contact
+- Updated on avatar rotation through a new `ProfileBlob` with a new `avatar_hash`
 
 ---
 
-## 9. Модуль контента
+## 9. Content module
 
-### 9.1 Читалка книги Montana
+### 9.1 Montana book reader
 
-Книга Montana — обязательный genesis-контент. Montana App включает специализированную читалку для длинного текста.
+The Montana book is mandatory genesis content. Montana App includes a specialized reader for long text.
 
-**Автоматическая загрузка:**
-- При первом запуске после первичной настройки приложение загружает книгу через Content Layer
-- Процесс быстрой синхронизации включает обязательную репликацию genesis-контента
-- Пользователь видит индикатор прогресса «Загрузка книги Montana...»
-- После загрузки книга доступна в разделе «Библиотека → Книга Montana»
+**Automatic download:**
+- On the first launch after onboarding, the app downloads the book through the Content Layer
+- The fast-synchronization process includes mandatory replication of the genesis content
+- The user sees a progress indicator "Downloading the Montana book..."
+- After downloading, the book is available under "Library → Montana book"
 
-**Интерфейс читалки:**
-- Полноэкранный текстовый читатель
-- Навигация по оглавлению
-- Закладки (сохраняются локально)
-- Выделения и заметки (приватные, локально)
-- Настройка текста: шрифт, размер, межстрочный интервал
-- Темы: светлая, тёмная, сепия
-- Отслеживание прогресса
-- Поиск внутри книги
+**Reader interface:**
+- A full-screen text reader
+- Table-of-contents navigation
+- Bookmarks (saved locally)
+- Highlights and notes (private, local)
+- Text settings: font, size, line spacing
+- Themes: light, dark, sepia
+- Progress tracking
+- In-book search
 
-**Обновления книги:**
-- Автор может публиковать новые версии книги
-- Новые версии получаются автоматически через Content Layer
-- Пользователь видит уведомление «Доступна новая версия книги Montana»
-- Опция просмотра истории версий в настройках
+**Book updates:**
+- The author may publish new versions of the book
+- New versions are obtained automatically through the Content Layer
+- The user sees a notice "A new version of the Montana book is available"
+- An option to view the version history in settings
 
-### 9.2 Обозреватель каналов
+### 9.2 Channel browser
 
-Для подписанных каналов (не книга Montana) — более общий обозреватель.
+For subscribed channels (not the Montana book) — a more general browser.
 
-**Возможности:**
-- Лента всех постов из всех подписанных каналов
-- Фильтрация по каналу
-- Поиск внутри контента канала
-- Сохранение постов «на потом»
-- Распространение постов (генерация ссылки)
+**Capabilities:**
+- A feed of all posts from all subscribed channels
+- Filtering by channel
+- Search within channel content
+- Saving posts "for later"
+- Sharing posts (generating a link)
 
-**Управление каналами:**
-- Добавить канал (по строке `app_id` или сканированием QR)
-- Удалить подписку
-- Заглушить уведомления
-- Информация о канале (владелец, описание, количество постов)
+**Channel management:**
+- Add a channel (by an `app_id` string or by scanning a QR)
+- Remove a subscription
+- Mute notifications
+- Channel information (owner, description, number of posts)
 
-### 9.3 Загрузка и скачивание файлов
+### 9.3 File upload and download
 
-Универсальное распространение файлов через Content Layer.
+Universal file distribution through the Content Layer.
 
-Формат чанкования и Manifest определены в протокольной спеке (см. «Клиентский слой → Chunking Standard») и дублируются в разделе 23.3 этой спецификации только как reference для реализаторов app.
+The chunking format and Manifest are defined in the protocol spec (see "Client layer → Chunking Standard") and are duplicated in section 23.3 of this specification only as a reference for app implementers.
 
-**Загрузка:**
+**Upload:**
 
-1. Пользователь выбирает файл на устройстве
-2. Приложение шифрует файл (если назначение — приватный получатель)
-3. Чанкует файл согласно Chunking Standard
-4. Создаёт манифест
-5. Сохраняет чанки и манифест как персистентные blob-ы
-6. Публикует Anchor с `data_hash` манифеста
-7. Возвращает «ссылку на файл» (`app_id` и `data_hash`) для отправки получателю
+1. The user selects a file on the device
+2. The app encrypts the file (if the target is a private recipient)
+3. Chunks the file per the Chunking Standard
+4. Creates a manifest
+5. Stores the chunks and the manifest as persistent blobs
+6. Publishes an Anchor with the `data_hash` of the manifest
+7. Returns a "file link" (`app_id` and `data_hash`) to send to the recipient
 
-**Скачивание:**
+**Download:**
 
-1. Пользователь получает ссылку на файл (через чат, канал, прямую ссылку)
-2. Приложение запрашивает манифест через `ContentRequest`
-3. Верифицирует манифест
-4. Для каждого чанка: `ChunkRequest` и верификация
-5. Собирает файл из чанков
-6. Если файл был зашифрован — расшифровывает локально
-7. Сохраняет в папку загрузок устройства
+1. The user receives a file link (through a chat, a channel, a direct link)
+2. The app requests the manifest through `ContentRequest`
+3. Verifies the manifest
+4. For each chunk: `ChunkRequest` and verification
+5. Assembles the file from the chunks
+6. If the file was encrypted — decrypts it locally
+7. Saves it to the device's downloads folder
 
-**Типы файлов:**
-- Изображения (предпросмотр в интерфейсе)
-- Видео (миниатюра и воспроизведение)
-- Документы (внешний просмотрщик)
-- Аудио (встроенный проигрыватель)
+**File types:**
+- Images (preview in the interface)
+- Video (thumbnail and playback)
+- Documents (external viewer)
+- Audio (built-in player)
 
-### 9.4 Обязательная и опциональная репликация
+### 9.4 Mandatory and optional replication
 
-**Обязательная репликация для узлов:**
-- Только genesis-контент (книга Montana)
-- Каждый узел Montana обязан хранить его — это требование протокола
+**Mandatory replication for nodes:**
+- Only the genesis content (the Montana book)
+- Every Montana node must store it — this is a protocol requirement
 
-**Опциональная репликация для клиентов Montana App:**
-- Любые подписанные каналы — решение пользователя
-- Файлы в активных чатах — хранятся пока чат не удалён
-- Кэш недавно просматриваемого контента — вытеснение LRU при нехватке места
+**Optional replication for Montana App clients:**
+- Any subscribed channels — the user's decision
+- Files in active chats — kept until the chat is deleted
+- A cache of recently viewed content — LRU eviction when space runs out
 
-**Управление использованием диска:**
-- «Настройки → Хранилище» показывает разбивку по типам контента
-- Пользователь может очистить кэш, удалить подписки, настроить лимиты
-- Предупреждение при заполнении диска больше 90%
-- Автоочистка старого кэшированного контента при нехватке места
+**Disk usage management:**
+- "Settings → Storage" shows a breakdown by content type
+- The user can clear the cache, remove subscriptions, configure limits
+- A warning when the disk is more than 90% full
+- Auto-cleanup of old cached content when space runs out
 
-### 9.5 Управление локальным хранилищем
+### 9.5 Local storage management
 
-**Квоты хранилища (настройки по умолчанию):**
-- История чата: без ограничений (расширяемо)
-- Кэш медиа: 2 GB по умолчанию, настраивается
-- Контент каналов: 5 GB по умолчанию, настраивается
-- Скачанные файлы: управляются пользователем
-- Книга Montana: обязательная, ~1–5 MB
+**Storage quotas (default settings):**
+- Chat history: unlimited (extensible)
+- Media cache: 2 GB by default, configurable
+- Channel content: 5 GB by default, configurable
+- Downloaded files: managed by the user
+- Montana book: mandatory, ~1–5 MB
 
-**Стратегии очистки:**
-- Вытеснение «старое первым» в кэше
-- Явное удаление для подписок
-- Ручная очистка через интерфейс
+**Cleanup strategies:**
+- "Oldest first" eviction in the cache
+- Explicit deletion for subscriptions
+- Manual cleanup through the interface
 
-**Резервная копия:**
-- История чата экспортируется в зашифрованный архив
-- Подписки каналов могут быть экспортированы списком (для восстановления на другом устройстве)
-- Медиа обычно не резервируется, легко перескачать из сети
+**Backup:**
+- Chat history is exported to an encrypted archive
+- Channel subscriptions can be exported as a list (for restoration on another device)
+- Media is usually not backed up; it is easy to re-download from the network
 
 ---
 
-## 10-11. Сетевой слой и режимы узла
+## 10-11. Network layer and node modes
 
-> **Сетевой слой и режимы узла выделены в отдельную спецификацию [Montana Network v1.0.0](Montana%20Network%20v1.0.0.md).** Разделы 10 (Режимы узла — light client / full node / регистрация) и 11 (Сетевой слой — libp2p, bootstrap, host selection, mesh integration) теперь живут в Montana Network спеке вместе с полным описанием транспортного слоя из Protocol-spec.
+> **The network layer and node modes are split into a separate specification, the [Montana Network spec](Montana%20Network%20v1.5.0.md).** Sections 10 (Node modes — light client / full node / registration) and 11 (Network layer — libp2p, bootstrap, host selection, mesh integration) now live in the Montana Network spec together with the full description of the transport layer from the Protocol spec.
 >
-> Эта спецификация (Montana App) описывает прикладной слой: UI, кошелёк, мессенджер, каналы, контакты, профиль, Юнона, браузер, премиум, голосовые звонки, экономика приложений.
+> This specification (Montana App) describes the application layer: UI, wallet, messenger, channels, contacts, profile, Juno, browser, premium, voice calls, application economy.
 
 ## 12. Модель безопасности
 
