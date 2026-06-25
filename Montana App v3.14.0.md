@@ -3103,147 +3103,147 @@ A consequence for the roadmap: the extensions of section 24 can be developed in 
 
 ---
 
-## 25. Модель приватности пользователя
+## 25. User privacy model
 
-Приложение обязано честно коммуницировать границы защиты. Протокол Монтана предоставляет **bounded приватность** — защиту в конкретном объёме, не абсолютную. Скрытие реальных границ защиты или маркетинговое преувеличение обещаний — методологическая ошибка того же класса, что делали Sky ECC и EncroChat.
+The application is obligated to honestly communicate the boundaries of protection. The Montana protocol provides **bounded privacy** — protection in a specific scope, not absolute. Concealing the real boundaries of protection or marketing exaggeration of promises is a methodological error of the same class that Sky ECC and EncroChat made.
 
-### 25.1 Два уровня приватности
+### 25.1 Two privacy levels
 
-Фактический уровень приватности пользователя определяется тем, через какой узел он работает с сетью:
+A user's actual privacy level is determined by the node through which they work with the network:
 
-- **Account-only пользователь** — подключается к чужому узлу через IBT уровня 3. Работает без собственной инфраструктуры. Хостящий узел — третья сторона, имеющая видимость metadata пользователя.
-- **Оператор собственного узла** — запускает узел на своём оборудовании. Клиентское приложение подключается к своему узлу локально (WireGuard / Tailscale / локальная сеть). Третьей стороны нет.
+- **Account-only user** — connects to someone else's node through IBT level 3. Works without their own infrastructure. The hosting node is a third party with visibility into the user's metadata.
+- **Operator of their own node** — runs a node on their own hardware. The client application connects to its own node locally (WireGuard / Tailscale / local network). There is no third party.
 
-### 25.2 Что видно и кому — детальная таблица
+### 25.2 What is visible and to whom — detailed table
 
-| Наблюдаемое свойство | Account-only через чужой узел | Свой узел |
+| Observable property | Account-only through a third-party node | Own node |
 |---|---|---|
-| **Содержимое сообщений** | E2EE ML-KEM-768 Double Ratchet; недоступно никому кроме собеседника после сверки отпечатка по [I-16] | То же |
-| **Содержимое Anchor (data)** | Только хэш в сети; контент локально зашифрован ключом владельца | То же |
-| **Финансовые переводы (sender, receiver, amount, время)** | Публично по [I-2] — видит вся сеть | Публично по [I-2] — видит вся сеть |
-| **Факт публикации Anchor и его app_id** | Публично в сети | Публично в сети |
-| **С кем пользователь начинает первую сессию (pre-key bundle lookup)** | Known contact — **приватно** через локальный кэш. Новый контакт — **K=16 batch** (~2–3 бита practical anonymity) | **Приватно** — lookup из локальной реплики consensus state |
-| **Какие имена резолвятся (`@alice` → `account_id`)** | Known name — **приватно** через локальный кэш. Новое имя — **запрос к app-side resolver** (через batch lookup для K-anonymity либо direct query) | **Приватно** — резолвится локально из реплики app registry если узел приложения держит её |
-| **Проверка существования аккаунта (account_exists)** | **K=16 batch** (~2–3 бита practical anonymity) | **Приватно** — проверка локально |
-| **Polling Blob Buffer (подписки на метки очередей)** | Long-term session identification **closed** через rotation per τ₁ + catch-up через RangeSubscribe. Residual: session count (proxy), activity timing, per-τ₁ cross-host collusion — **permanent architectural limits**, см. 25.3 | **Приватно** — подписки локальные |
-| **IP-адрес клиента** | Виден хосту + ISP клиента | IP узла виден всей сети (node_id ↔ endpoint в Node Table) + ISP |
-| **Онлайн-присутствие оператора узла** | Не применимо | Видно сети через подписи BundledConfirmation и SSHA_Reveal |
-| **Тайминг активности на уровне окон** | Хост фиксирует каждое действие | Только cemented operations видны сети (window-level); локальная работа приватна |
-| **Глобальный наблюдатель internet-backbone** | Timing correlation возможна через хоста | Timing correlation возможна напрямую |
+| **Message content** | E2EE ML-KEM-768 Double Ratchet; inaccessible to anyone but the other party after fingerprint verification per [I-16] | Same |
+| **Anchor content (data)** | Only the hash on the network; the content is locally encrypted with the owner's key | Same |
+| **Financial transfers (sender, receiver, amount, time)** | Public per [I-2] — the whole network sees them | Public per [I-2] — the whole network sees them |
+| **The fact of an Anchor publication and its app_id** | Public on the network | Public on the network |
+| **Whom the user starts the first session with (pre-key bundle lookup)** | Known contact — **private** through the local cache. New contact — **K=16 batch** (~2–3 bits of practical anonymity) | **Private** — lookup from the local replica of the consensus state |
+| **Which names are resolved (`@alice` → `account_id`)** | Known name — **private** through the local cache. New name — **a request to the app-side resolver** (through batch lookup for K-anonymity or a direct query) | **Private** — resolved locally from the app registry replica if the application node holds it |
+| **Account-existence check (account_exists)** | **K=16 batch** (~2–3 bits of practical anonymity) | **Private** — checked locally |
+| **Blob Buffer polling (queue-label subscriptions)** | Long-term session identification **closed** through rotation per τ₁ + catch-up through RangeSubscribe. Residual: session count (proxy), activity timing, per-τ₁ cross-host collusion — **permanent architectural limits**, see 25.3 | **Private** — subscriptions are local |
+| **Client IP address** | Visible to the host + the client's ISP | The node's IP is visible to the whole network (node_id ↔ endpoint in the Node Table) + the ISP |
+| **Online presence of the node operator** | Not applicable | Visible to the network through BundledConfirmation and SSHA_Reveal signatures |
+| **Activity timing at the window level** | The host records every action | Only cemented operations are visible to the network (window-level); local work is private |
+| **A global internet-backbone observer** | Timing correlation is possible through the host | Timing correlation is possible directly |
 
-### 25.3 Границы защиты — что не закрывает протокол
+### 25.3 Boundaries of protection — what the protocol does not close
 
-Честная карта того, что выходит за рамки защиты Монтаны по сознательному дизайну:
+An honest map of what is outside Montana's protection by deliberate design:
 
-**Финансовый граф связей.** Все Transfer-ы публичны по [I-2]. Любой анализатор цепочки строит граф денежных связей независимо от того, свой ли у пользователя узел. Это не пробел, это выбор: прозрачная бухгалтерия, публичный аудит supply, отсутствие hidden inflation, совместимость с FATF/MiCA/ETF. Monero-style sokrytie транзакций архитектурно невозможно. Если пользователю критично скрытие финансового графа — Монтана не его протокол.
+**The financial graph of connections.** All Transfers are public per [I-2]. Any chain analyzer builds a graph of monetary connections regardless of whether the user has their own node. This is not a gap, it is a choice: transparent accounting, public audit of supply, no hidden inflation, compatibility with FATF/MiCA/ETF. Monero-style concealment of transactions is architecturally impossible. If concealment of the financial graph is critical to a user — Montana is not their protocol.
 
-**IP оператора узла.** P2P сеть требует известных endpoints. Скрытие IP оператора требовало бы mix-net поверх P2P — нарушение [I-6]. Оператор-активист с политическими угрозами должен использовать дополнительные слои (Tor) поверх Монтаны как opt-in.
+**The node operator's IP.** A P2P network requires known endpoints. Concealing the operator's IP would require a mix-net over P2P — a violation of [I-6]. An activist operator with political threats must use additional layers (Tor) over Montana as an opt-in.
 
-**Global passive adversary.** Противник, наблюдающий весь internet-backbone, может связать исходящий трафик клиента с cemented operations через timing correlation. Защита требует mix-net с random delays — нарушает [I-6]. Выход за рамки protocol-level защиты. Пользователи с такой threat model используют Tor поверх Монтаны.
+**Global passive adversary.** An adversary observing the entire internet backbone can link a client's outgoing traffic to cemented operations through timing correlation. Defense requires a mix-net with random delays — violates [I-6]. Outside the scope of protocol-level protection. Users with such a threat model use Tor over Montana.
 
-**Тип использования через app_id в persistent Anchor.**
+**Usage type through app_id in a persistent Anchor.**
 
-Anchor-операции со статичным `app_id = SHA-256("mt-app" || app_name)` публикуют тип приложения открыто в cemented state — видит вся сеть, не только хост пользователя. Через известный реестр имён приложений `app_id` декодируется обратно в семантическое значение (мессенджер, профиль, ключи шифрования, конкретная платформа).
+Anchor operations with a static `app_id = SHA-256("mt-app" || app_name)` publish the application type openly in cemented state — the whole network sees it, not just the user's host. Through a known registry of application names, the `app_id` is decoded back into a semantic value (messenger, profile, encryption keys, a specific platform).
 
-Messenger-сессии **не** затронуты — они используют ротируемые метки очередей per τ₁ (раздел 5.8), `app_id` для сообщений эфемерный. Затронуты низкочастотные публикации: profile blobs, encryption-keys, pre-key bundles, и любые приложения использующие статичный app_name.
+Messenger sessions are **not** affected — they use rotated queue labels per τ₁ (section 5.8), the `app_id` for messages is ephemeral. Affected are low-frequency publications: profile blobs, encryption keys, pre-key bundles, and any applications using a static app_name.
 
-**Этот класс утечки одинаково виден для всех пользователей независимо от типа подключения.** Anchor попадает в consensus state и реплицируется всей сетью по [I-2]. Свой узел устраняет third-party хоста как наблюдателя, но не скрывает `app_id` от остальной сети — это свойство консенсуса, не хостинга.
+**This class of leak is equally visible to all users regardless of the connection type.** An Anchor enters the consensus state and is replicated by the whole network per [I-2]. Your own node removes the third-party host as an observer, but does not hide the `app_id` from the rest of the network — this is a property of consensus, not of hosting.
 
-Для пользователей с повышенной threat model по app usage profiling:
+For users with an elevated threat model for app-usage profiling:
 
-- Mainstream приложения дают анонимность через толпу — `app_id_messenger` публикуется миллионами пользователей, индивидуальная атрибуция сложнее
-- Niche приложения (narrow-adoption platforms) identifiable по volume + timing patterns публикаций — защиты на protocol level от этого нет
-- Opt-in Tor для IP-level обфускации как дополнительный внепротокольный слой
+- Mainstream applications give anonymity through the crowd — `app_id_messenger` is published by millions of users, individual attribution is harder
+- Niche applications (narrow-adoption platforms) are identifiable by volume + timing patterns of publications — there is no protocol-level protection against this
+- Opt-in Tor for IP-level obfuscation as an additional out-of-protocol layer
 
-**Тайминг cemented operations (temporal profiling).**
+**Timing of cemented operations (temporal profiling).**
 
-Каждая подтверждённая операция в AccountChain (Transfer, Anchor, ChangeKey, CloseAccount) привязана к каноническому `window_index` окна цементирования — виден всей сети по [I-2]. Наблюдатель цепочки строит временной профиль аккаунта:
+Every confirmed operation in the AccountChain (Transfer, Anchor, ChangeKey, CloseAccount) is bound to a canonical `window_index` of the cementing window — visible to the whole network per [I-2]. A chain observer builds a temporal profile of the account:
 
-- **Часовой пояс** — распределение операций по окнам суток выдаёт регион пользователя
-- **Режим жизни** — утро vs вечер, будни vs выходные, регулярные паттерны
-- **Периоды отсутствия** — многодневные паузы активности интерпретируются как offline / отпуск / задержание
-- **Корреляция с внешними событиями** — операция через N секунд после публичного события привязывает аккаунт к этому событию
+- **Time zone** — the distribution of operations over the windows of the day reveals the user's region
+- **Lifestyle** — morning vs evening, weekdays vs weekends, regular patterns
+- **Absence periods** — multi-day pauses in activity are interpreted as offline / vacation / detention
+- **Correlation with external events** — an operation N seconds after a public event binds the account to that event
 
-**Этот класс утечки одинаков для всех пользователей независимо от типа подключения.** Свой узел устраняет третью сторону-хоста как наблюдателя, но операция после cementing распространяется через gossip по всей сети и фиксируется в консенсусе с точным `window_index`. Это consensus property, не hosting.
+**This class of leak is the same for all users regardless of the connection type.** Your own node removes the third-party host as an observer, but an operation after cementing spreads through gossip across the whole network and is recorded in consensus with a precise `window_index`. This is a consensus property, not hosting.
 
-Защита на protocol level архитектурно невозможна без нарушения инвариантов:
+Protection at the protocol level is architecturally impossible without violating invariants:
 
-- **Batch publishing с delay** (клиент копит операции и публикует пачками в random моменты) ломает UX операций — Transfer ждёт подтверждения минуты вместо секунд, user experience в мессенджере ухудшается катастрофически
-- **Cover operations** (fake Transfer / Anchor для маскировки реальных) нарушают [I-2] semantically (засоряют открытую бухгалтерию fake записями) и не защищают — self-cover distinguishable от real по provenance аналогично cover envelope проблеме в Blob Buffer
-- **Mix-net с random delays** нарушает [I-6] (regulatory compatibility — FATF Travel Rule требует traceable timing) и Corollary I-3.a (детерминизм consensus state)
+- **Batch publishing with delay** (the client accumulates operations and publishes them in batches at random moments) breaks operation UX — a Transfer waits for confirmation for minutes instead of seconds, the messenger user experience degrades catastrophically
+- **Cover operations** (fake Transfer / Anchor to mask real ones) violate [I-2] semantically (they clutter the open accounting with fake records) and do not protect — self-cover is distinguishable from real by provenance, analogous to the cover-envelope problem in the Blob Buffer
+- **Mix-net with random delays** violates [I-6] (regulatory compatibility — the FATF Travel Rule requires traceable timing) and Corollary I-3.a (determinism of the consensus state)
 
-**Для пользователей с повышенной threat model по temporal profiling:**
+**For users with an elevated threat model for temporal profiling:**
 
-- Mainstream поведение даёт анонимность через толпу — миллионы операций в каждом окне, индивидуальные паттерны растворяются
-- Разделение ролей между несколькими аккаунтами — разные аккаунты для финансовой активности, мессенджера, публикаций; разные temporal signatures
-- Сознательное избегание уникальных patterns — не публиковать operations через 10 секунд после твита о чувствительной теме; избегать regular timing signatures
-- Opt-in Tor для IP-level обфускации как дополнительный внепротокольный слой (не скрывает window_index но скрывает network origin)
+- Mainstream behavior gives anonymity through the crowd — millions of operations in each window, individual patterns dissolve
+- Separation of roles across several accounts — different accounts for financial activity, the messenger, publications; different temporal signatures
+- Conscious avoidance of unique patterns — do not publish operations 10 seconds after a tweet about a sensitive topic; avoid regular timing signatures
+- Opt-in Tor for IP-level obfuscation as an additional out-of-protocol layer (does not hide the window_index but hides the network origin)
 
-**Компрометация устройства (имплант класса EncroChat на смартфоне).** Если устройство пользователя скомпрометировано на уровне ОС, имплант читает расшифрованные сообщения в памяти приложения. Класс угроз, который протокол не решает превентивно. Частичная защита — [I-17] публичная аудируемость клиентского бинарника (детективный контроль, не превентивный; решение отложено до согласования автором).
+**Device compromise (an EncroChat-class implant on a smartphone).** If the user's device is compromised at the OS level, the implant reads decrypted messages in the application's memory. A class of threats the protocol does not solve preventively. Partial protection — [I-17] public auditability of the client binary (a detective control, not a preventive one; the decision is deferred pending the author's agreement).
 
-**Permanent architectural limits для account-only пользователей через чужой узел.**
+**Permanent architectural limits for account-only users through a third-party node.**
 
-Следующие классы утечек **не закрываются** на protocol level для пользователей работающих через чужой узел. Это не пробелы реализации и не future enhancements — это **архитектурные границы**, вытекающие из инвариантов Montana.
+The following classes of leak are **not closed** at the protocol level for users working through a third-party node. These are not implementation gaps and not future enhancements — they are **architectural boundaries** following from Montana's invariants.
 
-- **Session count (количество активных сессий мессенджера).** Хост видит количество label subscriptions клиента per τ₁ ≈ количество активных сессий. Защита требует cover traffic. При self-cover (клиент генерирует fake messages) blob arrives at host через own IBT connection клиента, в то время как real messages приходят через external gossip — provenance тривиально отличает cover от real. Protocol-level ambient cover traffic нарушает [I-13] (требует compensation механизма, запрещённого в Montana) и не масштабируется на 1B пользователей. Multi-host orchestration (publish через H1, subscribe через H2) уязвима к collusion при одном операторе. В рамках [I-6] + [I-13] + [I-5] + 1B scale — **не существует** механизма закрытия этого класса для account-only.
+- **Session count (the number of active messenger sessions).** The host sees the number of the client's label subscriptions per τ₁ ≈ the number of active sessions. Defense requires cover traffic. With self-cover (the client generates fake messages) the blob arrives at the host through the client's own IBT connection, while real messages arrive through external gossip — provenance trivially distinguishes cover from real. Protocol-level ambient cover traffic violates [I-13] (it requires a compensation mechanism forbidden in Montana) and does not scale to 1B users. Multi-host orchestration (publish through H1, subscribe through H2) is vulnerable to collusion under one operator. Within [I-6] + [I-13] + [I-5] + 1B scale — **there is no** mechanism to close this class for account-only.
 
-- **Activity timing patterns.** Хост видит когда клиент публикует и получает сообщения. Паттерн раскрывает часовой пояс пользователя, режим активности, периоды сна. Защита требует constant-rate cover traffic — те же ограничения что session count. **Не закрывается** architecturally.
+- **Activity timing patterns.** The host sees when the client publishes and receives messages. The pattern reveals the user's time zone, activity schedule, sleep periods. Defense requires constant-rate cover traffic — the same constraints as session count. **Not closed** architecturally.
 
-- **Cross-host collusion в пределах τ₁.** Если хост Alice и хост Bob координируются (legal warrant на оба, state actor владеющий несколькими узлами, commercial data-sharing) — pair identification возможна за один τ₁ observation через correlation publish-receive событий. Label rotation защищает от long-term accumulation, но не от per-τ₁ correlation с participating hosts. **Не закрывается** без введения mix-net (нарушение [I-6]).
+- **Cross-host collusion within τ₁.** If Alice's host and Bob's host coordinate (a legal warrant on both, a state actor owning several nodes, commercial data-sharing) — pair identification is possible in a single τ₁ observation through correlation of publish-receive events. Label rotation protects against long-term accumulation, but not against per-τ₁ correlation with participating hosts. **Not closed** without introducing a mix-net (a violation of [I-6]).
 
-**Единственная полная защита** от этих трёх классов — **Light-Node-at-Home** (раздел 26). Свой узел = отсутствие третьей стороны-наблюдателя = эти leaks не существуют для данного пользователя (хост совпадает с пользователем).
+**The only complete protection** against these three classes is **Light-Node-at-Home** (section 26). Your own node = no third-party observer = these leaks do not exist for that user (the host coincides with the user).
 
-Пользователи с повышенной threat model по любому из этих трёх классов **обязаны** использовать собственный узел. Использование через чужой узел при таких threat models создаёт ложное чувство безопасности.
+Users with an elevated threat model for any of these three classes **must** use their own node. Using a third-party node under such threat models creates a false sense of security.
 
-### 25.4 Обязательная UI-индикация уровня приватности
+### 25.4 Mandatory UI indication of the privacy level
 
-Клиент обязан явно показывать пользователю текущий уровень приватности. Минимальный набор UI-элементов:
+The client is obligated to explicitly show the user the current privacy level. The minimal set of UI elements:
 
-**На главном экране и в заголовке основных экранов** — небольшой визуальный индикатор:
-- **«Свой узел»** (зелёный индикатор) — клиент подключён к узлу владельца (локальный / через WireGuard / Tailscale / статический IP)
-- **«Сторонний узел»** (жёлтый индикатор) — клиент работает через хостящий узел; metadata видна оператору хоста
+**On the main screen and in the header of the main screens** — a small visual indicator:
+- **"Own node"** (a green indicator) — the client is connected to the owner's node (local / through WireGuard / Tailscale / a static IP)
+- **"Third-party node"** (a yellow indicator) — the client works through a hosting node; metadata is visible to the host operator
 
-**В настройках приложения — подробный раздел «Приватность»** с двумя подэкранами:
+**In the application settings — a detailed "Privacy" section** with two sub-screens:
 
-1. **«Что приватно сейчас»** — таблица из раздела 25.2 адаптированная под текущий режим пользователя, с подсветкой применимых строк.
-2. **«Границы защиты»** — текстовая сводка раздела 25.3 простым языком.
+1. **"What is private now"** — the table from section 25.2 adapted to the user's current mode, with the applicable rows highlighted.
+2. **"Boundaries of protection"** — a text summary of section 25.3 in plain language.
 
-**При первом подключении через чужой узел** — блокирующий экран с информацией:
+**On the first connection through a third-party node** — a blocking screen with information:
 
-> Вы подключаетесь к стороннему узлу. Оператор узла видит ваш IP-адрес, время ваших действий и с кем вы начинаете переписку. Содержимое сообщений остаётся зашифрованным и недоступно оператору. Финансовые переводы публичны в сети независимо от выбора узла. Для полной приватности metadata запустите собственный узел — см. раздел «Свой узел» в настройках.
+> You are connecting to a third-party node. The node operator sees your IP address, the timing of your actions, and whom you start a conversation with. Message content remains encrypted and inaccessible to the operator. Financial transfers are public on the network regardless of the node choice. For full metadata privacy, run your own node — see the "Own node" section in settings.
 
-Пользователь нажимает «Понимаю» и продолжает. Скрыть это информирование настройкой **запрещено** — оно обязательно на первом подключении к каждому новому хосту.
+The user taps "I understand" and continues. Hiding this notice with a setting is **forbidden** — it is mandatory on the first connection to each new host.
 
-**При смене режима** (переход «сторонний узел → свой узел» или наоборот) — уведомление с кратким описанием что изменилось.
+**On a mode change** (a transition "third-party node → own node" or vice versa) — a notice with a brief description of what changed.
 
-**При подключении к собственному узлу — информация без блокировки:**
+**On connecting to one's own node — information without blocking:**
 
-> Подключено к вашему узлу. Ваши metadata приватны локально. Финансовые операции остаются публичными по дизайну сети.
+> Connected to your node. Your metadata is private locally. Financial operations remain public by the network's design.
 
-### 25.5 Запреты маркетинговой коммуникации
+### 25.5 Marketing-communication prohibitions
 
-В интерфейсе приложения и внешних коммуникациях запрещены формулировки:
+In the application interface and external communications, the following formulations are forbidden:
 
-- «Абсолютная приватность» / «полная приватность» / «zero-knowledge privacy»
-- «Никто не видит ваши транзакции»
-- «Анонимные платежи»
-- «Неотслеживаемые переводы»
-- «Сокрытие количества ваших контактов» — нарушает permanent limit session count для account-only
-- «Сокрытие времени вашей активности» — нарушает permanent limit activity timing для account-only
-- «Защита от координированного наблюдения» — нарушает permanent limit cross-host collusion для account-only
-- «Скрытие типа используемых приложений» — `app_id` в persistent Anchor виден всей сети, свой узел от этого не защищает
-- «Скрытие времени ваших операций» / «Анонимный тайминг транзакций» — `window_index` каждой cemented operation виден всей сети по [I-2], свой узел от этого не защищает; temporal profiling остаётся open класс по design
+- "Absolute privacy" / "full privacy" / "zero-knowledge privacy"
+- "No one sees your transactions"
+- "Anonymous payments"
+- "Untraceable transfers"
+- "Concealment of the number of your contacts" — violates the permanent limit session count for account-only
+- "Concealment of the time of your activity" — violates the permanent limit activity timing for account-only
+- "Protection against coordinated observation" — violates the permanent limit cross-host collusion for account-only
+- "Concealment of the type of applications used" — the `app_id` in a persistent Anchor is visible to the whole network; your own node does not protect against this
+- "Concealment of the time of your operations" / "Anonymous transaction timing" — the `window_index` of every cemented operation is visible to the whole network per [I-2]; your own node does not protect against this; temporal profiling remains an open class by design
 
-Разрешённые формулировки:
+Permitted formulations:
 
-- «Содержимое сообщений зашифровано end-to-end»
-- «Metadata приватна при работе со своего узла»
-- «Финансовые операции публичны по дизайну сети»
-- «Протокол совместим с AML/KYC требованиями»
-- «Long-term социальный граф защищён через ротацию идентификаторов сессий» (для account-only — это corректно)
-- «Для полной приватности metadata — свой узел» (честная sovereign ladder communication)
+- "Message content is end-to-end encrypted"
+- "Metadata is private when working from your own node"
+- "Financial operations are public by the network's design"
+- "The protocol is compatible with AML/KYC requirements"
+- "The long-term social graph is protected through rotation of session identifiers" (for account-only this is correct)
+- "For full metadata privacy — your own node" (honest sovereign-ladder communication)
 
-Нарушение этого правила — методологический сбой уровня compromise ядра доверия пользователя.
+A violation of this rule is a methodological failure at the level of compromising the core of user trust.
 
 ---
 
