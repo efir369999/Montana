@@ -923,151 +923,151 @@ A special interface for long-form content, primarily for the Montana book.
 
 ---
 
-## 7. Модуль обнаружения контактов
+## 7. Contact discovery module
 
-Пользователь делится `account_id` через QR-коды, пригласительные ссылки или прямой обмен. Каждый контакт в локальной адресной книге получает **petname** — локальный псевдоним, который пользователь задаёт сам, не опираясь на глобальные реестры.
+A user shares their `account_id` through QR codes, invite links, or direct exchange. Each contact in the local address book gets a **petname** — a local alias the user sets themselves, without relying on global registries.
 
-### 7.1 Генератор и сканер QR-кодов
+### 7.1 QR code generator and scanner
 
-**Генератор.**
+**Generator.**
 
-Каждый пользователь имеет свой QR-код, содержащий информацию аккаунта:
+Each user has their own QR code containing account information:
 
 ```
 montana:<account_id>?name=<display_name>&profile=<profile_data_hash>
 ```
 
-`name` и `profile` опциональны. Минимум — `account_id`.
+`name` and `profile` are optional. The minimum is `account_id`.
 
-QR-код доступен в «Настройки → Мой QR-код». Пользователь может показать его другу для добавления в контакты.
+The QR code is available under "Settings → My QR code". The user can show it to a friend to be added as a contact.
 
-**Сканер.**
+**Scanner.**
 
-- В приложении кнопка «Добавить контакт» → «Сканировать QR»
-- Нативная интеграция с камерой (iOS AVFoundation, Android CameraX)
-- Распознавание QR-кода в реальном времени
-- После распознавания:
-  - Разбор URL `montana:`
-  - Извлечение `account_id`, `name`, `profile`
-  - Показ предпросмотра контакта с кнопкой «Добавить в контакты»
-  - Пользователь подтверждает — контакт добавляется
+- In the app, the "Add contact" button → "Scan QR"
+- Native camera integration (iOS AVFoundation, Android CameraX)
+- Real-time QR code recognition
+- After recognition:
+  - Parse the `montana:` URL
+  - Extract `account_id`, `name`, `profile`
+  - Show a contact preview with an "Add to contacts" button
+  - The user confirms — the contact is added
 
-**QR для платежей:**
-- Альтернативный формат: `montana:<account_id>?amount=10&memo=...`
-- Сканирование такого QR открывает форму отправки с заранее заполненными данными
+**QR for payments:**
+- Alternative format: `montana:<account_id>?amount=10&memo=...`
+- Scanning such a QR opens the send form with prefilled data
 
-### 7.2 Получение ключа шифрования
+### 7.2 Obtaining the encryption key
 
-Когда пользователь хочет отправить первое сообщение контакту, приложение должно получить ключ шифрования получателя.
+When the user wants to send the first message to a contact, the app must obtain the recipient's encryption key.
 
-**Процесс запроса:**
+**Request process:**
 
-1. Приложение уже знает `account_id` получателя (из контактов)
-2. Приложение запрашивает через Content Layer: `list_content(app_id_encryption_keys, sender = recipient_account_id)`
-3. Протокол возвращает список Anchor, опубликованных получателем в этом `app_id`
-4. Приложение берёт последний Anchor (по времени финализации)
-5. Приложение скачивает `EncryptionKeyBlob` по `data_hash` из Anchor
-6. Десериализует, извлекает `encryption_pubkey`
-7. Кэширует результат локально (инвалидация при следующем входе получателя или вручную)
+1. The app already knows the recipient's `account_id` (from contacts)
+2. The app requests through the Content Layer: `list_content(app_id_encryption_keys, sender = recipient_account_id)`
+3. The protocol returns a list of Anchors the recipient published under this `app_id`
+4. The app takes the latest Anchor (by finalization time)
+5. The app downloads the `EncryptionKeyBlob` by the `data_hash` from the Anchor
+6. Deserializes it and extracts `encryption_pubkey`
+7. Caches the result locally (invalidated on the recipient's next sign-in or manually)
 
-**Если получатель не опубликовал ключ шифрования:**
-- Приложение не может отправить зашифрованное сообщение
-- Интерфейс показывает «Этот пользователь ещё не опубликовал ключ шифрования. Ему нужно хотя бы раз открыть Montana App».
-- Пользователь может отправить «приглашение» — специальный публичный Anchor с просьбой «активировать мессенджер»
+**If the recipient has not published an encryption key:**
+- The app cannot send an encrypted message
+- The interface shows "This user has not published an encryption key yet. They need to open Montana App at least once."
+- The user can send an "invitation" — a special public Anchor asking to "activate the messenger"
 
-### 7.3 Локальная адресная книга и petname-ы
+### 7.3 Local address book and petnames
 
-Каждое приложение хранит свой локальный список контактов в зашифрованной базе SQLite.
+Each app keeps its own local contact list in an encrypted SQLite database.
 
-**Принцип petname-ов.** В Montana идентичность — это `account_id` (32-байтовый хэш от публичного ключа). Этот идентификатор глобально уникален, но для человека нечитаем. Чтобы работать с контактами удобно, пользователь присваивает каждому контакту **petname** — локальный псевдоним, видимый только ему. Никакой глобальной синхронизации petname-ов — это приватное имя в приватной адресной книге.
+**The petname principle.** In Montana the identity is the `account_id` (a 32-byte hash of the public key). This identifier is globally unique but unreadable for a human. To work with contacts conveniently, the user assigns each contact a **petname** — a local alias visible only to them. There is no global synchronization of petnames — it is a private name in a private address book.
 
-Petname независим от опубликованного профиля контакта: контакт может называться в сети «Elena Petrova», но пользователь видит его локально как «Мама». Petname **приоритетнее** опубликованного отображаемого имени в интерфейсе.
+A petname is independent of the contact's published profile: the contact may be called "Elena Petrova" on the network, but the user sees them locally as "Mom". The petname **takes priority** over the published display name in the interface.
 
-**Запись контакта:**
-- `account_id` (32 B, глобально уникальный идентификатор)
-- `petname` (локальный псевдоним, задаётся пользователем при добавлении контакта; строка UTF-8 до 64 символов; обязательное поле)
-- `petname_set_at` (временная метка когда petname был назначен или обновлён)
-- `trust_level` (способ добавления: `qr_scan` / `invite_link` / `direct_share` / `chat_reply`)
-- `first_added_at` (временная метка первого добавления)
-- `last_interaction` (временная метка последнего обмена сообщением или операции)
-- `cached_published_name` (опционально — последнее отображаемое имя из `ProfileBlob` контакта; для справки)
-- `cached_avatar_hash` (опционально — последний `avatar_hash` из `ProfileBlob`; для справки)
-- `notes` (опционально — приватные заметки пользователя, видимые только ему)
+**Contact record:**
+- `account_id` (32 B, the globally unique identifier)
+- `petname` (a local alias set by the user when adding the contact; a UTF-8 string up to 64 characters; a mandatory field)
+- `petname_set_at` (timestamp of when the petname was assigned or updated)
+- `trust_level` (how it was added: `qr_scan` / `invite_link` / `direct_share` / `chat_reply`)
+- `first_added_at` (timestamp of first addition)
+- `last_interaction` (timestamp of the last message exchange or operation)
+- `cached_published_name` (optional — the last display name from the contact's `ProfileBlob`; for reference)
+- `cached_avatar_hash` (optional — the last `avatar_hash` from the `ProfileBlob`; for reference)
+- `notes` (optional — the user's private notes, visible only to them)
 
-**Процесс назначения petname:**
-- При добавлении контакта через QR, пригласительную ссылку или обмен интерфейс обязательно запрашивает petname **до** сохранения контакта («Как вы хотите назвать этот контакт?»). Предзаполнение возможно из опубликованного `display_name` если контакт опубликовал `ProfileBlob`, но пользователь всегда может изменить.
-- Petname изменяем в любой момент через «Настройки контакта → Изменить petname».
-- Petname уникален в пределах **локальной** адресной книги пользователя (чтобы избежать путаницы между двумя «Alice»). При конфликте интерфейс предлагает дисамбигуацию («Alice (работа)», «Alice (старый телефон)» и тому подобное).
-- При переходе между устройствами petname-ы синхронизируются через зашифрованный blob резервной копии на узле пользователя (если настроена многоустройственность), но не публикуются никуда.
+**Petname assignment process:**
+- When adding a contact via QR, invite link, or exchange, the interface always requests a petname **before** saving the contact ("What do you want to call this contact?"). Prefill is possible from the published `display_name` if the contact published a `ProfileBlob`, but the user can always change it.
+- The petname can be changed at any time through "Contact settings → Change petname".
+- The petname is unique within the user's **local** address book (to avoid confusion between two "Alice"s). On a conflict the interface offers disambiguation ("Alice (work)", "Alice (old phone)", and the like).
+- When moving between devices, petnames are synchronized through an encrypted backup blob on the user's node (if multi-device is configured), but are not published anywhere.
 
-**Опубликованный профиль и petname:**
-- Опубликованный профиль: что контакт опубликовал о себе (через `ProfileBlob` в Application Layer, см. раздел 8).
-- Petname: как пользователь видит этот контакт локально.
-- Petname **всегда приоритетнее** опубликованного `display_name` для отображения в интерфейсе.
-- Интерфейс может показать опубликованное `display_name` рядом с petname мелким шрифтом («Мама · elena.petrova»), чтобы пользователь мог верифицировать идентичность если контакт недавно изменил опубликованный профиль.
+**Published profile and petname:**
+- Published profile: what the contact published about themselves (through `ProfileBlob` in the Application Layer, see section 8).
+- Petname: how the user sees this contact locally.
+- The petname **always takes priority** over the published `display_name` for display in the interface.
+- The interface may show the published `display_name` next to the petname in a small font ("Mom · elena.petrova") so the user can verify the identity if the contact recently changed the published profile.
 
-**Защита от выдачи себя за другого через petname-ы.**
-- Petname-ы — локальное пространство имён, невозможно через них имитировать другого пользователя глобально (публично контакт виден только через `account_id`).
-- При изменении опубликованного `display_name` контакта (детектируется через новый Anchor на `ProfileBlob`) интерфейс показывает мягкое уведомление: «Ваш контакт {petname} изменил публичное имя с «{старое}» на «{новое}». Petname остаётся неизменным.»
-- Если два контакта в адресной книге имеют одинаковый `cached_published_name` (например оба «Alice»), дифференциация petname обязательна при добавлении.
+**Protection against impersonation through petnames.**
+- Petnames are a local namespace; they cannot be used to impersonate another user globally (publicly a contact is seen only through `account_id`).
+- When a contact's published `display_name` changes (detected through a new Anchor on the `ProfileBlob`), the interface shows a soft notice: "Your contact {petname} changed their public name from '{old}' to '{new}'. The petname stays unchanged."
+- If two contacts in the address book have the same `cached_published_name` (for example both "Alice"), petname differentiation is mandatory on addition.
 
-**Профиль контакта (кэш):**
-- При первом добавлении контакта приложение автоматически загружает его `ProfileBlob` (если опубликован)
-- `ProfileBlob` содержит `display_name` и `avatar_hash`
-- Аватар загружается отдельным blob через Content Layer
-- Информация кэшируется локально в `cached_published_name` и `cached_avatar_hash` и обновляется при новом Anchor в `app_id` профиля от этого аккаунта
-- Кэшированные поля используются только как вспомогательная информация (подсказка для верификации идентичности), не как основное отображение
+**Contact profile (cache):**
+- On first adding a contact, the app automatically downloads its `ProfileBlob` (if published)
+- The `ProfileBlob` contains `display_name` and `avatar_hash`
+- The avatar is downloaded as a separate blob through the Content Layer
+- The information is cached locally in `cached_published_name` and `cached_avatar_hash` and updated on a new Anchor in the profile `app_id` from this account
+- The cached fields are used only as auxiliary information (a hint for identity verification), not as the primary display
 
-### 7.4 Резолв имени (app-level)
+### 7.4 Name resolution (app-level)
 
-Разрешение глобальных имён (`@alice` → `account_id`) — задача прикладного слоя, **не протокола**. Протокол не имеет встроенной таблицы имён; uniqueness гарантируется только в рамках конкретного app-private registry. Разные приложения могут иметь конфликтующие `@alice` — это разные люди либо тот же, протокол не различает (см. §19.7 Pattern F — Auction / unique resource allocation в Protocol spec → «Полная экономическая картина»).
+Resolution of global names (`@alice` → `account_id`) is an application-layer task, **not a protocol one**. The protocol has no built-in name table; uniqueness is guaranteed only within a specific app-private registry. Different applications may have conflicting `@alice` — these are different people or the same one; the protocol does not distinguish (see §19.7 Pattern F — Auction / unique resource allocation in the Protocol spec → "Full economic picture").
 
-Eталонное приложение Монтаны реализует name resolution через **app-published Anchor registry**:
+The Montana reference application implements name resolution through an **app-published Anchor registry**:
 
 **Registry contract.**
 
-- Application maintains owned SPA (Service Provider Account) который хранит canonical mapping `name → account_id`
-- Каждое присуждение имени публикуется через `Anchor(app_id="mt-app:montana-names", data_hash=H(canonical_record))` от app SPA
-- Canonical record содержит: `(name_bytes, owner_account_id, awarded_window, expiry_window if applicable)`
-- Anchor содержит только hash; full record хранится в app-private database, реплицируется через app-side gossip между узлами эталонного приложения
-- Уникальность имени enforced через app-side allocation logic (см. §7.5 — auction либо first-come-first-served)
+- The application maintains an owned SPA (Service Provider Account) that holds the canonical mapping `name → account_id`
+- Each name award is published through `Anchor(app_id="mt-app:montana-names", data_hash=H(canonical_record))` from the app SPA
+- The canonical record contains: `(name_bytes, owner_account_id, awarded_window, expiry_window if applicable)`
+- The Anchor contains only the hash; the full record is stored in the app-private database, replicated through app-side gossip between the reference application's nodes
+- Name uniqueness is enforced through app-side allocation logic (see §7.5 — auction or first-come-first-served)
 
-**Двухуровневый клиент resolution:**
+**Two-level client resolution:**
 
-**Уровень 1 — Локальный кэш (hot path):**
+**Level 1 — Local cache (hot path):**
 
-Клиент поддерживает local map `known_names: Map<string, account_id>` только для известных ему имён:
-- Имена всех контактов из адресной книги
-- Ранее успешно резолвленные имена (cache)
-- Имена участников активных чатов
+The client maintains a local map `known_names: Map<string, account_id>` only for the names it knows:
+- Names of all contacts in the address book
+- Previously successfully resolved names (cache)
+- Names of participants in active chats
 
-Типичный размер для пользователя с 100–1000 контактов: `<100 КБ`, независимо от размера сети. **Zero-leak** — никаких запросов к сети.
+Typical size for a user with 100–1000 contacts: `<100 KB`, independent of network size. **Zero-leak** — no requests to the network.
 
-**Уровень 2 — Запрос к app SPA либо к replicated app-side database (cold path):**
+**Level 2 — Request to the app SPA or to a replicated app-side database (cold path):**
 
-Когда пользователь ищет **новое** имя (не в локальном кэше):
+When the user searches for a **new** name (not in the local cache):
 
-1. Клиент отправляет lookup query узлу эталонного приложения (через стандартный IBT уровень 3 либо через batch lookup protocol для приватности)
-2. Узел приложения резолвит query через app-private database (replicated copy of name registry)
-3. Возвращает `account_id` либо `not found`
-4. Клиент добавляет `(name, account_id)` в локальный кэш для последующих lookups
+1. The client sends a lookup query to a node of the reference application (through the standard IBT level 3 or through a batch lookup protocol for privacy)
+2. The application node resolves the query through the app-private database (a replicated copy of the name registry)
+3. Returns the `account_id` or `not found`
+4. The client adds `(name, account_id)` to the local cache for subsequent lookups
 
-**Privacy через batch lookup:** lookup может идти через generic `BatchLookupRequest(query_type=0x01 pre_key_bundle | 0x03 account_exists)` если клиент сначала резолвит app-private name → account_id, потом делает protocol-level batch lookup на bundle / existence. Никаких protocol-level nickname query types нет — protocol agnostic к app-level naming schemes.
+**Privacy through batch lookup:** a lookup may go through the generic `BatchLookupRequest(query_type=0x01 pre_key_bundle | 0x03 account_exists)` if the client first resolves the app-private name → account_id and then makes a protocol-level batch lookup for the bundle / existence. There are no protocol-level nickname query types — the protocol is agnostic to app-level naming schemes.
 
-**Поисковая строка UX:**
+**Search bar UX:**
 
-- Пользователь вводит `@alice`
-- Клиент нормализует в нижний регистр
-- Сначала проверяет локальный кэш (мгновенно)
-- Если не найдено — отправляет lookup query к app-side resolver, latency ~300-500 мс
-- При успехе — показ профиля (имя, аватар из `ProfileBlob` если есть) и кнопка «Добавить в контакты»
-- При неудаче — «Имя `@alice` не зарегистрировано в реестре приложения; попросите контакт сообщить `account_id` через QR, ссылку или mesh»
+- The user types `@alice`
+- The client normalizes it to lowercase
+- It first checks the local cache (instant)
+- If not found — it sends a lookup query to the app-side resolver, latency ~300–500 ms
+- On success — it shows the profile (name, avatar from `ProfileBlob` if any) and an "Add to contacts" button
+- On failure — "The name `@alice` is not registered in the application registry; ask the contact to send the `account_id` via QR, a link, or mesh"
 
-**Подсказки интерфейса:**
+**Interface hints:**
 
-- **Нечёткий поиск** опционально — только среди известных пользователю имён (локальный кэш) либо через app-side полнотекстовый индекс если приложение его поддерживает
-- **Ввод на кириллице или кана:** допустимый набор символов имени определяет приложение; reference приложение использует ASCII `[a-z0-9_-]` для совместимости с URL и QR
-- **Cross-app aliases:** пользователь может зарегистрировать одно и то же `@alice` в нескольких приложениях; resolution всегда per-app namespace
+- **Fuzzy search** optionally — only among the names the user knows (local cache) or through an app-side full-text index if the application supports it
+- **Cyrillic or kana input:** the allowed set of name characters is defined by the application; the reference application uses ASCII `[a-z0-9_-]` for compatibility with URLs and QR
+- **Cross-app aliases:** a user may register the same `@alice` in several applications; resolution is always per-app namespace
 
 ### 7.4a Получение связки предварительных ключей (pre-key bundle)
 
