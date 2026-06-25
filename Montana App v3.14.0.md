@@ -1975,143 +1975,143 @@ PermissionConfig {
 
 The configuration is stored on the node. The Signer Daemon loads the configuration on startup and verifies the signature. If the signature is invalid — the Signer Daemon rejects all write operations (fallback to the "Observer" level).
 
-### 17.4 Делегирование подписи
+### 17.4 Signature delegation
 
-Приватный ключ **никогда** не доступен процессу Юноны. Подпись выполняется через демон подписи — отдельный процесс с собственным адресным пространством.
+The private key is **never** available to the Juno process. Signing is performed through the Signer Daemon — a separate process with its own address space.
 
-**Процесс подписи:**
+**Signing process:**
 
 ```
-Юнона формирует операцию (без подписи)
+Juno builds an operation (unsigned)
     │
     ▼
-IPC → демон подписи
+IPC → Signer Daemon
     │
-    ├── Проверка: уровень полномочий позволяет?
-    ├── Проверка: лимиты не превышены?
-    ├── Проверка: операция не в запрещённом списке?
-    ├── Проверка: ограничение темпа (≤ 1 операция / τ₁ на аккаунт)?
+    ├── Check: does the permission level allow it?
+    ├── Check: are the limits not exceeded?
+    ├── Check: is the operation not in the forbidden list?
+    ├── Check: rate limit (≤ 1 operation / τ₁ per account)?
     │
-    ├── ДА → подписать ML-DSA-65, вернуть подписанную операцию,
-    │         записать в журнал аудита
+    ├── YES → sign with ML-DSA-65, return the signed operation,
+    │         write to the audit log
     │
-    └── НЕТ → отклонить, вернуть причину отказа,
-              если причина = превышение лимита:
-                push-уведомление на телефон владельца,
-                операция в очередь ожидания (срок истечения: 10 окон)
+    └── NO → reject, return the reason,
+              if the reason = a limit was exceeded:
+                a push notification to the owner's phone,
+                the operation into a pending queue (expiry: 10 windows)
 ```
 
-**Push-подтверждение для операций выше лимита:**
+**Push confirmation for operations above the limit:**
 
-1. Демон подписи отправляет push на телефон владельца
-2. Телефон показывает: «Юнона хочет отправить 500 Ɉ на mt4ZGfe... Причина: [контекст от Юноны]»
-3. Владелец подтверждает или отклоняет
-4. Если подтверждено — демон подписи подписывает, возвращает Юноне
-5. Если отклонено — Юнона получает отказ, уведомляет пользователя в чате
-6. Если телефон недоступен — операция ждёт в очереди до 10 окон, затем отклоняется автоматически
+1. The Signer Daemon sends a push to the owner's phone
+2. The phone shows: "Juno wants to send 500 Ɉ to mt4ZGfe... Reason: [context from Juno]"
+3. The owner confirms or rejects
+4. If confirmed — the Signer Daemon signs and returns to Juno
+5. If rejected — Juno receives a rejection and notifies the user in the chat
+6. If the phone is unavailable — the operation waits in the queue for up to 10 windows, then is rejected automatically
 
-**Формат IPC:**
+**IPC format:**
 
 ```
 SignRequest {
-  operation_bytes    variable  (сериализованная операция без подписи)
-  context            строка    (человекочитаемое описание: «перевод 50 Ɉ Бобу, причина: оплата подписки»)
-  requested_by       строка    ("juno" | "user" | "automated_task:<task_id>")
+  operation_bytes    variable  (the serialized operation without a signature)
+  context            string    (a human-readable description: "transfer of 50 Ɉ to Bob, reason: subscription payment")
+  requested_by       string    ("juno" | "user" | "automated_task:<task_id>")
 }
 
 SignResponse {
-  status             u8        (0 = подписано, 1 = отклонено, 2 = ожидает подтверждения)
-  signed_bytes       variable  (только если status = 0)
-  rejection_reason   строка    (только если status = 1)
-  approval_id        u64       (только если status = 2, для отслеживания)
+  status             u8        (0 = signed, 1 = rejected, 2 = awaiting confirmation)
+  signed_bytes       variable  (only if status = 0)
+  rejection_reason   string    (only if status = 1)
+  approval_id        u64       (only if status = 2, for tracking)
 }
 ```
 
-**Ограничение темпа в демоне подписи.** Протокол ограничивает аккаунт одной операцией за окно τ₁ (правило зависимости). Демон подписи энфорсит это правило: отклоняет вторую подпись за одно окно. Это не доверие к Юноне — это энфорсмент на уровне подписчика.
+**Rate limiting in the Signer Daemon.** The protocol limits an account to one operation per τ₁ window (the dependency rule). The Signer Daemon enforces this rule: it rejects a second signature within one window. This is not trust in Juno — it is enforcement at the signer level.
 
-### 17.5 Среда исполнения LLM
+### 17.5 LLM execution environment
 
-Юнона работает на одной из двух сред исполнения — выбор делает **оператор узла**. Спецификация не предписывает ни один вариант, фиксирует требования к обоим. Выбор хранится в локальной конфигурации узла, переключается в любой момент.
+Juno runs on one of two execution environments — the choice is made by the **node operator**. The specification mandates neither variant; it fixes requirements for both. The choice is stored in the local node configuration and can be switched at any time.
 
-**Вариант A — Локальная LLM (рекомендуемый по умолчанию, полная суверенность).**
+**Variant A — Local LLM (recommended default, full sovereignty).**
 
-Инференс на железе самого узла через Ollama (или совместимую среду — llama.cpp, vLLM, любая эквивалентная). Ни один токен данных пользователя не покидает узел. Применим если железо узла позволяет — см. таблицу моделей по RAM ниже. Это вариант по умолчанию для оператора, выбирающего максимальную приватность и независимость от третьих сторон.
+Inference on the node's own hardware through Ollama (or a compatible environment — llama.cpp, vLLM, any equivalent). Not a single token of user data leaves the node. Applicable if the node's hardware allows it — see the model-by-RAM table below. This is the default variant for an operator choosing maximum privacy and independence from third parties.
 
-**Вариант B — Внешний LLM API.**
+**Variant B — External LLM API.**
 
-Инференс через сторонний LLM-провайдер по HTTPS (Anthropic, OpenAI, любой совместимый по формату). Применим когда оператор сознательно предпочитает модель большей мощности чем позволяет локальное железо, либо когда узел не вытягивает локальную модель приемлемой скорости. Компромисс по приватности явный и непосредственный: содержимое запросов уходит на сторонний сервис со всеми вытекающими последствиями (логирование провайдером, юрисдикция, retention). Это **сознательный выбор оператора**, документированный в интерфейсе.
+Inference through a third-party LLM provider over HTTPS (Anthropic, OpenAI, any format-compatible one). Applicable when the operator deliberately prefers a more powerful model than the local hardware allows, or when the node cannot run a local model at an acceptable speed. The privacy trade-off is explicit and direct: request content goes to a third-party service with all the resulting consequences (provider logging, jurisdiction, retention). This is a **deliberate operator choice**, documented in the interface.
 
-**Гибридный режим.** Допустим: часть запросов локально, часть через API, детализация по типу запроса. Например простые ответы и операции с приватными данными — локально, сложные аналитические запросы без чувствительных данных — через API. Конфигурируется оператором.
+**Hybrid mode.** Allowed: some requests locally, some through the API, with granularity by request type. For example, simple replies and operations on private data — locally; complex analytical queries without sensitive data — through the API. Configured by the operator.
 
-Индикация в интерфейсе обязательна для обоих вариантов: рядом с каждым ответом Юноны — значок 🔒 «локальный инференс» или ☁ «внешний API: <имя провайдера>». Пользователь всегда видит откуда пришёл ответ.
+Interface indication is mandatory for both variants: next to each Juno reply — a 🔒 "local inference" badge or ☁ "external API: <provider name>". The user always sees where the answer came from.
 
-**Рекомендуемые модели для Варианта A:**
+**Recommended models for Variant A:**
 
-| RAM узла | Рекомендуемая модель | Скорость инференса |
+| Node RAM | Recommended model | Inference speed |
 |---|---|---|
-| 16 GB | 8B параметров (Llama 3.1 8B, Qwen 2.5 7B) | ≈ 15 ток/с |
-| 24 GB и больше | 13–14B параметров (Llama 3.1 13B) | ≈ 10 ток/с |
-| 32 GB и больше | 32B параметров | ≈ 5 ток/с |
+| 16 GB | 8B parameters (Llama 3.1 8B, Qwen 2.5 7B) | ≈ 15 tok/s |
+| 24 GB and more | 13–14B parameters (Llama 3.1 13B) | ≈ 10 tok/s |
+| 32 GB and more | 32B parameters | ≈ 5 tok/s |
 
-Модель скачивается через Ollama при первичной настройке. Пользователь выбирает из списка рекомендованных или указывает совместимую модель вручную.
+The model is downloaded through Ollama during onboarding. The user picks from the list of recommended ones or specifies a compatible model manually.
 
-**Вызов инструментов.** Юнона вызывает API протокола как инструменты. Формат: LLM генерирует структурированный JSON с именем инструмента и параметрами → среда исполнения Юноны разбирает → вызывает соответствующий API → результат возвращается LLM для формирования ответа. Вызов инструментов работает идентично в обоих вариантах.
+**Tool calling.** Juno calls the protocol API as tools. Format: the LLM generates structured JSON with a tool name and parameters → Juno's execution environment parses it → calls the corresponding API → the result is returned to the LLM to form the answer. Tool calling works identically in both variants.
 
-**Системный промпт.** Содержит:
-- Роль Юноны (агент Montana, лояльность к владельцу)
-- Доступные инструменты и их описания
-- Текущий уровень полномочий и лимиты
-- Ключевые принципы Montana (из базы знаний)
-- Контекст владельца (имя, предпочтения из локальной конфигурации)
+**System prompt.** Contains:
+- Juno's role (a Montana agent, loyal to the owner)
+- The available tools and their descriptions
+- The current permission level and limits
+- The key principles of Montana (from the knowledge base)
+- The owner's context (name, preferences from the local configuration)
 
-**Контекстное окно.** Резюме предыдущих разговоров хранится в локальной SQLite. При новой сессии — последние N сообщений и резюме загружаются в контекст. Запросы RAG дополняют контекст релевантными данными.
+**Context window.** A summary of previous conversations is stored in the local SQLite. On a new session — the last N messages and the summary are loaded into the context. RAG queries supplement the context with relevant data.
 
-**Обязательные механизмы для Варианта B (внешний API).**
+**Mandatory mechanisms for Variant B (external API).**
 
-Если оператор выбрал Вариант B (полностью или для части запросов в гибридном режиме) — действуют обязательные механизмы:
+If the operator chose Variant B (fully or for part of the requests in hybrid mode) — mandatory mechanisms apply:
 
-- **Белый список доменов** в локальной конфигурации узла. Запросы уходят только на явно разрешённые URL. Примеры по умолчанию: `api.anthropic.com`, `api.openai.com`. Оператор может добавить свой URL (self-hosted endpoint, корпоративный прокси)
-- **Просмотр содержимого запроса** перед первой отправкой каждого типа в сессии. Оператор может настроить «не спрашивать для типа X» — подтверждение становится «один раз для категории», не «каждый раз»
-- **Индикатор провайдера в интерфейсе** — обязателен для каждого ответа полученного через Вариант B
-- **Переключение на Вариант A** — одна настройка, эффект немедленный
-- **Логирование внешних вызовов** в журнал аудита (временная метка, провайдер, тип запроса, размер полезной нагрузки — без полного содержимого, чтобы журнал не дублировал утечку)
+- **A domain whitelist** in the local node configuration. Requests go only to explicitly allowed URLs. Default examples: `api.anthropic.com`, `api.openai.com`. The operator may add their own URL (a self-hosted endpoint, a corporate proxy)
+- **Reviewing the request content** before the first send of each type in a session. The operator can configure "do not ask for type X" — confirmation becomes "once per category", not "every time"
+- **A provider indicator in the interface** — mandatory for each answer obtained through Variant B
+- **Switching to Variant A** — a single setting, the effect is immediate
+- **Logging external calls** to the audit log (timestamp, provider, request type, payload size — without the full content, so the log does not duplicate the leak)
 
-При недоступности внешнего API (сетевая ошибка, ограничение темпа, отказ провайдера) — Юнона **не падает молча**: показывает оператору ошибку и предлагает либо повторить, либо переключиться на Вариант A на лету (если локальная модель установлена), либо отложить запрос. Автоматическое переключение из B в A без явного согласия оператора **запрещено** — это могло бы изменить предположение о приватности запроса без ведома пользователя.
+When the external API is unavailable (a network error, rate limiting, a provider failure) — Juno **does not fail silently**: it shows the operator the error and offers either to retry, or to switch to Variant A on the fly (if a local model is installed), or to defer the request. Automatic switching from B to A without the operator's explicit consent is **forbidden** — it could change the privacy assumption of the request without the user's knowledge.
 
-### 17.6 Память и обучение
+### 17.6 Memory and learning
 
-**Локальная индексация данных владельца.**
+**Local indexing of the owner's data.**
 
-Юнона индексирует:
-- Файлы в Content Layer (персистентные blob-ы подписанных `app_id`)
-- Историю сообщений (открытый текст из локальной SQLite)
-- Посты подписанных каналов
-- Историю операций AccountChain
-- Метаданные контактов
+Juno indexes:
+- Files in the Content Layer (persistent blobs of subscribed `app_id`s)
+- Message history (plaintext from the local SQLite)
+- Posts of subscribed channels
+- AccountChain operation history
+- Contact metadata
 
-Формат: чанки ≈ 500 токенов, эмбеддинги через локальную модель эмбеддингов (Ollama), поиск по косинусной близости, извлечение top-K. Инкрементальное обновление при новых данных.
+Format: chunks of ≈ 500 tokens, embeddings through a local embedding model (Ollama), search by cosine similarity, top-K retrieval. Incremental update on new data.
 
-**Конвейер RAG:**
+**RAG pipeline:**
 
 ```
-Запрос пользователя
+User query
     │
     ▼
-Эмбеддинг запроса (локально)
+Query embedding (locally)
     │
     ▼
-Поиск по косинусной близости по индексу → top-5 релевантных чанков
+Cosine-similarity search over the index → top-5 relevant chunks
     │
     ▼
-Чанки + системный промпт + запрос → LLM → ответ
+Chunks + system prompt + query → LLM → answer
 ```
 
-**Ограничения:**
-- Индексируются только данные **своего владельца** (не массовое сканирование Таблицы аккаунтов)
-- Доступ только для чтения к Таблице аккаунтов — для запроса конкретного контакта, не для массового сканирования
-- Юнона не модифицирует свою базу знаний (17.13). Индекс RAG данных владельца — контекст, не знания протокола
+**Limitations:**
+- Only the **owner's own** data is indexed (not a mass scan of the Account Table)
+- Read-only access to the Account Table — for querying a specific contact, not for a mass scan
+- Juno does not modify its knowledge base (17.13). The RAG index of the owner's data is context, not protocol knowledge
 
-**Персонализация.** Стиль ответов, приоритеты, предпочтения — в локальной конфигурации. Настраиваются через диалог с Юноной или через настройки в приложении.
+**Personalization.** Response style, priorities, preferences — in the local configuration. Configured through dialogue with Juno or through settings in the app.
 
 ### 17.7 Пользовательский интерфейс
 
