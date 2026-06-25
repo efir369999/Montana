@@ -633,195 +633,195 @@ Plaintext {
 
 For files and media, `body` contains a reference to a separate blob with encrypted content (through the Content Layer).
 
-### 5.6 Экраны чата и офлайн-платежи через mesh
+### 5.6 Chat screens and offline payments over mesh
 
-**Экран списка чатов:**
-- Список всех активных чатов отсортированных по последнему сообщению
-- Для каждого чата: имя контакта (из профиля или локального переопределения), последнее сообщение (предпросмотр), временная метка, счётчик непрочитанных
-- Жесты: заглушить, архивировать, удалить чат
-- Кнопка создания нового чата (выбор контакта или сканирование QR)
+**Chat list screen:**
+- A list of all active chats sorted by the last message
+- For each chat: contact name (from the profile or a local override), last message (preview), timestamp, unread counter
+- Gestures: mute, archive, delete chat
+- A button to create a new chat (pick a contact or scan a QR)
 
-**Экран чата:**
-- История сообщений в виде «пузырей»
-- Пузырь содержит: текст или медиа, временную метку, индикатор состояния (отправлено / подтверждено / применено / прочитано)
-- Поле ввода внизу с опциями: текст, фото, файл, голосовое сообщение (в текущей области — только текст и фото / файл)
-- Заголовок: имя контакта, статус онлайн (если доступен), действия (инфо, заглушить, поиск)
-- Долгое нажатие на сообщение: копировать, удалить у себя, ответить
+**Chat screen:**
+- Message history as "bubbles"
+- A bubble contains: text or media, a timestamp, a status indicator (sent / confirmed / applied / read)
+- An input field at the bottom with options: text, photo, file, voice message (in the current scope — only text and photo / file)
+- Header: contact name, online status (if available), actions (info, mute, search)
+- Long-press on a message: copy, delete for me, reply
 
-**Офлайн-платёж через mesh-транспорт (при активном режиме mesh, см. 11.6).**
+**Offline payment over the mesh transport (when mesh mode is active, see 11.6).**
 
-Когда пользователь инициирует `Transfer` в чате (отправить Монтана собеседнику) и приложение определяет отсутствие интернет-соединения:
+When the user initiates a `Transfer` in the chat (send Montana to the other party) and the app detects no internet connection:
 
-- Операция `Transfer` подписывается локально как обычно (подпись ML-DSA-65 с `prev_hash = frontier` текущего аккаунта)
-- Подписанный blob передаётся через mesh-транспорт к получателю (либо напрямую, если он в радиусе mesh, либо через буфер хранения-и-пересылки промежуточных устройств)
-- Интерфейс показывает платёж в состоянии **«ожидает — будет финализирован при восстановлении связи»** с отличительной иконкой (жёлтый цвет, песочные часы)
-- Получатель при получении видит `Transfer` с пометкой «ожидает цементирования» — не подтверждено, не применено
+- The `Transfer` operation is signed locally as usual (an ML-DSA-65 signature with `prev_hash = frontier` of the current account)
+- The signed blob is delivered over the mesh transport to the recipient (either directly, if within mesh range, or through a store-and-forward buffer of intermediate devices)
+- The interface shows the payment in the **"pending — will be finalized when connectivity is restored"** state with a distinctive icon (yellow, hourglass)
+- On receipt the recipient sees a `Transfer` marked "awaiting cementing" — not confirmed, not applied
 
-**Состояния офлайн-платежа в интерфейсе:**
+**Offline-payment states in the interface:**
 
-| Состояние | Визуал | Смысл |
+| State | Visual | Meaning |
 |---|---|---|
-| `mesh_pending` | жёлтая иконка | Подписан, через mesh доставлен, ожидает цементирования |
-| `cementing` | серая иконка синхронизации | Первое устройство с интернетом получило операцию, идёт gossip в сеть |
-| `confirmed` | зелёная галочка | Кворум достигнут, операция сцементирована в TimeChain |
-| `settled` | двойная зелёная галочка | Применено на границе окна, баланс обновлён в Таблице аккаунтов |
-| `rejected` | красный X | Операция отклонена (конфликтующая сцементированная операция с тем же `prev_hash`; см. предупреждение ниже) |
+| `mesh_pending` | yellow icon | Signed, delivered over mesh, awaiting cementing |
+| `cementing` | gray sync icon | The first device with internet received the operation; gossip into the network is in progress |
+| `confirmed` | green check | Quorum reached, the operation is cemented in the TimeChain |
+| `settled` | double green check | Applied at the window boundary, balance updated in the Account Table |
+| `rejected` | red X | The operation was rejected (a conflicting cemented operation with the same `prev_hash`; see the warning below) |
 
-**Предупреждение для ненадёжного контрагента.** При инициации офлайн-платежа контакту с уровнем доверия ниже «друг» (см. 7.3) приложение показывает диалог-предупреждение:
+**Warning for an untrusted counterparty.** When initiating an offline payment to a contact with a trust level below "friend" (see 7.3), the app shows a warning dialog:
 
-> «Вы отправляете платёж контакту {имя} через mesh без подтверждения сетью. В редких случаях (если получатель или отправитель намеренно подписывают конфликтующую транзакцию) платёж может быть отклонён при возврате в сеть. Для известных контактов риск минимален. Продолжить?»
+> "You are sending a payment to contact {name} over mesh without network confirmation. In rare cases (if the recipient or the sender deliberately signs a conflicting transaction) the payment may be rejected when it returns to the network. For known contacts the risk is minimal. Continue?"
 
-Пользователь должен явно подтвердить. Для уровня доверия «друг» и выше предупреждение опциональное (можно отключить в настройках). Для уровней ниже «друг» — обязательное.
+The user must explicitly confirm. For trust level "friend" and above the warning is optional (can be turned off in settings). For levels below "friend" it is mandatory.
 
-**Таймер до финального разрешения.** После перехода в `cementing` приложение показывает обратный отсчёт: «До финального разрешения: максимум 13 окон ≈ 13 минут после обнаружения операции в сети». Если через 13 окон операция не сцементирована — переход в `rejected` с объяснением причины (конфликтующая операция сцементирована в окне W с `Transfer` к `{other_recipient}`).
+**Timer until final resolution.** After moving to `cementing`, the app shows a countdown: "Until final resolution: at most 13 windows ≈ 13 minutes after the operation is observed in the network". If after 13 windows the operation is not cemented — it moves to `rejected` with an explanation of the cause (a conflicting operation cemented in window W with a `Transfer` to `{other_recipient}`).
 
-**Уведомление об отклонении.** При переходе в `rejected` — системное уведомление и конкретное сообщение в интерфейсе: «Ваш офлайн-платёж к {получатель} не прошёл. Причина: владелец счёта подписал другую транзакцию ранее, которая получила подтверждение сети. Ваша транзакция отклонена протоколом.» Для получателя — аналогичное уведомление. История платежа сохраняется с пометкой «отклонено».
+**Rejection notification.** On moving to `rejected` — a system notification and a specific message in the interface: "Your offline payment to {recipient} did not go through. Reason: the account owner signed another transaction earlier that received network confirmation. Your transaction was rejected by the protocol." The recipient gets an analogous notification. The payment history is kept marked "rejected".
 
-**Создание нового чата:**
+**Creating a new chat:**
 
-1. Пользователь выбирает контакт из адресной книги или сканирует QR-код
-2. Приложение проверяет есть ли существующая сессия с этим контактом
-3. Если да — открывает существующий чат
-4. Если нет — инициирует рукопожатие (запрашивает pre-key bundle получателя)
-5. После успешного рукопожатия открывает чат, пользователь может отправлять сообщения
+1. The user selects a contact from the address book or scans a QR code
+2. The app checks whether an existing session with this contact exists
+3. If yes — it opens the existing chat
+4. If no — it initiates a handshake (requests the recipient's pre-key bundle)
+5. After a successful handshake it opens the chat; the user can send messages
 
-### 5.7 Постоянство сообщений
+### 5.7 Message persistence
 
-**Локальная таблица SQLite `messages`:**
-- `chat_id` (ссылка на контакт)
-- `message_id` (локально уникальный)
-- `direction` (отправлено / получено)
-- `plaintext_content` (расшифрованное содержимое)
-- `sent_at` (временная метка)
-- `status` (отправлено, подтверждено, применено, доставлено, прочитано)
-- `ratchet_position` (для отладки и доставки не по порядку)
+**Local SQLite table `messages`:**
+- `chat_id` (reference to a contact)
+- `message_id` (locally unique)
+- `direction` (sent / received)
+- `plaintext_content` (decrypted content)
+- `sent_at` (timestamp)
+- `status` (sent, confirmed, applied, delivered, read)
+- `ratchet_position` (for debugging and out-of-order delivery)
 
-Открытый текст хранится в локальной базе после расшифровки. База зашифрована мастер-ключом приложения (выведенным из пароля или биометрии пользователя).
+Plaintext is stored in the local database after decryption. The database is encrypted with the application master key (derived from the user's password or biometrics).
 
-**Удаление сообщений:**
-- «Удалить у себя» — удаляет только из локальной базы
-- «Удалить у всех» — отправляет специальное системное сообщение получателю с просьбой удалить (получатель может не выполнить — гарантированное удаление невозможно)
-- Полное удаление чата — очистка таблицы `messages` для `chat_id`
+**Deleting messages:**
+- "Delete for me" — removes only from the local database
+- "Delete for everyone" — sends a special system message to the recipient requesting deletion (the recipient may not comply — guaranteed deletion is impossible)
+- Full chat deletion — clears the `messages` table for `chat_id`
 
-**Хранение истории:**
-- По умолчанию: без ограничений
-- Опция: автоудаление сообщений старше N дней (настройка на чат)
-- Экспорт истории чата: зашифрованный JSON-файл для резервной копии
+**History retention:**
+- By default: unlimited
+- Option: auto-delete messages older than N days (a per-chat setting)
+- Chat history export: an encrypted JSON file for backup
 
-### 5.8 Доставка через Blob Buffer
+### 5.8 Delivery through the Blob Buffer
 
-Когда получатель офлайн, сообщение доставляется через Blob Buffer:
+When the recipient is offline, a message is delivered through the Blob Buffer:
 
-1. Алиса публикует `MessageBlob` через Content Layer на `app_id_send_W` установленной с Бобом сессии — вычисленном на основе **текущего окна** `W_current` (см. 5.2 ротируемая label formula)
-2. Узел Боба (или доверенный узел) реплицирует blob в свой Blob Buffer
-3. Когда Боб приходит онлайн, его приложение подписано на `app_id_receive_W` для текущего окна и одного предыдущего (двухоконная tolerance к clock skew)
-4. Боб скачивает blob-ы, расшифровывает, добавляет в локальную историю
-5. Blob Buffer имеет TTL = τ₂ (эфемерный режим для сообщений)
+1. Alice publishes a `MessageBlob` through the Content Layer to the `app_id_send_W` of the session established with Bob — computed from the **current window** `W_current` (see 5.2, the rotated label formula)
+2. Bob's node (or a trusted node) replicates the blob into its Blob Buffer
+3. When Bob comes online, his app is subscribed to `app_id_receive_W` for the current window and one previous one (two-window tolerance to clock skew)
+4. Bob downloads the blobs, decrypts them, adds them to the local history
+5. The Blob Buffer has TTL = τ₂ (ephemeral mode for messages)
 
-**Ротация меток per τ₁ — модель эфемерных маршрутных точек.**
+**Label rotation per τ₁ — the ephemeral routing-point model.**
 
-Каждое новое окно τ₁ клиенты обеих сторон детерминистически вычисляют новые queue labels через `HKDF(initial_root_key, session_id, "mt-queue-rotation" || direction || W)`. Следствия:
+Each new τ₁ window the clients on both sides deterministically compute new queue labels via `HKDF(initial_root_key, session_id, "mt-queue-rotation" || direction || W)`. Consequences:
 
-- **Long-term session identification closed.** Хостящий узел не может построить stable map `account_X → {labels_sessions}` потому что labels меняются каждые τ₁. Множество наблюдаемых хостом labels за длительное время нельзя correlate в sessions без знания `initial_root_key`.
-- **Historical reconstruction closed.** Даже сохранённые архивные логи хоста не позволяют восстановить сессии задним числом — labels эфемерны.
-- **Эфемерный характер сессии.** При закрытии сессии («удалить чат») ротация прекращается, старые labels более не используются. Новое рукопожатие с тем же контактом даёт новый `initial_root_key` → полностью новую последовательность labels.
+- **Long-term session identification closed.** The hosting node cannot build a stable map `account_X → {labels_sessions}` because the labels change every τ₁. The set of labels the host observes over a long time cannot be correlated into sessions without knowing `initial_root_key`.
+- **Historical reconstruction closed.** Even saved archival host logs do not allow reconstructing sessions after the fact — the labels are ephemeral.
+- **Ephemeral session nature.** When a session is closed ("delete chat"), rotation stops and the old labels are no longer used. A new handshake with the same contact yields a new `initial_root_key` → an entirely new label sequence.
 
-**Permanent architectural limits для account-only через чужой узел (см. раздел 25.3):**
+**Permanent architectural limits for account-only over a third-party node (see section 25.3):**
 
-- **Session count.** Хост видит количество active label subscriptions per τ₁ как proxy числа активных сессий. Защита требует cover traffic, которая архитектурно не работает в рамках [I-6] + [I-13] (см. раздел 25.3).
-- **Activity timing patterns.** Хост видит когда клиент публикует и получает. Часовой пояс и режим активности raskryvаются.
-- **Cross-host collusion per-τ₁.** При координации между двумя хостами — pair identification возможна за один τ₁ observation. Rotation защищает от long-term accumulation, не от per-τ₁ correlation.
+- **Session count.** The host sees the number of active label subscriptions per τ₁ as a proxy for the number of active sessions. Defense requires cover traffic, which architecturally does not work within [I-6] + [I-13] (see section 25.3).
+- **Activity timing patterns.** The host sees when the client publishes and receives. Time zone and activity schedule are exposed.
+- **Cross-host collusion per-τ₁.** With coordination between two hosts, pair identification is possible in a single τ₁ observation. Rotation protects against long-term accumulation, not against per-τ₁ correlation.
 
-Полная защита от этих классов — через Light-Node-at-Home (раздел 26).
+Full defense against these classes is through Light-Node-at-Home (section 26).
 
-**Подписка на ротируемые метки.**
+**Subscribing to rotated labels.**
 
-Приложение подписано через Content Layer на все `app_id_receive_W` и `app_id_receive_{W-1}` активных сессий. Список хранится локально:
+The app is subscribed through the Content Layer to all `app_id_receive_W` and `app_id_receive_{W-1}` of active sessions. The list is stored locally:
 
 ```
-active_sessions (SQLite, зашифровано мастер-ключом):
-  contact_account_id      внешний ключ на адресную книгу
+active_sessions (SQLite, encrypted with the master key):
+  contact_account_id      foreign key into the address book
   session_id              64 B (= lower_pubkey || higher_pubkey, 2 × 32)
-  initial_root_key        32 B (стабильный, из handshake)
-  direction_local         1 B  (мой direction_byte: 0x00 если я lower, 0x01 если higher)
-  session_created_at      временная метка
-  session_state           ссылка на состояние храповика
+  initial_root_key        32 B (stable, from the handshake)
+  direction_local         1 B  (my direction_byte: 0x00 if I am lower, 0x01 if higher)
+  session_created_at      timestamp
+  session_state           reference to the ratchet state
 
 # queue_label_receive_W, queue_label_send_W, app_id_receive_W, app_id_send_W
-# НЕ хранятся — выводятся on-demand каждое окно через HKDF
+# are NOT stored — derived on-demand each window via HKDF
 ```
 
-**Обновление подписок на границе окна:**
+**Updating subscriptions at the window boundary:**
 
-На каждом переходе `W → W + 1`:
-1. Для каждой active session — вычислить `label_receive_{W+1}` и `app_id_receive_{W+1}`
-2. Подписаться у хоста на новые `app_id_receive_{W+1}`
-3. Отписаться от `app_id_receive_{W-1}` (более не нужен — двухоконная tolerance покрывает только текущее и предыдущее окно)
+On each transition `W → W + 1`:
+1. For each active session — compute `label_receive_{W+1}` and `app_id_receive_{W+1}`
+2. Subscribe at the host to the new `app_id_receive_{W+1}`
+3. Unsubscribe from `app_id_receive_{W-1}` (no longer needed — the two-window tolerance covers only the current and previous window)
 
-**Подтверждение получения:**
-- После успешного получения и расшифровки Боб отправляет подтверждение через свой системный канал сообщений (собственную очередь отправки для сессии с Алисой)
-- Подтверждение содержит `message_id` и статус (получено)
-- Алиса обновляет статус в интерфейсе на «доставлено»
-- Подтверждения прочтения — опциональные (настройка приватности)
+**Delivery acknowledgment:**
+- After successfully receiving and decrypting, Bob sends an acknowledgment through his system message channel (his own send queue for the session with Alice)
+- The acknowledgment contains the `message_id` and a status (received)
+- Alice updates the status in the interface to "delivered"
+- Read receipts are optional (a privacy setting)
 
-**Почему отдельные метки очереди на каждое направление.**
+**Why separate queue labels per direction.**
 
-Если бы обе стороны использовали одну общую метку очереди для переписки — внешний наблюдатель видел бы burst-паттерн Anchor-ов от двух `account_id` на одной случайной метке. Это восстанавливает связь отправитель-получатель через сопоставление паттернов даже без знания секрета сессии. Отдельные метки на каждое направление делают два наблюдаемых потока формально независимыми — связать их без `initial_root_key` невозможно.
+If both sides used a single shared queue label for the conversation — an external observer would see a burst pattern of Anchors from two `account_id`s on one random label. This reconstructs the sender–recipient link through pattern matching even without knowing the session secret. Separate labels per direction make the two observable streams formally independent — they cannot be linked without `initial_root_key`.
 
-### 5.8.1 Catch-up после offline через RangeSubscribe
+### 5.8.1 Catch-up after offline through RangeSubscribe
 
-Когда клиент возвращается онлайн после периода offline длительностью более 2 окон τ₁ (2 минут), сообщения, опубликованные в пропущенные окна, не покрываются double-window subscription tolerance. Клиент использует protocol-level сообщение `0x63 RangeSubscribeRequest` (см. [Montana Network spec](Montana%20Network%20v1.0.0.md) → раздел «Label Rotation + Range Subscribe Protocol») для получения пропущенных сообщений.
+When a client returns online after an offline period longer than 2 τ₁ windows (2 minutes), messages published in the missed windows are not covered by the double-window subscription tolerance. The client uses the protocol-level message `0x63 RangeSubscribeRequest` (see the [Montana Network spec](Montana%20Network%20v1.5.0.md) → "Label Rotation + Range Subscribe Protocol" section) to retrieve the missed messages.
 
-**Алгоритм catch-up:**
+**Catch-up algorithm:**
 
-1. На reconnect клиент определяет `W_last_sync` — номер окна при последней успешной синхронизации (хранится локально в `session_metadata`)
-2. Клиент определяет `W_current` через observation TimeChain у своего хоста
-3. Для каждой active session клиент вычисляет labels локально:
+1. On reconnect the client determines `W_last_sync` — the window number at the last successful synchronization (stored locally in `session_metadata`)
+2. The client determines `W_current` by observing the TimeChain at its host
+3. For each active session the client computes labels locally:
    ```
-   для W ∈ [W_last_sync + 1, W_current - 2]:
+   for W ∈ [W_last_sync + 1, W_current - 2]:
      label_W_receive = HKDF(initial_root_key, session_id, "mt-queue-rotation" || direction_receive || W)
    ```
-4. Клиент формирует `RangeSubscribeRequest` с batches по ≤ 10 000 labels (лимит `max_range_labels_per_request`)
-5. Отправляет requests к хосту, соблюдая rate limit ≤ 16 per τ₁
-6. Хост возвращает blobs матчившиеся labels из Blob Buffer
-7. Клиент матчит blobs к sessions через `BlobEntry.matched_label`, расшифровывает, добавляет в chat history
-8. Обновляет `W_last_sync = W_current - 2`
+4. The client builds `RangeSubscribeRequest`s in batches of ≤ 10 000 labels (the `max_range_labels_per_request` limit)
+5. It sends the requests to the host, respecting a rate limit of ≤ 16 per τ₁
+6. The host returns the blobs that matched the labels from the Blob Buffer
+7. The client matches blobs to sessions via `BlobEntry.matched_label`, decrypts them, adds them to chat history
+8. It updates `W_last_sync = W_current - 2`
 
-**Рекомендуемая UX логика:**
+**Recommended UX logic:**
 
-- При reconnect показать status «Синхронизация с {N} окон offline...» если N > 5
-- Фоновый catch-up не блокирует интерфейс; полученные сообщения отображаются по мере расшифровки
-- Для offline > 1 день: UI уведомление «Возможно пропущены сообщения старше τ₂» — Blob Buffer TTL (~14 дней) ограничивает доступность
-- Rate limit backoff: если хост вернул `RateLimited` — повторить через τ₁, уведомить пользователя о прогрессе catch-up
+- On reconnect show the status "Synchronizing {N} windows of offline..." if N > 5
+- Background catch-up does not block the interface; received messages are shown as they are decrypted
+- For offline > 1 day: a UI notice "Messages older than τ₂ may have been missed" — the Blob Buffer TTL (~14 days) limits availability
+- Rate-limit backoff: if the host returned `RateLimited` — retry after τ₁, notify the user of catch-up progress
 
 **Catch-up capacity:**
 
-- 1 час offline = 60 windows × ~100 sessions × 2 = ~12 000 labels = 2 requests = 1 τ₁ (catch-up за минуту)
-- 1 день offline = 1440 × 100 × 2 = 288 000 labels = 29 requests = 2 τ₁ (catch-up за 2 минуты)
-- 14 дней offline (τ₂ TTL) = 20 160 × 100 × 2 = 4 032 000 labels = 404 requests = 26 τ₁ (catch-up за ~26 минут)
+- 1 hour offline = 60 windows × ~100 sessions × 2 = ~12 000 labels = 2 requests = 1 τ₁ (catch-up in a minute)
+- 1 day offline = 1440 × 100 × 2 = 288 000 labels = 29 requests = 2 τ₁ (catch-up in 2 minutes)
+- 14 days offline (τ₂ TTL) = 20 160 × 100 × 2 = 4 032 000 labels = 404 requests = 26 τ₁ (catch-up in ~26 minutes)
 
-Catch-up приемлем для любого realistic offline duration в пределах TTL Blob Buffer.
+Catch-up is acceptable for any realistic offline duration within the Blob Buffer TTL.
 
-### 5.9 Forward secrecy и post-compromise security
+### 5.9 Forward secrecy and post-compromise security
 
-**Forward secrecy.** Свойство: компрометация текущего состояния сессии не раскрывает прошлые сообщения.
+**Forward secrecy.** Property: compromise of the current session state does not reveal past messages.
 
-В мессенджере Montana App forward secrecy обеспечивается через симметричный храповик:
-- Каждое сообщение имеет уникальный `message_key`, выведенный через HKDF
-- `message_key` используется один раз и удаляется после шифрования или расшифровки
-- `chain_key` обновляется после каждого использования
-- Старые `chain_key` удалены — невозможно восстановить прошлые `message_key`
+In the Montana App messenger forward secrecy is provided through the symmetric ratchet:
+- Each message has a unique `message_key` derived via HKDF
+- The `message_key` is used once and deleted after encryption or decryption
+- The `chain_key` is updated after each use
+- Old `chain_key`s are deleted — past `message_key`s cannot be reconstructed
 
-**Post-compromise security.** Свойство: после компрометации сессии будущие сообщения (после шага храповика) защищены от атакующего.
+**Post-compromise security.** Property: after a session is compromised, future messages (after a ratchet step) are protected from the attacker.
 
-В Montana App обеспечивается через KEM-храповик:
-- При смене направления сообщений получатель генерирует свежий keypair храповика
-- Свежий публичный ключ отправляется в следующем сообщении
-- Отправитель выполняет свежую инкапсуляцию KEM
-- Новый общий секрет недоступен атакующему (требует новый приватный ключ, которого атакующий не знает)
-- Все будущие `message_key` выведены из новых ключей храповика — защищены
+In Montana App this is provided through the KEM ratchet:
+- On a message-direction change the receiver generates a fresh ratchet keypair
+- The fresh public key is sent in the next message
+- The sender performs a fresh KEM encapsulation
+- The new shared secret is unavailable to the attacker (it requires a new private key the attacker does not have)
+- All future `message_key`s are derived from the new ratchet keys — protected
 
-**Ограничение на текущем этапе:** начальное рукопожатие не имеет post-compromise security до первого шага храповика. Если начальный ключ сессии скомпрометирован, первые несколько сообщений читаемы. После первого получения от другой стороны — храповик продвигается, дальнейшее защищено.
+**Limitation at this stage:** the initial handshake has no post-compromise security until the first ratchet step. If the initial session key is compromised, the first few messages are readable. After the first receipt from the other side — the ratchet advances and the rest is protected.
 
 ---
 
