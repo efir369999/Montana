@@ -1803,177 +1803,177 @@ Clear visual indicators:
 
 ---
 
-## 17. Агент Юнона
+## 17. Juno agent
 
-### 17.1 Архитектура песочницы
+### 17.1 Sandbox architecture
 
-Юнона — ИИ-агент на узле Montana. Отдельный процесс, изолированный от хост-ОС. Взаимодействует с внешним миром **только** через API протокола Montana. Юнона — механизм уровня приложения: протокол не знает о её существовании, не различает операцию подписанную вручную и операцию подписанную по запросу Юноны.
+Juno is an AI agent on a Montana node. A separate process, isolated from the host OS. It interacts with the outside world **only** through the Montana protocol API. Juno is an application-level mechanism: the protocol is unaware of its existence and does not distinguish an operation signed by hand from one signed at Juno's request.
 
-**Четыре изолированных процесса:**
+**Four isolated processes:**
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│ Узел Montana (хост-ОС)                               │
+│ Montana node (host OS)                               │
 │                                                      │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐ │
-│  │ Ядро Montana│  │ Юнона       │  │ Браузер      │ │
-│  │ ─ кошелёк   │  │ ─ LLM       │  │ ─ WebView    │ │
-│  │ ─ мессенджер│  │ ─ RAG       │  │ ─ страницы   │ │
-│  │ ─ протокол  │  │ ─ задачи    │  │ ─ маскировка │ │
-│  │ ─ контент   │  │ ─ чат       │  │   трафика    │ │
+│  │ Montana core│  │ Juno        │  │ Browser      │ │
+│  │ ─ wallet    │  │ ─ LLM       │  │ ─ WebView    │ │
+│  │ ─ messenger │  │ ─ RAG       │  │ ─ pages      │ │
+│  │ ─ protocol  │  │ ─ tasks     │  │ ─ traffic    │ │
+│  │ ─ content   │  │ ─ chat      │  │   mimicry    │ │
 │  │ ─ SSHA       │  │             │  │              │ │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬───────┘ │
 │         │    IPC         │    IPC         │         │
 │  ┌──────▼────────────────▼────────────────▼───────┐ │
-│  │ Демон подписи (Signer Daemon)                   │ │
-│  │ ─ приватный ключ (единственный хранитель)       │ │
-│  │ ─ проверка полномочий                           │ │
-│  │ ─ ограничение темпа                             │ │
-│  │ ─ журнал аудита                                 │ │
+│  │ Signer Daemon                                   │ │
+│  │ ─ private key (sole custodian)                  │ │
+│  │ ─ permission check                              │ │
+│  │ ─ rate limiting                                 │ │
+│  │ ─ audit log                                     │ │
 │  └─────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────┘
 ```
 
-Каждый процесс — отдельное адресное пространство. Компрометация одного не даёт доступ к другим. Приватный ключ существует **только** в демоне подписи. Юнона, ядро и браузер не имеют к нему доступа — только отправляют запрос на подпись через IPC.
+Each process is a separate address space. Compromise of one does not grant access to the others. The private key exists **only** in the Signer Daemon. Juno, the core and the browser have no access to it — they only send a signing request over IPC.
 
-**Требования к изоляции Юноны:**
+**Juno isolation requirements:**
 
-- Нет доступа к файловой системе хоста (кроме своей директории данных)
-- Нет shell, нет exec, нет произвольных syscalls
-- Нет сетевых соединений мимо Montana libp2p (через ядро)
-- Нет доступа к приватному ключу (только IPC к демону подписи)
-- Нет доступа к адресному пространству ядра, браузера или демона подписи
+- No access to the host file system (except its own data directory)
+- No shell, no exec, no arbitrary syscalls
+- No network connections bypassing Montana libp2p (through the core)
+- No access to the private key (only IPC to the Signer Daemon)
+- No access to the address space of the core, the browser, or the Signer Daemon
 
-Реализация изоляции зависит от платформы (seccomp на Linux, sandbox на macOS, пользователь с ограничениями на Windows). Спецификация фиксирует требования, не реализацию.
+The isolation implementation is platform-dependent (seccomp on Linux, sandbox on macOS, a restricted user on Windows). The specification fixes the requirements, not the implementation.
 
-**Приоритет ресурсов:**
+**Resource priority:**
 
 ```
-SSHA (TimeChain + NodeChain) > Подтверждение > API протокола > Юнона + Браузер
+SSHA (TimeChain + NodeChain) > Confirmation > protocol API > Juno + Browser
 ```
 
-SSHA требует 1 выделенное ядро, работающее 24/7 без прерываний. Юнона и LLM — самый низкий приоритет. Если ресурсов не хватает — Юнона замедляется, инференс откладывается, `chain_length` не страдает. Конкретные лимиты настраиваются оператором:
+SSHA requires 1 dedicated core running 24/7 without interruption. Juno and the LLM have the lowest priority. If resources are insufficient — Juno slows down, inference is deferred, `chain_length` does not suffer. Specific limits are configured by the operator:
 
-- Лимит RAM для процесса Юноны (рекомендация: 50% от свободного после SSHA)
-- Доли CPU (cgroups на Linux): SSHA — гарантированные, Юнона — по остаточному принципу
-- Квота диска для индекса RAG и кэша (рекомендация: ≤ 10 GB)
+- A RAM limit for the Juno process (recommendation: 50% of what is free after SSHA)
+- CPU shares (cgroups on Linux): SSHA — guaranteed, Juno — on a residual basis
+- A disk quota for the RAG index and cache (recommendation: ≤ 10 GB)
 
-**Журнал аудита.** Юнона логирует каждое своё действие в локальный журнал только-на-запись: временная метка, тип действия, параметры, результат, уровень полномочий на момент действия. Журнал доступен владельцу через экран сводки в интерфейсе. Юнона не может модифицировать или удалить свой журнал.
+**Audit log.** Juno logs every action it takes to a local append-only journal: timestamp, action type, parameters, result, the permission level at the time of the action. The journal is available to the owner through a summary screen in the interface. Juno cannot modify or delete its journal.
 
-### 17.2 Поверхность API протокола
+### 17.2 Protocol API surface
 
-Юнона взаимодействует с Montana через тот же API протокола что и пользователь. Три категории операций.
+Juno interacts with Montana through the same protocol API as the user. Three categories of operations.
 
-**Только чтение (без ограничений):**
+**Read-only (unrestricted):**
 
-| Операция | Описание |
+| Operation | Description |
 |---|---|
-| `get_balance(account_id)` | Баланс аккаунта из Таблицы аккаунтов |
-| `get_account_info(account_id)` | Полная запись Таблицы аккаунтов |
-| `get_node_info(node_id)` | Запись Таблицы узлов: `chain_length`, `last_confirmation_window` |
-| `get_ssha_status()` | Прогресс SSHA, текущее окно, дрифт |
-| `get_lottery_stats()` | Победы, вероятность, `weighted_ticket` |
-| `get_proposals(range)` | Proposals за диапазон окон |
-| `list_content(app_id)` | Список Anchor в `app_id` |
-| `fetch_blob(app_id, data_hash)` | Скачать blob через Content Layer |
-| `get_chat_list()` | Список чатов из локальной SQLite |
-| `get_messages(chat_id, range)` | Сообщения чата (открытый текст из локальной базы) |
-| `get_operation_history(account_id)` | История операций аккаунта |
-| `get_peers()` | Список подключённых пиров |
-| `get_blob_buffer_stats()` | Заполненность Blob Buffer |
-| `get_subscriptions()` | Список подписок на каналы |
+| `get_balance(account_id)` | Account balance from the Account Table |
+| `get_account_info(account_id)` | The full Account Table record |
+| `get_node_info(node_id)` | Node Table record: `chain_length`, `last_confirmation_window` |
+| `get_ssha_status()` | SSHA progress, current window, drift |
+| `get_lottery_stats()` | Wins, probability, `weighted_ticket` |
+| `get_proposals(range)` | Proposals over a window range |
+| `list_content(app_id)` | List of Anchors under `app_id` |
+| `fetch_blob(app_id, data_hash)` | Download a blob through the Content Layer |
+| `get_chat_list()` | Chat list from the local SQLite |
+| `get_messages(chat_id, range)` | Chat messages (plaintext from the local database) |
+| `get_operation_history(account_id)` | Account operation history |
+| `get_peers()` | List of connected peers |
+| `get_blob_buffer_stats()` | Blob Buffer fill level |
+| `get_subscriptions()` | List of channel subscriptions |
 
-**Запись (требует уровень полномочий):**
+**Write (requires a permission level):**
 
-| Операция | Минимальный уровень | Описание |
+| Operation | Minimum level | Description |
 |---|---|---|
-| `send_message(recipient, text)` | Помощник | Отправить сообщение в мессенджере |
-| `reply_message(message_id, text)` | Помощник | Ответить на сообщение |
-| `publish_post(app_id, content)` | Помощник | Опубликовать пост в канале |
-| `upload_file(app_id, data)` | Помощник | Загрузить файл в Content Layer |
-| `delete_file(app_id, data_hash)` | Помощник | Удалить файл |
-| `manage_subscription(app_id, action)` | Помощник | Подписка / отписка от канала |
-| `publish_anchor(app_id, data_hash)` | Помощник | Создать Anchor |
-| `send_transfer(recipient, amount)` | Оператор | Перевод Монтана (до лимита) |
+| `send_message(recipient, text)` | Assistant | Send a message in the messenger |
+| `reply_message(message_id, text)` | Assistant | Reply to a message |
+| `publish_post(app_id, content)` | Assistant | Publish a post in a channel |
+| `upload_file(app_id, data)` | Assistant | Upload a file to the Content Layer |
+| `delete_file(app_id, data_hash)` | Assistant | Delete a file |
+| `manage_subscription(app_id, action)` | Assistant | Subscribe / unsubscribe from a channel |
+| `publish_anchor(app_id, data_hash)` | Assistant | Create an Anchor |
+| `send_transfer(recipient, amount)` | Operator | Montana transfer (up to a limit) |
 
-**Запрещённые (никогда, на любом уровне полномочий):**
+**Forbidden (never, at any permission level):**
 
-| Операция | Причина запрета |
+| Operation | Reason for the ban |
 |---|---|
-| `change_key(new_pubkey)` | Критичная для идентичности, необратимая |
-| `transfer_activation(...)` | Создание новых идентичностей в сети |
-| `node_invitation(invited_pubkey)` | Power object, меняет состав сети |
-| `node_registration(...)` | Power object |
-| `access_seed()` | Прямой доступ к приватному ключу |
-| `access_private_key()` | Прямой доступ к приватному ключу |
-| `modify_node_config()` | Изменение конфигурации узла |
-| `exec_shell(command)` | Произвольное выполнение на хосте |
-| `raw_p2p_send(peer, bytes)` | Произвольные P2P-сообщения мимо протокола |
+| `change_key(new_pubkey)` | Identity-critical, irreversible |
+| account creation (a `Transfer` to a non-existent receiver) | Creating new identities in the network |
+| `node_invitation(invited_pubkey)` | A power object; changes the network composition |
+| `node_registration(...)` | A power object |
+| `access_seed()` | Direct access to the private key |
+| `access_private_key()` | Direct access to the private key |
+| `modify_node_config()` | Changing the node configuration |
+| `exec_shell(command)` | Arbitrary execution on the host |
+| `raw_p2p_send(peer, bytes)` | Arbitrary P2P messages bypassing the protocol |
 
-Запрещённые операции отклоняются на уровне демона подписи независимо от уровня полномочий Юноны.
+Forbidden operations are rejected at the Signer Daemon level regardless of Juno's permission level.
 
-**Per-class enforcement для уровня Помощник.** Демон подписи применяет whitelist-проверки для write ops перед подписью:
+**Per-class enforcement for the Assistant level.** The Signer Daemon applies whitelist checks for write ops before signing:
 
-| Операция | Whitelist check | Confirmation |
+| Operation | Whitelist check | Confirmation |
 |---|---|---|
-| `send_message(recipient, ...)` | `recipient ∈ contact_whitelist` | bulk per session либо per-op |
-| `reply_message(message_id, ...)` | recipient восстанавливается из `message_id`; `recipient ∈ contact_whitelist` | bulk per session либо per-op |
-| `publish_post(app_id, ...)` | `app_id ∈ app_id_whitelist` | bulk per session либо per-op |
-| `publish_anchor(app_id, ...)` | `app_id ∈ app_id_whitelist` | bulk per session либо per-op |
-| `upload_file(app_id, ...)` | `app_id ∈ app_id_whitelist` | bulk per session либо per-op |
-| `delete_file(app_id, ...)` | — | mandatory per-op (irreversible, не покрывается bulk pre-auth) |
-| `manage_subscription(app_id, ...)` | — (reversible, low impact) | per-op либо bulk |
-| `send_transfer(recipient, ...)` | `recipient ∈ recipient_whitelist` | push out-of-WL (см. 17.9) |
+| `send_message(recipient, ...)` | `recipient ∈ contact_whitelist` | bulk per session or per-op |
+| `reply_message(message_id, ...)` | recipient is recovered from `message_id`; `recipient ∈ contact_whitelist` | bulk per session or per-op |
+| `publish_post(app_id, ...)` | `app_id ∈ app_id_whitelist` | bulk per session or per-op |
+| `publish_anchor(app_id, ...)` | `app_id ∈ app_id_whitelist` | bulk per session or per-op |
+| `upload_file(app_id, ...)` | `app_id ∈ app_id_whitelist` | bulk per session or per-op |
+| `delete_file(app_id, ...)` | — | mandatory per-op (irreversible, not covered by bulk pre-auth) |
+| `manage_subscription(app_id, ...)` | — (reversible, low impact) | per-op or bulk |
+| `send_transfer(recipient, ...)` | `recipient ∈ recipient_whitelist` | push out-of-WL (see 17.9) |
 
-Cumulative `daily_write_op_cap` за τ₂ обязателен для уровня Помощник: превышение → push на телефон, не silent drop. Sanction на client side, не protocol level. Whitelist-violation → reject + journal audit entry + push на телефон.
+A cumulative `daily_write_op_cap` over τ₂ is mandatory for the Assistant level: exceeding it → a push to the phone, not a silent drop. The sanction is client-side, not at the protocol level. A whitelist violation → reject + a journal audit entry + a push to the phone.
 
-### 17.3 Уровни полномочий
+### 17.3 Permission levels
 
-Владелец настраивает уровень полномочий Юноны через Montana App на телефоне. Юнона не может изменить свои полномочия.
+The owner configures Juno's permission level through Montana App on the phone. Juno cannot change its own permissions.
 
-**Три уровня:**
-
-```
-Наблюдатель  → только чтение
-Помощник     → чтение + сообщения + контент (без переводов)
-Оператор     → всё из «Помощник» + переводы до лимита
-```
-
-**Наблюдатель.** Юнона видит всё, не может ничего изменить. Мониторинг, аналитика, техподдержка в чате, предупреждения. Нулевой ущерб при компрометации (кроме утечки приватности — Юнона видит открытый текст сообщений).
-
-**Помощник.** Юнона может отправлять сообщения, отвечать, публиковать посты в каналах, управлять файлами, публиковать Anchor. Не может отправлять переводы. Максимальный ущерб при компрометации: нежелательные сообщения от имени владельца (репутационный, не финансовый).
-
-**Оператор.** Всё из «Помощник» + `Transfer`. Лимиты задаются владельцем:
+**Three levels:**
 
 ```
-Лимиты оператора:
-  max_per_operation     u128 nɈ   <- максимум одного перевода
-  max_per_tau1          u128 nɈ   <- максимум за одно окно τ₁
-  max_per_tau2          u128 nɈ   <- максимум за период τ₂ (накопительный)
-  recipient_whitelist   [account_id]  <- если задан: переводы только на эти адреса
+Observer  → read-only
+Assistant → read + messages + content (no transfers)
+Operator  → everything from "Assistant" + transfers up to a limit
 ```
 
-Демон подписи отслеживает накопительную сумму за τ₂. Превышение любого лимита → операция в очередь ожидания подтверждения пользователя.
+**Observer.** Juno sees everything, can change nothing. Monitoring, analytics, in-chat support, warnings. Zero damage on compromise (except a privacy leak — Juno sees the plaintext of messages).
 
-Максимальный ущерб при компрометации: `max_per_tau2`. Определён владельцем заранее.
+**Assistant.** Juno can send messages, reply, publish posts in channels, manage files, publish Anchors. It cannot send transfers. Maximum damage on compromise: unwanted messages on the owner's behalf (reputational, not financial).
 
-**Формат хранения:**
+**Operator.** Everything from "Assistant" + `Transfer`. The limits are set by the owner:
+
+```
+Operator limits:
+  max_per_operation     u128 nɈ   <- maximum of a single transfer
+  max_per_tau1          u128 nɈ   <- maximum per one τ₁ window
+  max_per_tau2          u128 nɈ   <- maximum over a τ₂ period (cumulative)
+  recipient_whitelist   [account_id]  <- if set: transfers only to these addresses
+```
+
+The Signer Daemon tracks the cumulative amount over τ₂. Exceeding any limit → the operation goes into a queue awaiting user confirmation.
+
+Maximum damage on compromise: `max_per_tau2`. Defined by the owner in advance.
+
+**Storage format:**
 
 ```
 PermissionConfig {
-  level                 u8     (0 = Наблюдатель, 1 = Помощник, 2 = Оператор)
-  max_per_operation     u128   (только для Оператора)
-  max_per_tau1          u128   (только для Оператора)
-  max_per_tau2          u128   (только для Оператора)
-  recipient_whitelist   [32 B] (Оператор: получатели Transfer; опционально)
-  contact_whitelist     [32 B] (Помощник: получатели send_message/reply_message; default = адресная книга владельца)
-  app_id_whitelist      [32 B] (Помощник: app_id для publish_post/publish_anchor/upload_file; default = подписанные каналы)
-  daily_write_op_cap    u32    (Помощник: max write ops per τ₂; default = 100)
-  signature             3309 B (ML-DSA-65, подписано ключом аккаунта владельца)
+  level                 u8     (0 = Observer, 1 = Assistant, 2 = Operator)
+  max_per_operation     u128   (Operator only)
+  max_per_tau1          u128   (Operator only)
+  max_per_tau2          u128   (Operator only)
+  recipient_whitelist   [32 B] (Operator: Transfer recipients; optional)
+  contact_whitelist     [32 B] (Assistant: send_message/reply_message recipients; default = the owner's address book)
+  app_id_whitelist      [32 B] (Assistant: app_id for publish_post/publish_anchor/upload_file; default = subscribed channels)
+  daily_write_op_cap    u32    (Assistant: max write ops per τ₂; default = 100)
+  signature             3309 B (ML-DSA-65, signed with the owner's account key)
 }
 ```
 
-Конфигурация хранится на узле. Демон подписи загружает конфигурацию при запуске и верифицирует подпись. Если подпись невалидна — демон подписи отклоняет все операции записи (откат к уровню «Наблюдатель»).
+The configuration is stored on the node. The Signer Daemon loads the configuration on startup and verifies the signature. If the signature is invalid — the Signer Daemon rejects all write operations (fallback to the "Observer" level).
 
 ### 17.4 Делегирование подписи
 
