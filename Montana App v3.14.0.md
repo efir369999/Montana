@@ -2354,249 +2354,249 @@ Juno never lies about the protocol state. If it does not know the answer — it 
 
 ---
 
-## 18. Встроенный браузер
+## 18. Built-in browser
 
-### 18.1 Архитектура маскировки трафика
+### 18.1 Traffic mimicry architecture
 
-Montana App включает встроенный браузер на базе системного WebView (WKWebView на iOS, WebView на Android, Chromium Embedded на десктопе).
+Montana App includes a built-in browser based on the system WebView (WKWebView on iOS, WebView on Android, Chromium Embedded on desktop).
 
-**Принцип.** Transport Obfuscation из протокола маскирует соединения Montana под HTTPS. Но узел обслуживающий только заглушку статистически отличается от реального веб-сервера — у него нет реального веб-трафика. Встроенный браузер решает эту проблему: трафик Montana смешивается с реальным веб-трафиком пользователя.
+**Principle.** The protocol's Transport Obfuscation disguises Montana connections as HTTPS. But a node serving only a stub is statistically distinguishable from a real web server — it has no real web traffic. The built-in browser solves this: Montana traffic is mixed with the user's real web traffic.
 
-**Архитектура:**
+**Architecture:**
 
 ```
 ┌──────────────────────────────────────────────┐
 │ Montana App                                   │
 │                                               │
 │  ┌─────────────┐     ┌─────────────────────┐ │
-│  │ Браузер     │     │ Ядро Montana         │ │
-│  │ (WebView)   │     │ (кошелёк, мессенджер,│ │
-│  │             │     │  протокол, контент)  │ │
+│  │ Browser     │     │ Montana core         │ │
+│  │ (WebView)   │     │ (wallet, messenger,  │ │
+│  │             │     │  protocol, content)  │ │
 │  └──────┬──────┘     └──────────┬───────────┘ │
 │         │                       │             │
 │  ┌──────▼───────────────────────▼───────────┐ │
-│  │ Единый сетевой стек                       │ │
-│  │ ─ пул сессий TLS 1.3                     │ │
-│  │ ─ мультиплексирование HTTP/2             │ │
-│  │ ─ сообщения Montana ↔ запросы HTTPS      │ │
-│  │   единый поток на уровне TCP/TLS         │ │
+│  │ Unified network stack                     │ │
+│  │ ─ TLS 1.3 session pool                    │ │
+│  │ ─ HTTP/2 multiplexing                     │ │
+│  │ ─ Montana messages ↔ HTTPS requests       │ │
+│  │   a single stream at the TCP/TLS layer    │ │
 │  └──────────────────────────────────────────┘ │
 └──────────────────────────────────────────────┘
 ```
 
-На уровне TCP/TLS — единый поток сессий. Часть к обычным сайтам (google.com, wikipedia.org, youtube.com), часть к узлам Montana. Провайдер видит набор HTTPS-соединений на порт 443 к разным IP-адресам. Различить соединение Montana от обычного невозможно без расшифровки TLS.
+At the TCP/TLS layer — a single stream of sessions. Some to ordinary sites (google.com, wikipedia.org, youtube.com), some to Montana nodes. The provider sees a set of HTTPS connections to port 443 to different IP addresses. Distinguishing a Montana connection from an ordinary one is impossible without decrypting TLS.
 
-**Изоляция браузера от ядра Montana.** Процесс браузера не имеет прямого доступа к API протокола. Веб-контент не может вызвать кошелёк, мессенджер или Юнону. Общий только сетевой стек — на уровне TCP/TLS-соединений. Это защищает от веб-атак (XSS, вредоносные сайты), проникающих через браузер в ядро Montana.
+**Isolation of the browser from the Montana core.** The browser process has no direct access to the protocol API. Web content cannot call the wallet, the messenger, or Juno. Only the network stack is shared — at the level of TCP/TLS connections. This protects against web attacks (XSS, malicious sites) penetrating through the browser into the Montana core.
 
-### 18.2 Юнона как менеджер трафика
+### 18.2 Juno as a traffic manager
 
-Юнона генерирует фоновый веб-трафик по паттерну реального пользователя.
+Juno generates background web traffic following a real-user pattern.
 
-**Принцип.** Когда пользователь не пользуется браузером — операции Montana на узле (публикация SSHA_Reveal, подтверждения, proposals) создают характерный паттерн трафика: периодические пакеты каждые 60 секунд, всплески при фазе раскрытия. Статистический анализ может выявить этот паттерн. Юнона маскирует его фоновыми веб-запросами.
+**Principle.** When the user is not using the browser — Montana operations on the node (publishing SSHA_Reveal, confirmations, proposals) create a characteristic traffic pattern: periodic packets every 60 seconds, bursts during the reveal phase. Statistical analysis can detect this pattern. Juno masks it with background web requests.
 
-**Что Юнона делает:**
+**What Juno does:**
 
-- Поддерживает базовый трафик: фоновые запросы к разнообразным сайтам с интервалами имитирующими реального пользователя
-- Учитывает часовой пояс владельца: меньше трафика ночью, больше днём
-- Варьирует домены: новости, социальные сети, видео, поиск — не один и тот же сайт
-- Пакеты Montana тонут в потоке реального и фонового веб-трафика
+- Maintains baseline traffic: background requests to varied sites at intervals imitating a real user
+- Accounts for the owner's time zone: less traffic at night, more during the day
+- Varies domains: news, social media, video, search — not the same site
+- Montana packets drown in the stream of real and background web traffic
 
-**Приоритет пропускной способности:**
+**Bandwidth priority:**
 
 ```
-Трафик протокола (SSHA, подтверждения, proposals) > Пользовательский браузер > Фоновый трафик Юноны
+Protocol traffic (SSHA, confirmations, proposals) > User browser > Juno background traffic
 ```
 
-Фоновый трафик Юноны — самый низкий приоритет. Если пропускная способность ограничена — фоновый трафик уменьшается или останавливается. Критичные для протокола операции никогда не страдают.
+Juno's background traffic has the lowest priority. If bandwidth is limited — background traffic is reduced or stopped. Protocol-critical operations never suffer.
 
-**Настройки:**
-- Включение или отключение маскировки трафика (по умолчанию: включена)
-- Интенсивность фонового трафика (низкая / средняя / высокая)
-- Чёрный список доменов для фонового трафика (пользователь контролирует)
+**Settings:**
+- Enable or disable traffic mimicry (default: enabled)
+- Background traffic intensity (low / medium / high)
+- A domain blacklist for background traffic (the user controls it)
 
-### 18.3 Единое приложение
+### 18.3 A single application
 
-Montana App — единственное приложение. Браузер, мессенджер, кошелёк, облако, лента, ИИ-агент. Персональный интернет в одном приложении.
+Montana App is the only application. Browser, messenger, wallet, cloud, feed, AI agent. A personal internet in one application.
 
-**Что это даёт пользователю:**
-- Один сид для всего: кошелёк, мессенджер, облако, контент
-- Одно приложение для всего: не нужны отдельные Telegram, Chrome, Drive, Notes
-- Трафик неотличим от обычного пользователя интернета
-- Юнона управляет всем через единый интерфейс
+**What this gives the user:**
+- One seed for everything: wallet, messenger, cloud, content
+- One application for everything: no need for separate Telegram, Chrome, Drive, Notes
+- Traffic indistinguishable from an ordinary internet user
+- Juno manages everything through a single interface
 
-**Что это даёт безопасности:**
-- Единый сетевой стек — трафик Montana невычленяем из общего потока
-- Единая песочница — меньше поверхность атаки чем множество отдельных приложений
-- Единая резервная копия — один сид восстанавливает всё
+**What this gives security:**
+- A unified network stack — Montana traffic cannot be isolated from the overall stream
+- A unified sandbox — a smaller attack surface than many separate applications
+- A unified backup — one seed restores everything
 
-**Ограничения браузера на текущем этапе:**
-- Нет веб-расширений
-- Нет инъекции web3-кошелька
-- Нет собственных обработчиков протоколов (кроме глубоких ссылок `montana:`)
-- Нет менеджера загрузок для крупных файлов (используется Content Layer)
-- WebView обновляется через ОС, не через Montana App
+**Browser limitations at this stage:**
+- No web extensions
+- No web3 wallet injection
+- No custom protocol handlers (except `montana:` deep links)
+- No download manager for large files (the Content Layer is used)
+- The WebView is updated through the OS, not through Montana App
 
 ---
 
-## 19. Внутренняя экономика приложений
+## 19. Internal application economy
 
-**Главный архитектурный узел app spec.** Протокол Монтаны не определяет fee path для прикладных сервисов и не направляет средства в burn / treasury / DAO. Вся внутренняя экономика приложений — задача прикладного слоя. Приложения строят собственную монетизацию через прямые `Transfer` от пользователей к аккаунту-провайдеру сервиса, без protocol-level service opcodes.
+**The central architectural node of the app spec.** The Montana protocol does not define a fee path for application services and does not route funds into burn / treasury / DAO. The entire internal application economy is an application-layer task. Applications build their own monetization through direct `Transfer`s from users to the service provider account, without protocol-level service opcodes.
 
-Раздел определяет канонические patterns которые разработчик может использовать для построения revenue-mechanics своего приложения. Все patterns — конструкции поверх трёх примитивов протокола (`Transfer`, `Anchor`, `account_id`); никаких protocol-level коробочных решений нет — разработчик собирает modul-style комбинацию из patterns под свой use case.
+The section defines canonical patterns a developer can use to build the revenue mechanics of their application. All patterns are constructions on top of three protocol primitives (`Transfer`, `Anchor`, `account_id`); there are no protocol-level boxed solutions — the developer assembles a module-style combination of patterns for their use case.
 
-### 19.1 Архитектурная модель — Service Provider Account
+### 19.1 Architectural model — Service Provider Account
 
-Базовая единица монетизации приложения — **Service Provider Account** (SPA). Это обычный `AccountRecord` Монтаны, контролируемый разработчиком приложения через keypair, в который пользователи делают прямые `Transfer` за платные функции. SPA — не protocol-level entity; это **convention** прикладного слоя.
+The basic unit of application monetization is the **Service Provider Account** (SPA). It is an ordinary Montana `AccountRecord`, controlled by the application developer through a keypair, into which users make direct `Transfer`s for paid features. The SPA is not a protocol-level entity; it is an application-layer **convention**.
 
-**Свойства SPA:**
+**SPA properties:**
 
-- Обычный аккаунт с `account_id` derived из service-keypair разработчика
-- Пользователи находят SPA через app-published registry (см. §19.8) либо out-of-band (документация приложения, веб-сайт разработчика, QR-код)
-- Доход — суммарный balance SPA, растёт от каждого `Transfer` пользователя
-- Разработчик расходует баланс SPA как любой другой аккаунт: оплата инфраструктуры (через `Transfer` на VPS-провайдеров принимающих Ɉ), вывод в фиат через app-level on/off-ramp, реинвестиция в собственные узлы для Канала А (см. Protocol spec → «Полная экономическая картина»)
-- SPA может быть split-ом многих accounts (для multi-region deploy либо load balancing) — разработчик сам организует internal accounting
-- Несколько SPA per приложение допустимо (разные сервисы → разные аккаунты для accounting)
+- An ordinary account with an `account_id` derived from the developer's service keypair
+- Users find the SPA through an app-published registry (see §19.8) or out-of-band (the application's documentation, the developer's website, a QR code)
+- The income is the SPA's total balance, growing with each user `Transfer`
+- The developer spends the SPA balance like any other account: paying for infrastructure (through `Transfer` to VPS providers accepting Ɉ), withdrawal to fiat through an app-level on/off-ramp, reinvestment in their own nodes for Channel A (see the Protocol spec → "Full economic picture")
+- The SPA may be split across many accounts (for multi-region deploy or load balancing) — the developer organizes internal accounting themselves
+- Several SPAs per application are allowed (different services → different accounts for accounting)
 
-**Single mechanism, six patterns.** Все business models приложений построены на одном механизме (`Transfer` user → SPA), отличающемся только частотой, триггером и UX вокруг него. Каждый pattern ниже — variation на единую тему.
+**Single mechanism, six patterns.** All application business models are built on one mechanism (`Transfer` user → SPA), differing only in frequency, trigger, and the UX around it. Each pattern below is a variation on a single theme.
 
 ### 19.2 Pattern A — Per-use payment
 
-Пользователь платит за каждое дискретное использование сервиса.
+The user pays for each discrete use of the service.
 
-**Пример сценариев:** один видеозвонок, один экспортный отчёт, один advanced API call к app-side AI, одна расширенная функция (фильтр обработки фото, транскрипция аудио и т.п.).
+**Example scenarios:** a single video call, a single export report, a single advanced API call to an app-side AI, a single advanced feature (a photo-processing filter, audio transcription, etc.).
 
-**Механика:**
+**Mechanics:**
 
-1. Пользователь инициирует use action в UI приложения
-2. Клиент проверяет `balance >= price` локально
-3. Клиент показывает confirmation dialog: «Использовать сервис X — оплата `price` Ɉ к Service Provider Account приложения»
-4. После confirm — клиент формирует `Transfer(amount=price, link=SPA_account_id)`, подписывает, отправляет узлу-хосту
-5. Клиент ждёт cementing операции (≈ один τ₁ окно)
-6. После cementing — UI разрешает использование сервиса
-7. Опционально: app SPA-side hooks слушают gossip, видят cemented `Transfer` к SPA → triggers backend service activation
+1. The user initiates a use action in the application UI
+2. The client checks `balance >= price` locally
+3. The client shows a confirmation dialog: "Use service X — payment of `price` Ɉ to the application's Service Provider Account"
+4. After confirm — the client builds a `Transfer(amount=price, link=SPA_account_id)`, signs it, sends it to the host node
+5. The client waits for the operation to be cemented (≈ one τ₁ window)
+6. After cementing — the UI allows the service to be used
+7. Optionally: app SPA-side hooks listen to gossip, see a cemented `Transfer` to the SPA → trigger backend service activation
 
 **UX nuances:**
 
-- Latency: пользователь ждёт один τ₁ wall-clock ≈ 60s между confirm и activation сервиса. Для real-time действий (звонок) это unacceptable; для async (отчёт, обработка) приемлемо
-- Free preview / freemium edge: сервис может быть доступен в degraded режиме до payment, full quality после
-- Refund mechanism: разработчик сам определяет refund policy через `Transfer(SPA → user)` либо credit на следующий use
+- Latency: the user waits one τ₁ wall-clock ≈ 60s between confirm and service activation. For real-time actions (a call) this is unacceptable; for async (a report, processing) it is acceptable
+- Free preview / freemium edge: the service may be available in a degraded mode before payment, full quality after
+- Refund mechanism: the developer defines the refund policy themselves through `Transfer(SPA → user)` or a credit toward the next use
 
-### 19.3 Pattern B — Subscription через recurring Transfer
+### 19.3 Pattern B — Subscription through a recurring Transfer
 
-Пользователь платит периодически (раз в N окон) за сохраняющийся доступ к premium функциям.
+The user pays periodically (once every N windows) for continued access to premium features.
 
-**Пример сценариев:** премиум-профиль с расширенными функциями, доступ к платному каналу создателя, ежемесячная подписка на cloud storage в приложении.
+**Example scenarios:** a premium profile with extended features, access to a paid creator channel, a monthly subscription to in-app cloud storage.
 
-**Механика:**
+**Mechanics:**
 
-1. Пользователь активирует подписку через UI приложения («Подписаться на Premium»)
-2. Клиент сохраняет subscription state локально: `(SPA_account_id, amount_per_period, period_windows, next_due_window)`
-3. Клиент-side scheduler (демон в приложении) автоматически публикует `Transfer(amount, link=SPA)` каждые `period_windows`
-4. App SPA-side service tracks active subscriptions per account через слежение за incoming `Transfer` в свой `AccountChain`: каждый incoming Transfer от account X с amount = subscription_amount → продление подписки
-5. Если за `2 × period_windows` от user X не пришёл `Transfer` ожидаемой суммы → subscription expired, приложение revoke premium access
-6. Cancel subscription — пользователь disable scheduler в UI; pending due Transfer не публикуется
+1. The user activates the subscription through the application UI ("Subscribe to Premium")
+2. The client stores the subscription state locally: `(SPA_account_id, amount_per_period, period_windows, next_due_window)`
+3. A client-side scheduler (a daemon in the app) automatically publishes `Transfer(amount, link=SPA)` every `period_windows`
+4. The app SPA-side service tracks active subscriptions per account by watching incoming `Transfer`s into its `AccountChain`: each incoming Transfer from account X with amount = subscription_amount → subscription renewal
+5. If over `2 × period_windows` no `Transfer` of the expected amount arrives from user X → subscription expired, the application revokes premium access
+6. Cancel subscription — the user disables the scheduler in the UI; the pending due Transfer is not published
 
-**Важно:**
+**Important:**
 
-- Никакого on-chain «subscription state» — это purely off-chain agreement между приложением и пользователем, mediated через pattern incoming Transfers. App backend (на узле или off-chain server) делает state tracking
-- Period windows — flexible: monthly (~43 200 окон при τ₁=60s), weekly, ежедневно (полностью на app discretion)
-- Pricing flexibility — разработчик может менять цену, существующие подписчики сами решают продлевать ли по новой цене
-- Multi-tier subscriptions — один SPA принимает разные суммы для разных tier (Basic / Pro / Premium); приложение различает через amount
+- No on-chain "subscription state" — this is a purely off-chain agreement between the application and the user, mediated through the pattern of incoming Transfers. The app backend (on the node or an off-chain server) does the state tracking
+- Period windows — flexible: monthly (~43 200 windows at τ₁=60s), weekly, daily (entirely at app discretion)
+- Pricing flexibility — the developer can change the price; existing subscribers decide for themselves whether to renew at the new price
+- Multi-tier subscriptions — one SPA accepts different amounts for different tiers (Basic / Pro / Premium); the application distinguishes by amount
 
 ### 19.4 Pattern C — Streaming / metered billing
 
-Пользователь платит per-unit measured ресурс (минута звонка, мегабайт хранения, час compute).
+The user pays per-unit of a measured resource (a minute of a call, a megabyte of storage, an hour of compute).
 
-**Пример сценариев:** голосовой звонок с поминутной оплатой, video streaming с pay-per-minute, cloud storage с pay-per-GB-month, compute service с pay-per-CPU-hour.
+**Example scenarios:** a voice call with per-minute billing, video streaming with pay-per-minute, cloud storage with pay-per-GB-month, a compute service with pay-per-CPU-hour.
 
-**Механика:**
+**Mechanics:**
 
-1. Пользователь начинает использование сервиса
-2. App клиент локально tracks usage метрику (elapsed seconds, bytes consumed, и т.п.)
-3. Через каждые N окон публикует cumulative `Transfer(unit_price × consumed_units_since_last, link=SPA)`
-4. App SPA-side service tracks accumulated payment per active session; если payment lags too far behind usage → throttle / stop service
-5. При finalisation сервиса — финальный `Transfer` за оставшиеся неоплаченные units
+1. The user starts using the service
+2. The app client locally tracks a usage metric (elapsed seconds, bytes consumed, etc.)
+3. Every N windows it publishes a cumulative `Transfer(unit_price × consumed_units_since_last, link=SPA)`
+4. The app SPA-side service tracks accumulated payment per active session; if payment lags too far behind usage → throttle / stop the service
+5. On service finalization — a final `Transfer` for the remaining unpaid units
 
 **Trade-offs:**
 
-- Granularity vs overhead: Transfer per минуту = overhead пропорционально payments; Transfer per 5 минут = больше latency, меньше overhead
-- Trust direction: pre-pay (Transfer first, service after) даёт risk app не выполнить service; post-pay (service first, Transfer after) даёт risk пользователь не заплатить. Hybrid: small upfront + streaming bills
-- Reconciliation: app должен сравнивать observed Transfers с reported usage; mismatch → logging, throttling, либо disconnect
+- Granularity vs overhead: a Transfer per minute = overhead proportional to payments; a Transfer per 5 minutes = more latency, less overhead
+- Trust direction: pre-pay (Transfer first, service after) creates the risk the app does not deliver the service; post-pay (service first, Transfer after) creates the risk the user does not pay. Hybrid: a small upfront + streaming bills
+- Reconciliation: the app must compare observed Transfers with reported usage; a mismatch → logging, throttling, or disconnect
 
 ### 19.5 Pattern D — Tip / donation
 
-Voluntary `Transfer` от пользователя к creator account за ценность контента.
+A voluntary `Transfer` from a user to a creator account for the value of content.
 
-**Пример сценариев:** support автора канала, благодарность за помощь в community, чаевые ассистенту, поддержка open-source проекта.
+**Example scenarios:** supporting a channel author, gratitude for help in a community, a tip to an assistant, supporting an open-source project.
 
-**Механика:**
+**Mechanics:**
 
-1. Пользователь видит контент, hit-ит «Tip» button с amount selector
-2. Клиент формирует `Transfer(amount, link=creator_account_id)`, публикует
-3. Creator видит incoming Transfer в своём AccountChain, может (optionally) acknowledge / thank-you message off-chain
+1. The user sees content and hits the "Tip" button with an amount selector
+2. The client builds a `Transfer(amount, link=creator_account_id)` and publishes it
+3. The creator sees an incoming Transfer in their AccountChain and may (optionally) acknowledge / send a thank-you message off-chain
 
-Самый простой pattern; никаких subscription state, никакого app-side accounting. Creator account = personal account creator-а (не SPA).
+The simplest pattern; no subscription state, no app-side accounting. The creator account = the creator's personal account (not an SPA).
 
 ### 19.6 Pattern E — Marketplace / two-sided commission
 
-App matches buyer и seller, takes commission через split Transfer.
+The app matches buyer and seller, taking a commission through a split Transfer.
 
-**Пример сценариев:** P2P услуги (платный консалтинг, фриланс tasks), creator marketplace (купить контент у автора), peer-to-peer аренда чего-либо.
+**Example scenarios:** P2P services (paid consulting, freelance tasks), a creator marketplace (buying content from an author), peer-to-peer renting of something.
 
-**Механика:**
+**Mechanics:**
 
-1. Buyer и Seller соглашаются на price через app UI
-2. App определяет commission_rate (например 5%)
-3. Buyer публикует **два** parallel Transfers:
+1. Buyer and Seller agree on a price through the app UI
+2. The app determines the commission_rate (for example 5%)
+3. The Buyer publishes **two** parallel Transfers:
    - `Transfer(price × (1 - commission_rate), link=seller_account_id)`
    - `Transfer(price × commission_rate, link=app_SPA_account_id)`
-4. Альтернативно, single Transfer + escrow pattern: Buyer → app SPA, app SPA → Seller (с deduction); даёт app возможность hold для dispute resolution, но требует trust в app
+4. Alternatively, a single Transfer + escrow pattern: Buyer → app SPA, app SPA → Seller (with a deduction); this gives the app the ability to hold for dispute resolution, but requires trust in the app
 
 **Variations:**
 
-- Split при cancellation: app refunds через Transfer back, минус cancellation fee
-- Multi-party split (например platform + creator + service provider) — multiple parallel Transfers
-- Tier-based commission (large transactions → lower commission %) — app логика, не protocol
+- Split on cancellation: the app refunds through a Transfer back, minus a cancellation fee
+- Multi-party split (for example platform + creator + service provider) — multiple parallel Transfers
+- Tier-based commission (large transactions → lower commission %) — app logic, not protocol
 
 ### 19.7 Pattern F — Auction / unique resource allocation
 
-App-level аукцион за ограниченный ресурс (никнейм, домен, namespace, экспертная роль).
+An app-level auction for a limited resource (a nickname, a domain, a namespace, an expert role).
 
-**Пример сценариев:** разрешение имён `@username` через app-private registry, аукцион уникальных идентификаторов, allocation membership в exclusive community.
+**Example scenarios:** resolving `@username` names through an app-private registry, an auction of unique identifiers, allocating membership in an exclusive community.
 
-**Механика:**
+**Mechanics:**
 
-1. App ведёт off-chain либо через `Anchor` registry открытых аукционов
-2. Bidders публикуют `Transfer(bid_amount, link=app_SPA)` с annotation в Anchor (`app_id` = `SHA-256("mt-app" || app_name + "-auction")`, `data_hash` = hash of bid metadata)
-3. App SPA-side service tracks bids через слежение за паттерном Anchor + Transfer pairs
-4. По истечении аукциона — winner получает unique resource (record в app-private DB), losing bids refunded через `Transfer` back
+1. The app maintains a registry of open auctions off-chain or through `Anchor`
+2. Bidders publish `Transfer(bid_amount, link=app_SPA)` with an annotation in an Anchor (`app_id` = `SHA-256("mt-app" || app_name + "-auction")`, `data_hash` = hash of the bid metadata)
+3. The app SPA-side service tracks bids by watching the pattern of Anchor + Transfer pairs
+4. On auction expiry — the winner gets the unique resource (a record in the app-private DB), losing bids are refunded through a `Transfer` back
 
-**Important:** уникальность ресурса гарантируется только app-private state, не protocol. Разные приложения могут иметь конфликтующие никнеймы (`@alice` в App-A и App-B — это разные люди либо тот же, протокол не различает). Resolution per app, не глобальный.
+**Important:** the uniqueness of the resource is guaranteed only by app-private state, not by the protocol. Different applications may have conflicting nicknames (`@alice` in App-A and App-B — different people or the same one; the protocol does not distinguish). Resolution is per app, not global.
 
-### 19.8 Discovery Service Provider Accounts
+### 19.8 Discovering Service Provider Accounts
 
-Чтобы пользователи могли найти SPA приложения для оплаты — варианты:
+So that users can find an application's SPA to pay — options:
 
-- **App config bundling.** Приложение хардкодит свой SPA `account_id` в код клиента; пользователь не вводит его руками
-- **Anchor-registry.** Разработчик публикует `Anchor(app_id="mt-spa-registry", data_hash=H(spa_id || metadata))` — self-published registry, верифицируемый через chain
-- **Out-of-band.** Документация на веб-сайте разработчика, QR-коды, реклама
-- **Cross-app convention.** Community-maintained registry, опубликованный через Anchor (другой third-party app), discovered через standard discovery protocol
+- **App config bundling.** The application hardcodes its SPA `account_id` in the client code; the user does not enter it by hand
+- **Anchor registry.** The developer publishes `Anchor(app_id="mt-spa-registry", data_hash=H(spa_id || metadata))` — a self-published registry, verifiable through the chain
+- **Out-of-band.** Documentation on the developer's website, QR codes, advertising
+- **Cross-app convention.** A community-maintained registry, published through an Anchor (another third-party app), discovered through a standard discovery protocol
 
-### 19.9 Расходование баланса SPA
+### 19.9 Spending the SPA balance
 
-Доход разработчика на SPA конвертируется в инфраструктуру / fiat / реинвестиции через:
+The developer's income on an SPA is converted into infrastructure / fiat / reinvestment through:
 
-- **Прямые `Transfer` к provider accounts** для оплаты VPS / compute / bandwidth (если provider принимает Ɉ напрямую)
-- **App-level off-ramp services** — другие apps на Монтане, специализирующиеся на конвертации Ɉ ↔ fiat (другая экосистема)
-- **Реинвестиция в собственные узлы** — разработчик использует доход SPA для аренды дополнительного hardware / VPS под consensus узлы → больше Канала А (lottery emission) → snowball effect (см. Protocol spec → «Полная экономическая картина → Двусторонняя петля»)
-- **Personal use** — разработчик может самостоятельно `Transfer` с SPA на personal account и тратить на любые app-сервисы
+- **Direct `Transfer`s to provider accounts** to pay for VPS / compute / bandwidth (if the provider accepts Ɉ directly)
+- **App-level off-ramp services** — other apps on Montana specializing in converting Ɉ ↔ fiat (a different ecosystem)
+- **Reinvestment in one's own nodes** — the developer uses the SPA income to rent additional hardware / VPS for consensus nodes → more of Channel A (lottery emission) → a snowball effect (see the Protocol spec → "Full economic picture → The two-sided loop")
+- **Personal use** — the developer can `Transfer` from the SPA to a personal account themselves and spend it on any app services
 
-### 19.10 Antipatterns — что прикладной слой делать не должен
+### 19.10 Antipatterns — what the application layer should not do
 
-- **Не пытаться эмулировать protocol-level fee.** Если приложение требует deposit для использования — это создаёт state lock-in, conflicting с принципом switch-friendly apps (см. §3.4 «Нулевая стоимость переключения приложений»). Per-use либо subscription pattern предпочтительнее
-- **Не вводить app-private «кредиты» вместо прямых `Transfer`.** Сервисный кредит = state lock-in (нельзя забрать с собой при switch), теряет user благодаря приложению. Прямые `Transfer` сохраняют user mobility
-- **Не централизовать все payments через один SPA для multiple unrelated сервисов.** Pure accounting argument: разделение SPA per сервис делает revenue tracking честнее, упрощает audit, легче передать ownership одного сервиса другому team
-- **Не имитировать Web2 «subscription auto-renewal» где user не может cancel.** Client-side scheduler полностью под user control; приложение должно делать cancel obvious и one-click. Антипаттерн обрекает user на dispute через social channels вместо technical means
+- **Do not try to emulate a protocol-level fee.** If an application requires a deposit for use — this creates state lock-in, conflicting with the principle of switch-friendly apps (see §3.4 "Zero application-switching cost"). A per-use or subscription pattern is preferable
+- **Do not introduce app-private "credits" instead of direct `Transfer`s.** A service credit = state lock-in (it cannot be taken along on a switch), losing the user to the application. Direct `Transfer`s preserve user mobility
+- **Do not centralize all payments through one SPA for multiple unrelated services.** A pure accounting argument: separating the SPA per service makes revenue tracking more honest, simplifies audit, and makes it easier to transfer ownership of one service to another team
+- **Do not imitate Web2 "subscription auto-renewal" where the user cannot cancel.** The client-side scheduler is entirely under user control; the application must make cancel obvious and one-click. The antipattern dooms the user to a dispute through social channels instead of technical means
 
 ---
 
