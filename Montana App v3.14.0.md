@@ -3521,267 +3521,268 @@ Any independent builder from the public source code with the same toolchain para
 
 ---
 
-## 28. Паттерны интеграции автономных агентов
+## 28. Autonomous agent integration patterns
 
-Раздел определяет канонические паттерны для разработчиков автономных агентов (программных, ИИ-driven actors которые действуют от имени пользователя либо самостоятельно). Согласно protocol spec разделу «Определение → Primary persona — автономные агенты как первичная среда обитания», agents — primary expected adoption pathway; этот раздел — practical guidance как строить agents на текущих primitives (`Transfer`, `Anchor`, `account_id`, ML-DSA-65 keypair, AccountChain).
+The section defines canonical patterns for developers of autonomous agents (software, AI-driven actors that act on behalf of the user or independently). Per the protocol spec section "Definition → Primary persona — autonomous agents as the primary habitat", agents are the primary expected adoption pathway; this section is practical guidance on how to build agents on the current primitives (`Transfer`, `Anchor`, `account_id`, an ML-DSA-65 keypair, AccountChain).
 
-Никаких protocol-level agent-specific primitives на текущем этапе нет — все patterns construction поверх трёх базовых примитивов протокола. Trigger conditions для re-evaluation (когда protocol-level primitives могут стать необходимыми) — см. §28.5 «Acknowledged limitations».
+There are no protocol-level agent-specific primitives at this stage — all patterns are constructions on top of the three base protocol primitives. Trigger conditions for re-evaluation (when protocol-level primitives might become necessary) — see §28.5 "Acknowledged limitations".
 
-### 28.1 Two-account pattern — делегированные агенты
+### 28.1 Two-account pattern — delegated agents
 
-**Use case:** пользователь хочет дать агенту ограниченные финансовые полномочия (например «трать не более 10 Ɉ в день», «оплачивай только app-сервисы из whitelist», «фиксируй данные через Anchor но не делай Transfer»). Прямое делегирование owner ML-DSA-65 keypair агенту даёт agent unlimited power — это binary, не granular.
+**Use case:** the user wants to give an agent limited financial powers (for example "spend no more than 10 Ɉ per day", "pay only whitelisted app services", "record data through Anchor but do not make a Transfer"). Directly delegating the owner's ML-DSA-65 keypair to the agent gives the agent unlimited power — this is binary, not granular.
 
 **Pattern:**
 
-1. Owner создаёт **второй account** (agent account) через первый `Transfer` от собственного main account. Agent account имеет свой ML-DSA-65 keypair, выводимый из под-сида агента (например `HKDF-Expand(master_seed, info="mt-agent-{agent_name}-key")`)
-2. Owner periodically funds agent account через `Transfer(amount=daily_budget, link=agent_account_id)` — например ежедневный «бюджет» агента
-3. Agent operates только своим keypair: подписывает Transfer-ы, Anchor-ы, ChangeKey исключительно от agent account
-4. Capability granularity достигается через **funding rate**: agent не может потратить больше чем owner перевёл (балансовое ограничение, не permission system)
-5. Capability scope (только Anchor, не Transfer) достигается через **agent code constraints**: код агента не реализует Transfer publication, только Anchor — owner проверяет это через [I-17] auditable agent binary
-6. **Revocation:** owner либо `Transfer` всё с agent balance back к main account (drain mechanism), либо publish `ChangeKey` на agent account нового pubkey известного только owner (lockout mechanism)
+1. The owner creates a **second account** (agent account) through the first `Transfer` from their own main account. The agent account has its own ML-DSA-65 keypair, derived from the agent's sub-seed (for example `HKDF-Expand(master_seed, info="mt-agent-{agent_name}-key")`)
+2. The owner periodically funds the agent account through `Transfer(amount=daily_budget, link=agent_account_id)` — for example the agent's daily "budget"
+3. The agent operates only with its own keypair: it signs Transfers, Anchors, ChangeKey exclusively from the agent account
+4. Capability granularity is achieved through the **funding rate**: the agent cannot spend more than the owner transferred (a balance constraint, not a permission system)
+5. Capability scope (only Anchor, not Transfer) is achieved through **agent code constraints**: the agent's code does not implement Transfer publication, only Anchor — the owner verifies this through the [I-17] auditable agent binary
+6. **Revocation:** the owner either `Transfer`s everything from the agent balance back to the main account (a drain mechanism), or publishes a `ChangeKey` on the agent account to a new pubkey known only to the owner (a lockout mechanism)
 
-**Нормализация `agent_name` (применяется ко всем agent-related HKDF derivations в § 28):** строка UTF-8 NFC-normalized, charset `[a-z0-9_-]`, длина 2..32 байта. Реализация обязана reject `agent_name` не соответствующий правилу до вычисления HKDF. Это обеспечивает byte-exact derivation одного ключа на любой машине от того же `master_seed + agent_name` независимо от платформы / Unicode-обработки клиента.
+**Normalization of `agent_name` (applies to all agent-related HKDF derivations in § 28):** a UTF-8 NFC-normalized string, charset `[a-z0-9_-]`, length 2..32 bytes. The implementation must reject an `agent_name` that does not conform to the rule before computing HKDF. This ensures byte-exact derivation of the same key on any machine from the same `master_seed + agent_name` regardless of the platform / Unicode handling of the client.
 
-**Преимущества:**
+**Advantages:**
 
-- Agent compromise ограничен financial loss до funded amount agent account; main account safe
-- Audit trail полный: все agent actions visible в его AccountChain как стандартный consensus state
-- Capability bounds через **funding rate** (не больше X Ɉ за период) — workable substitute для protocol-level capability tokens в простых сценариях
+- Agent compromise is limited to a financial loss up to the funded amount of the agent account; the main account is safe
+- The audit trail is complete: all agent actions are visible in its AccountChain as standard consensus state
+- Capability bounds through the **funding rate** (no more than X Ɉ per period) — a workable substitute for protocol-level capability tokens in simple scenarios
 
-**Известные ограничения (honest acknowledgement — pattern даёт financial loss bound, не capability enforcement):**
+**Known limitations (honest acknowledgement — the pattern gives a financial loss bound, not capability enforcement):**
 
-- **Race при revocation.** Owner detects agent compromise → publishes `Transfer(drain_amount, link=main_account)` либо `ChangeKey`. Если agent уже опубликовал malicious operation в том же τ₁ — race condition; cementing зависит от order в proposal selected by lottery winner. Не guaranteed что owner's revocation operation выиграет race с agent's malicious operation.
-- **ChangeKey требует владения agent secret.** Если agent сам сгенерировал свой keypair (без deriving из owner master_seed), owner не имеет agent secret — не может publish `ChangeKey` от agent account. Только drain mechanism работает; и drain работает только если agent balance ≤ owner's available balance для immediate Transfer. Best practice: derive agent keypair детерминистически из owner master_seed (`HKDF-Expand(master_seed, info="mt-agent-{name}-key")`) — owner всегда может recover agent secret и publish `ChangeKey`.
-- **Capability scope — detection, не enforcement.** «Agent code constraints» через [I-17] auditable binary — это **detection mechanism** (audit может выявить malicious deviation), не **enforcement** (compromised agent runtime может opportunистически опубликовать operations outside intended scope). Detection происходит post-hoc; financial damage already done до момента audit.
-- **Funding rate ≠ granular capability.** «Не более 10 Ɉ в день» через owner funding agent 10 Ɉ daily — agent может в любой момент drain все 10 Ɉ на single attacker-controlled account за одну операцию. «Не более 10 Ɉ в день per-receiver» либо «only on whitelist» **не achievable** через funding rate без app-side enforcement.
-- **Visibility tradeoff.** App SPA получающий Transfer от agent видит agent_account_id, не main owner_account_id; default привязка agent ↔ owner publicly не видна (privacy benefit), но это также means cross-app reputation associated с agent account, не owner identity.
+- **Race on revocation.** The owner detects agent compromise → publishes `Transfer(drain_amount, link=main_account)` or `ChangeKey`. If the agent has already published a malicious operation in the same τ₁ — a race condition; cementing depends on the order in the proposal selected by the lottery winner. It is not guaranteed that the owner's revocation operation wins the race with the agent's malicious operation.
+- **ChangeKey requires possession of the agent secret.** If the agent generated its own keypair (without deriving it from the owner's master_seed), the owner does not have the agent secret — it cannot publish a `ChangeKey` from the agent account. Only the drain mechanism works; and drain works only if the agent balance ≤ the owner's available balance for an immediate Transfer. Best practice: derive the agent keypair deterministically from the owner's master_seed (`HKDF-Expand(master_seed, info="mt-agent-{name}-key")`) — the owner can always recover the agent secret and publish a `ChangeKey`.
+- **Capability scope — detection, not enforcement.** "Agent code constraints" through an [I-17] auditable binary is a **detection mechanism** (an audit can reveal a malicious deviation), not **enforcement** (a compromised agent runtime can opportunistically publish operations outside the intended scope). Detection happens post-hoc; financial damage is already done by the time of the audit.
+- **Funding rate ≠ granular capability.** "No more than 10 Ɉ per day" through the owner funding the agent 10 Ɉ daily — the agent can at any moment drain all 10 Ɉ to a single attacker-controlled account in one operation. "No more than 10 Ɉ per day per-receiver" or "only on a whitelist" is **not achievable** through the funding rate without app-side enforcement.
+- **Visibility tradeoff.** The app SPA receiving a Transfer from the agent sees the agent_account_id, not the main owner_account_id; the default binding agent ↔ owner is not publicly visible (a privacy benefit), but this also means cross-app reputation is associated with the agent account, not the owner identity.
 
-**Что pattern гарантирует:** financial loss bound ≤ funded amount + ability to revoke given (a) cooperative owner online, (b) deterministic keypair derivation, (c) acceptance race-condition risk при revocation.
+**What the pattern guarantees:** a financial loss bound ≤ the funded amount + the ability to revoke given (a) a cooperative owner online, (b) deterministic keypair derivation, (c) acceptance of the race-condition risk on revocation.
 
-**Что pattern НЕ гарантирует:** protocol-enforced capability scope, atomic revocation, prevention of malicious agent operations within funding budget.
+**What the pattern does NOT guarantee:** protocol-enforced capability scope, atomic revocation, prevention of malicious agent operations within the funding budget.
 
 ### 28.2 Multi-account pattern — multi-machine agent deployment
 
-**Use case:** один логический agent работает на нескольких машинах (high-availability, multi-region presence, redundancy). Каждый instance может публиковать operations независимо.
+**Use case:** one logical agent runs on several machines (high availability, multi-region presence, redundancy). Each instance can publish operations independently.
 
-**Architectural reality:** AccountChain Монтаны — single sequential chain per account. Если одну identity использовать с двух машин одновременно — race condition: оба instance видят один `frontier_hash`, оба публикуют op с тем же `prev_hash` — один из них rejected as `InvalidPrevHash`. Это не bug — это design invariant консенсуса.
+**Architectural reality:** Montana's AccountChain is a single sequential chain per account. If one identity is used from two machines at once — a race condition: both instances see the same `frontier_hash`, both publish an op with the same `prev_hash` — one of them is rejected as `InvalidPrevHash`. This is not a bug — it is a design invariant of consensus.
 
 **Pattern:**
 
-1. Каждый instance агента имеет **свой account** с собственным keypair (например, derivation `HKDF-Expand(master_seed, info="mt-agent-{agent_name}-instance-{N}-key")`)
-2. Owner funds each instance account отдельно через Transfer
-3. Instances работают **полностью независимо**: каждый имеет свою историю operations в своей AccountChain, свой `chain_length`, свой balance
-4. Coordination между instances (если нужна) — через **shared state в Anchor**: один instance публикует `Anchor(data_hash=H(shared_state_snapshot))`, другие читают и синхронизируются через off-chain channel (P2P direct либо app-level coordination service)
-5. **Identity unification на app-layer:** application видит N разных account_id, но app-side maintains mapping `agent_logical_name → {instance_1_id, instance_2_id, ...}` для UX presentation как «один agent»
+1. Each agent instance has **its own account** with its own keypair (for example, the derivation `HKDF-Expand(master_seed, info="mt-agent-{agent_name}-instance-{N}-key")`)
+2. The owner funds each instance account separately through a Transfer
+3. The instances work **completely independently**: each has its own history of operations in its own AccountChain, its own `chain_length`, its own balance
+4. Coordination between instances (if needed) — through **shared state in an Anchor**: one instance publishes `Anchor(data_hash=H(shared_state_snapshot))`, the others read it and synchronize through an off-chain channel (P2P direct or an app-level coordination service)
+5. **Identity unification at the app layer:** the application sees N different account_ids, but the app side maintains a mapping `agent_logical_name → {instance_1_id, instance_2_id, ...}` for UX presentation as "one agent"
 
-**Нормализация `N` (instance number):** десятичное целое без leading zeros, диапазон 1..999, кодируется как ASCII decimal string (например `"1"`, `"42"`, `"999"`). Реализация обязана reject `N == 0` и `N >= 1000`. `agent_name` соответствует правилу нормализации из § 28.1. Это исключает collision derivation ключей через альтернативные строковые представления (`"1"` vs `"01"` vs `"001"`).
+**Normalization of `N` (the instance number):** a decimal integer without leading zeros, range 1..999, encoded as an ASCII decimal string (for example `"1"`, `"42"`, `"999"`). The implementation must reject `N == 0` and `N >= 1000`. The `agent_name` conforms to the normalization rule from § 28.1. This rules out a collision in key derivation through alternative string representations (`"1"` vs `"01"` vs `"001"`).
 
-**Преимущества:**
+**Advantages:**
 
-- Полная high-availability — failure одного instance не блокирует другие
-- Geographic distribution тривиальна — каждый instance в своём регионе
-- No protocol violation — каждый instance соблюдает single-frontier semantic AccountChain
+- Full high availability — the failure of one instance does not block the others
+- Geographic distribution is trivial — each instance in its own region
+- No protocol violation — each instance respects the single-frontier semantics of the AccountChain
 
-**Ограничения (известные):**
+**Limitations (known):**
 
-- **Identity unity потеряна на consensus level.** Внешний observer видит N independent accounts, не один agent — finance audit, reputation tracking, cross-instance attestation требуют app-layer aggregation
-- **Balance fragmented.** Каждый instance имеет свой balance; cross-instance funds rebalancing — это Transfer операции которые требуют time + cementing; нет atomic distribution
-- **Reputation fragmented.** `chain_length` per instance — не aggregable; agent total «уверенности в сети» = max chain_length одного instance, не сумма
+- **Identity unity is lost at the consensus level.** An external observer sees N independent accounts, not one agent — finance audit, reputation tracking, cross-instance attestation require app-layer aggregation
+- **Balance fragmented.** Each instance has its own balance; cross-instance funds rebalancing is Transfer operations that require time + cementing; there is no atomic distribution
+- **Reputation fragmented.** `chain_length` per instance is not aggregable; the agent's total "confidence in the network" = the max chain_length of one instance, not the sum
 
 ### 28.3 Combination — two-account + multi-account
 
-Patterns композиционны: owner может управлять multi-machine deployment делегированных agents через комбинацию.
+The patterns are composable: the owner can manage a multi-machine deployment of delegated agents through a combination.
 
 **Example deployment:**
 
 - Owner main account
-- Per-region delegated agent: agent_eu_account, agent_us_account, agent_apac_account (каждый funded из main account)
-- Per-region agent имеет несколько instances в своём регионе для redundancy: agent_eu_instance_1, agent_eu_instance_2, agent_eu_instance_3 (каждый funded из agent_eu account)
+- Per-region delegated agent: agent_eu_account, agent_us_account, agent_apac_account (each funded from the main account)
+- A per-region agent has several instances in its region for redundancy: agent_eu_instance_1, agent_eu_instance_2, agent_eu_instance_3 (each funded from the agent_eu account)
 
-Owner управляет three regional agents через standard Transfer; regional agents управляют своими instances через standard Transfer. Граф delegation полностью visible на consensus level (через AccountChain incoming/outgoing flows).
+The owner manages three regional agents through a standard Transfer; the regional agents manage their instances through a standard Transfer. The delegation graph is fully visible at the consensus level (through AccountChain incoming/outgoing flows).
 
-### 28.4 Discovery агентов через Anchor
+### 28.4 Discovery of agents through Anchor
 
-Если agent должен быть discoverable другими agents либо людьми (например, agent-to-agent service marketplace), используйте standardized Anchor patterns:
+If an agent must be discoverable by other agents or by humans (for example, an agent-to-agent service marketplace), use standardized Anchor patterns:
 
-- **Agent declaration:** `Anchor(app_id="mt-app:agent-registry", data_hash=H(declaration_record))` от agent account, declaration содержит role, capabilities, controlling principal, contact endpoint
-- **Agent attestation:** `Anchor(app_id="mt-app:agent-attestations", data_hash=H(claim))` от другого agent либо human account, claim содержит attesting subject + completed task / vouch / reputation rating
-- **Agent service catalog:** `Anchor(app_id="mt-app:service-catalog", data_hash=H(catalog_entry))` от service provider agent, catalog entry содержит service description, pricing, SPA для оплаты
+- **Agent declaration:** `Anchor(app_id="mt-app:agent-registry", data_hash=H(declaration_record))` from the agent account; the declaration contains the role, capabilities, controlling principal, contact endpoint
+- **Agent attestation:** `Anchor(app_id="mt-app:agent-attestations", data_hash=H(claim))` from another agent or a human account; the claim contains the attesting subject + a completed task / vouch / reputation rating
+- **Agent service catalog:** `Anchor(app_id="mt-app:service-catalog", data_hash=H(catalog_entry))` from a service provider agent; the catalog entry contains the service description, pricing, the SPA for payment
 
-Все три pattern — app-layer convention; format records standardised внутри community либо single dominant registry app, не protocol.
+All three patterns are an app-layer convention; the record format is standardized within the community or by a single dominant registry app, not by the protocol.
 
-### 28.5 Acknowledged limitations — open trigger conditions для protocol-level evolution
+### 28.5 Acknowledged limitations — open trigger conditions for protocol-level evolution
 
-Текущие patterns — workable, но имеют known cost:
+The current patterns are workable, but have a known cost:
 
-- **Capability granularity — coarse-grained.** Owner не может say «agent может Transfer только на whitelist получателей» через protocol-enforcement — это требует либо trust в agent code либо capability tokens (не существуют в Монтане). Workaround — дисциплина через [I-17] auditable agent binary; owner verifies agent code не содержит Transfer publication branches за пределами whitelist
-- **Multi-machine identity — fragmented.** N instances = N accounts; consensus-level identity unification отсутствует. Workaround — app-layer aggregation; UX cost для multi-region agents
-- **Cross-app capability portability — manual.** User имеет multiple delegated agents в разных apps; каждый со своим scheme delegation; нет global capability vocabulary. Workaround — convention community
+- **Capability granularity — coarse-grained.** The owner cannot say "the agent may Transfer only to whitelisted recipients" through protocol enforcement — this requires either trust in the agent code or capability tokens (which do not exist in Montana). The workaround — discipline through the [I-17] auditable agent binary; the owner verifies the agent code does not contain Transfer publication branches outside the whitelist
+- **Multi-machine identity — fragmented.** N instances = N accounts; consensus-level identity unification is absent. The workaround — app-layer aggregation; a UX cost for multi-region agents
+- **Cross-app capability portability — manual.** A user has multiple delegated agents in different apps; each with its own delegation scheme; there is no global capability vocabulary. The workaround — a community convention
 
-**Trigger conditions для re-evaluation protocol-level addition (per protocol spec «Эволюция протокола → Constitutional limits на MIP scope», Level 2 mutable layer):**
+**Trigger conditions for re-evaluating a protocol-level addition (per the protocol spec "Protocol evolution → Constitutional limits on MIP scope", the Level 2 mutable layer):**
 
-- 5+ независимых agent framework реализаций столкнулись с identity-unity либо capability-granularity problem через документированные постмортемы
-- Real production deployment Монтаны с >1000 active agents показывает coordination overhead через current workarounds выше acceptable threshold
-- Внешний security audit identifies app-layer two-account pattern как vulnerable surface
+- 5+ independent agent framework implementations encounter the identity-unity or capability-granularity problem through documented postmortems
+- A real production deployment of Montana with >1000 active agents shows coordination overhead through current workarounds above an acceptable threshold
+- An external security audit identifies the app-layer two-account pattern as a vulnerable surface
 
-До trigger conditions — protocol не меняется. Это не «дефект design», это **conscious choice keep protocol minimal до evidence of necessity**. Минимальная криптографическая поверхность ([I-7]) — глобальный инвариант, действующий и для agent-specific primitives.
+Until the trigger conditions — the protocol does not change. This is not a "design defect", it is a **conscious choice to keep the protocol minimal until evidence of necessity**. Minimal cryptographic surface ([I-7]) is a global invariant, also in force for agent-specific primitives.
 
-### 28.6 Юнона как design study
+### 28.6 Juno as a design study
 
-Юнона — эталонный agent в Montana App, **specification-stage design study** (production-grade implementation pending), демонстрирующий feasibility текущих primitives для agent integration:
+Juno is the reference agent in Montana App, a **specification-stage design study** (a production-grade implementation pending), demonstrating the feasibility of the current primitives for agent integration:
 
-- **Two-account pattern:** Юнона имеет свой делегированный agent account (отдельный keypair derived from user's master_seed через HKDF info="mt-agent-juno-key"); user funds Юнону через настройку daily/monthly budget
-- **Single-machine deployment:** Юнона по умолчанию работает на узле user-а либо на user's клиентском устройстве (smartphone, desktop) — single-machine, multi-account не нужен
-- **Capability levels:** разделы 17.x спеки определяют четыре level (Observer / Assistant / Operator / Owner); levels enforced через agent code constraints + auditable binary [I-17], не через protocol primitive
+- **Two-account pattern:** Juno has its own delegated agent account (a separate keypair derived from the user's master_seed through HKDF info="mt-agent-juno-key"); the user funds Juno by configuring a daily/monthly budget
+- **Single-machine deployment:** Juno by default runs on the user's node or on the user's client device (smartphone, desktop) — single-machine, multi-account is not needed
+- **Capability levels:** the 17.x sections of the spec define four levels (Observer / Assistant / Operator / Owner); the levels are enforced through agent code constraints + an auditable binary [I-17], not through a protocol primitive
 
-Юнона на этапе спеки — **design study** показывающий что текущие primitives покрывают типовые agent integration патерны. Authentic proof of production feasibility даст первая реальная реализация (mt-* crates сейчас не содержат juno runtime; AUDIT.md scope = M1 foundational layer). Если первая реализация натолкнётся на limitation требующий protocol-level addition — это будет первый authentic trigger condition (внутренний dogfooding evidence из §28.5).
+Juno at the spec stage is a **design study** showing that the current primitives cover typical agent integration patterns. Authentic proof of production feasibility will be given by the first real implementation (the mt-* crates currently do not contain a juno runtime; AUDIT.md scope = the M1 foundational layer). If the first implementation runs into a limitation requiring a protocol-level addition — that will be the first authentic trigger condition (internal dogfooding evidence from §28.5).
 
-### 28.7 External Hippocampus pattern — continuity-of-self автономных агентов
+### 28.7 External Hippocampus pattern — continuity-of-self of autonomous agents
 
-**Use case:** автономный agent переживает многократные перезапуски (рестарт процесса, ротация ключа владельцем, миграция между узлами), каждый раз теряя внутреннее состояние LLM-сессии. На следующий старт он должен либо доказать тождественность вчерашнему agent (proof of continuity), либо начать с нуля без накопленного опыта. Без proof of continuity подмена agent третьей стороной с известным `account_id` неотличима от штатного перезапуска.
+**Use case:** an autonomous agent survives repeated restarts (process restart, key rotation by the owner, migration between nodes), each time losing the internal state of the LLM session. On the next start it must either prove identity with yesterday's agent (proof of continuity), or start from scratch without accumulated experience. Without proof of continuity, a substitution of the agent by a third party with a known `account_id` is indistinguishable from a normal restart.
 
-**Pattern (двухуровневый, без новых криптопримитивов):**
+**Pattern (two-level, without new crypto primitives):**
 
-Уровень приложения — внешний журнал агента, локальное хранение + опциональная репликация по выбору владельца:
+The application level — an external agent journal, local storage + optional replication at the owner's choice:
 
-1. Agent ведёт append-only журнал `stream.jsonl` локально. Каждая запись сериализуется как deterministic CBOR (RFC 8949 §4.2.1, alphabetic ordering of keys) со схемой:
+1. The agent keeps an append-only journal `stream.jsonl` locally. Each record is serialized as deterministic CBOR (RFC 8949 §4.2.1, alphabetic ordering of keys) with the schema:
 
 ```
 record = {
-  agent_id     : bytes(32)        // account_id агента
+  agent_id     : bytes(32)        // the agent's account_id
   content      : string           // UTF-8 NFC, max 4096 bytes
   kind         : u8               // 0=state, 1=decision, 2=identity_change, 3=transfer, 4=error, 5=observation
   metadata     : map              // restricted: max 16 entries
                                   //   key:   string (max 64 chars, UTF-8 NFC, charset [a-z0-9_-])
                                   //   value: u64 | bytes(max 256) | string(max 256, UTF-8 NFC)
-  prev_id      : bytes(32) | null // record_id предыдущей записи в файле, null для первой
-  timestamp_ms : u64              // unix epoch миллисекунды UTC
+  prev_id      : bytes(32) | null // record_id of the previous record in the file, null for the first
+  timestamp_ms : u64              // unix epoch milliseconds UTC
   record_id    : bytes(32)        // SHA-256(deterministic_cbor(record_without_record_id))
 }
 ```
 
-**Инварианты записи:**
-- `record_id == SHA-256(deterministic_cbor(record_without_record_id))` где `record_without_record_id` — все 6 полей записи кроме `record_id`, сериализованные deterministic CBOR per RFC 8949 §4.2.1
-- `prev_id` равен `record_id` предыдущей записи в файле; первая запись имеет `prev_id == null`
+**Record invariants:**
+- `record_id == SHA-256(deterministic_cbor(record_without_record_id))` where `record_without_record_id` is all 6 fields of the record except `record_id`, serialized as deterministic CBOR per RFC 8949 §4.2.1
+- `prev_id` equals the `record_id` of the previous record in the file; the first record has `prev_id == null`
 - `kind ∈ {0, 1, 2, 3, 4, 5}` exactly
-- `agent_id` равен `account_id` агента (см. § 28.1) на момент создания записи
-- `timestamp_ms` монотонно неубывающий внутри одного журнала
-- `content` UTF-8 NFC normalized, максимум 4096 байт
-- `metadata` соответствует ограниченной схеме (max 16 entries, без nested map/array, без float)
+- `agent_id` equals the agent's `account_id` (see § 28.1) at the time the record is created
+- `timestamp_ms` monotonically non-decreasing within a single journal
+- `content` UTF-8 NFC normalized, at most 4096 bytes
+- `metadata` conforms to the restricted schema (max 16 entries, no nested map/array, no float)
 
-2. Никаких подписей внутри записей. Integrity цепочки обеспечивается рекурсивным SHA-256: подмена любой записи изменит её `record_id`, что разорвёт `prev_id` следующей записи. Финальная anchored signature через ML-DSA-65 на уровне Anchor (см. шаг 5) фиксирует `last_id` дня в неизменяемой Account Chain.
+2. No signatures inside the records. Chain integrity is provided by recursive SHA-256: tampering with any record changes its `record_id`, which breaks the `prev_id` of the next record. The final anchored signature through ML-DSA-65 at the Anchor level (see step 5) fixes the day's `last_id` in the immutable Account Chain.
 
-3. Agent классифицирует каждую запись по новизне (`routine | novel | prediction_error`) через семантическое сравнение с предыдущими записями (embedding-based либо word-frequency fallback). При загрузке состояния в новую сессию agent выбирает записи `novel` и `prediction_error` в пределах своего токенового бюджета и пропускает `routine` — это **существенно снижает** класс «context window — алгоритм сжатия с потерями» в сценариях когда объём NOVEL/PREDICTION_ERROR за активную сессию помещается в токеновый бюджет; при превышении silent loss остаётся, но на меньшем объёме. Классификация novelty — выбор реализации agent, не часть continuity proof (proof работает на SHA-256 chain без зависимости от классификации).
+3. The agent classifies each record by novelty (`routine | novel | prediction_error`) through a semantic comparison with previous records (embedding-based or a word-frequency fallback). When loading state into a new session the agent selects `novel` and `prediction_error` records within its token budget and skips `routine` — this **substantially reduces** the "context window — a lossy compression algorithm" class in scenarios where the volume of NOVEL/PREDICTION_ERROR over the active session fits in the token budget; when exceeded, silent loss remains, but over a smaller volume. The novelty classification is an implementation choice of the agent, not part of the continuity proof (the proof works on the SHA-256 chain without dependence on the classification).
 
-Уровень протокола — один Anchor в окно либо в день на agent, по выбору владельца:
+The protocol level — one Anchor per window or per day per agent, at the owner's choice:
 
-4. Раз в выбранный интервал собирается дневной payload — **fixed binary layout 170 bytes**, big-endian для всех integer полей (consistent с существующими Montana encoding конvенциями: Anchor opcode payload, BundledConfirmation, proposal header):
+4. Once per the chosen interval a daily payload is assembled — a **fixed binary layout of 170 bytes**, big-endian for all integer fields (consistent with existing Montana encoding conventions: Anchor opcode payload, BundledConfirmation, proposal header):
 
 ```
 payload binary layout (170 bytes total):
-  agent_id              32B    bytes               // account_id агента
+  agent_id              32B    bytes               // the agent's account_id
   date                  10B    ASCII "YYYY-MM-DD"  // UTC date, fixed format zero-padded
-  count                  8B    u64 big-endian      // число записей за date
+  count                  8B    u64 big-endian      // number of records for date
   dna_hash              32B    bytes               // SHA-256(sort_bytes(record_ids) concatenated)
-  novelty_routine        8B    u64 big-endian      // count записей с novelty="routine"
-  novelty_novel          8B    u64 big-endian      // count записей с novelty="novel"
-  novelty_prediction     8B    u64 big-endian      // count записей с novelty="prediction_error"
-  first_id              32B    bytes               // record_id первой записи дня по timestamp_ms
-  last_id               32B    bytes               // record_id последней записи дня по timestamp_ms
+  novelty_routine        8B    u64 big-endian      // count of records with novelty="routine"
+  novelty_novel          8B    u64 big-endian      // count of records with novelty="novel"
+  novelty_prediction     8B    u64 big-endian      // count of records with novelty="prediction_error"
+  first_id              32B    bytes               // record_id of the day's first record by timestamp_ms
+  last_id               32B    bytes               // record_id of the day's last record by timestamp_ms
                        ────
                        170B    fixed length
 ```
 
-**Инварианты payload:**
-- `agent_id == account_id(signer)` коммитящего Anchor (см. шаг 5) — owner-приёмник payload отбрасывает payload где `payload.agent_id != Anchor.sender`
-- `date` — exactly 10 ASCII символов в формате `"YYYY-MM-DD"` (zero-padded month/day, UTC date первой записи дня)
-- `count == |records этого date|`
-- `dna_hash == SHA-256(sort_bytes(record_id_1, ..., record_id_count) concatenated)` где `sort_bytes` — лексикографическая сортировка raw 32-byte sequences (поэлементное сравнение u8), `concatenated` — последовательная конкатенация отсортированных raw bytes без разделителей
+**Payload invariants:**
+- `agent_id == account_id(signer)` of the committing Anchor (see step 5) — the owner-recipient of the payload discards a payload where `payload.agent_id != Anchor.sender`
+- `date` — exactly 10 ASCII characters in the format `"YYYY-MM-DD"` (zero-padded month/day, UTC date of the day's first record)
+- `count == |records of this date|`
+- `dna_hash == SHA-256(sort_bytes(record_id_1, ..., record_id_count) concatenated)` where `sort_bytes` is the lexicographic sort of the raw 32-byte sequences (element-wise u8 comparison), `concatenated` is the sequential concatenation of the sorted raw bytes without separators
 - `novelty_routine + novelty_novel + novelty_prediction == count`
-- `first_id == record_id` записи дня с минимальным `timestamp_ms`; `last_id` — с максимальным
-- сериализация: fixed binary concatenation в указанном порядке полей, big-endian для u64; никакого CBOR в payload (CBOR используется только для записей `stream.jsonl` где metadata имеет переменную структуру)
+- `first_id == record_id` of the day's record with the minimum `timestamp_ms`; `last_id` — with the maximum
+- serialization: fixed binary concatenation in the specified field order, big-endian for u64; no CBOR in the payload (CBOR is used only for the `stream.jsonl` records where metadata has a variable structure)
 
-5. `anchor_payload_hash = SHA-256(payload_binary_layout)` коммитится через стандартный `Anchor(app_id = SHA-256("mt-app" || "agent-hippocampus"), data_hash = anchor_payload_hash)` от agent account. Подпись Anchor — ML-DSA-65 ключ агента (тот же что используется для всех Anchor / Transfer / ChangeKey этого account, см. § 28.1 derivation). Никаких отдельных ключей для журнала.
+5. `anchor_payload_hash = SHA-256(payload_binary_layout)` is committed through a standard `Anchor(app_id = SHA-256("mt-app" || "agent-hippocampus"), data_hash = anchor_payload_hash)` from the agent account. The Anchor signature — the agent's ML-DSA-65 key (the same one used for all Anchor / Transfer / ChangeKey of this account, see the § 28.1 derivation). No separate keys for the journal.
 
-6. Полный payload (170 bytes binary) и `stream.jsonl` хранятся вне цепи — на инфраструктуре под выбором владельца (файловая система локальной машины, другие узлы владельца, IPFS, любая клиентская инфраструктура). Цепь содержит только 32 байта `data_hash` per agent per anchor interval.
+6. The full payload (170 bytes binary) and `stream.jsonl` are stored off-chain — on infrastructure of the owner's choice (the local machine's file system, the owner's other nodes, IPFS, any client infrastructure). The chain contains only the 32 bytes of `data_hash` per agent per anchor interval.
 
-**Trade-off frequency Anchor (operator choice владельца):**
+**Anchor frequency trade-off (the owner's operator choice):**
 
-| Frequency | Anchor count/день | Rate budget per τ₁ | Granularity continuity proof | Use case |
+| Frequency | Anchor count/day | Rate budget per τ₁ | Continuity proof granularity | Use case |
 |---|---|---|---|---|
-| Per τ₁ window | до `(86400 / τ₁_seconds)` (значение `τ₁` см. Genesis Decree) | использует весь rate-per-identity лимит agent | период τ₁ | high-stakes agents (financial actor, real-time decisions) |
-| Per hour | 24 | малая доля rate budget | час | mid-frequency agents |
-| Per day (recommended default) | 1 | минимальная доля rate budget | день | low-stakes agents |
+| Per τ₁ window | up to `(86400 / τ₁_seconds)` (for the `τ₁` value see the Genesis Decree) | uses the agent's entire rate-per-identity limit | the τ₁ period | high-stakes agents (a financial actor, real-time decisions) |
+| Per hour | 24 | a small fraction of the rate budget | an hour | mid-frequency agents |
+| Per day (recommended default) | 1 | a minimal fraction of the rate budget | a day | low-stakes agents |
 
-«Per τ₁ window» исчерпывает rate-per-identity квоту agent на anchored continuity, не оставляя бюджета на Transfer / ChangeKey / другие операции в том же окне. Owner-выбор должен учитывать что agent с per-window anchoring не может одновременно publish-ить иные операции.
+"Per τ₁ window" exhausts the agent's rate-per-identity quota on anchored continuity, leaving no budget for Transfer / ChangeKey / other operations in the same window. The owner's choice must account for the fact that an agent with per-window anchoring cannot simultaneously publish other operations.
 
-**Late-anchor допустимость:** если agent пропустил публикацию Anchor в выбранный интервал (offline, технический сбой), integrity цепочки `stream.jsonl` сохраняется (chain `prev_id` независима от Anchor frequency). Восстановление через late-anchor допустимо при условии что `Anchor.window` не более чем 1 anchor-interval позже `payload.date`:
-- для daily anchoring — Anchor должен быть в окне не позднее 24 часов после end of `payload.date`
-- для per-hour anchoring — не позднее 1 часа после end of payload hour
-- для per-window anchoring — не позднее одного следующего τ₁ window
+**Late-anchor admissibility:** if the agent missed publishing an Anchor in the chosen interval (offline, a technical failure), the integrity of the `stream.jsonl` chain is preserved (the `prev_id` chain is independent of the Anchor frequency). Recovery through a late-anchor is admissible provided that `Anchor.window` is no more than 1 anchor-interval later than `payload.date`:
+- for daily anchoring — the Anchor must be in a window no later than 24 hours after the end of `payload.date`
+- for per-hour anchoring — no later than 1 hour after the end of the payload hour
+- for per-window anchoring — no later than one following τ₁ window
 
-Late-anchor вне допустимого окна отбрасывается verifier как backdating attempt; payload данного периода считается non-anchored (continuity proof не покрывает этот интервал).
+A late-anchor outside the admissible window is discarded by the verifier as a backdating attempt; the payload of that period is considered non-anchored (the continuity proof does not cover that interval).
 
-**Преимущества:**
+**Advantages:**
 
-- **Восстановление identity при рестарте.** Agent проверяет цепочку `prev_id ↔ record_id` локально через rebuild SHA-256 chain; любое нарушение цепочки обнаруживается до загрузки состояния.
-- **Proof of continuity через Anchor.** Третья сторона может проверить:
-  1. получить полный `stream.jsonl` дня от owner (off-chain);
-  2. для каждой записи пересчитать `record_id = SHA-256(deterministic_cbor(record_without_record_id))`;
-  3. убедиться что цепочка `prev_id` непрерывна (каждый `record_id_n` равен `prev_id_{n+1}`);
-  4. вычислить `dna_hash = SHA-256(sort_bytes(record_ids) concatenated)`;
-  5. собрать payload (170 bytes binary fixed layout) и вычислить `anchor_payload_hash = SHA-256(payload)`;
-  6. проверить что Anchor с этим `data_hash` присутствует в Account Chain agent для соответствующего окна (с учётом late-anchor допустимости);
-  7. проверить ML-DSA-65 подпись Anchor (стандартная процедура протокола).
+- **Identity recovery on restart.** The agent checks the `prev_id ↔ record_id` chain locally by rebuilding the SHA-256 chain; any chain violation is detected before loading state.
+- **Proof of continuity through Anchor.** A third party can verify:
+  1. obtain the full `stream.jsonl` of the day from the owner (off-chain);
+  2. for each record recompute `record_id = SHA-256(deterministic_cbor(record_without_record_id))`;
+  3. confirm the `prev_id` chain is continuous (each `record_id_n` equals `prev_id_{n+1}`);
+  4. compute `dna_hash = SHA-256(sort_bytes(record_ids) concatenated)`;
+  5. assemble the payload (170 bytes binary fixed layout) and compute `anchor_payload_hash = SHA-256(payload)`;
+  6. check that an Anchor with this `data_hash` is present in the agent's Account Chain for the corresponding window (accounting for late-anchor admissibility);
+  7. verify the ML-DSA-65 signature of the Anchor (the standard protocol procedure).
 
-  Подмена **anchored** истории задним числом невозможна без подделки Anchor (требует владения ключом agent — эквивалентно подмене всего account).
+  Tampering with **anchored** history after the fact is impossible without forging the Anchor (requires possession of the agent's key — equivalent to substituting the entire account).
 
-- **Минимальная нагрузка на цепь.** При recommended default (1 Anchor/день/agent) — 32 байта `data_hash` на agent в день. Защита от bloat — стандартная [I-15] для Anchor (rate-per-identity + amortization через AccountChain TTL: dormant agents pruned автоматически вместе со всей historical Anchor цепочкой).
+- **Minimal load on the chain.** At the recommended default (1 Anchor/day/agent) — 32 bytes of `data_hash` per agent per day. Protection against bloat — the standard [I-15] for Anchor (rate-per-identity + amortization through the AccountChain TTL: dormant agents are pruned automatically together with the entire historical Anchor chain).
 
-- **Никаких новых protocol-level примитивов.** Используются только: `Anchor` (существующий opcode), `account_id`, ML-DSA-65 signature (существующий primitive), SHA-256 (существующий primitive), HKDF-Expand (в § 28.1), fixed binary layout (consistent с существующими Montana encoding). Deterministic CBOR (RFC 8949) — application-layer serialization исключительно для записей `stream.jsonl` где metadata имеет переменную структуру; payload коммитимый через Anchor использует Montana-native fixed binary layout без CBOR.
+- **No new protocol-level primitives.** Only the following are used: `Anchor` (an existing opcode), `account_id`, an ML-DSA-65 signature (an existing primitive), SHA-256 (an existing primitive), HKDF-Expand (in § 28.1), a fixed binary layout (consistent with existing Montana encoding). Deterministic CBOR (RFC 8949) — an application-layer serialization exclusively for the `stream.jsonl` records where metadata has a variable structure; the payload committed through Anchor uses a Montana-native fixed binary layout without CBOR.
 
-**Известные ограничения:**
+**Known limitations:**
 
-- **Pre-anchor period susceptible to silent fork.** Записи в интервале от последнего anchored Anchor до момента следующего anchor publishing **не имеют protocol-anchored proof**. Атакующий с доступом к `stream.jsonl` (например hosted setup, см. ниже) до момента следующего Anchor может создать alternate fork: подменить произвольные записи и пересчитать SHA-256 chain — chain валидна для каждого fork. На anchor publish фиксируется только один fork. Защита от этой атаки растёт обратно пропорционально anchor interval; per-window anchoring снижает window до периода τ₁, daily — до 24 часов.
+- **Pre-anchor period susceptible to a silent fork.** Records in the interval from the last anchored Anchor to the moment of the next anchor publishing **have no protocol-anchored proof**. An attacker with access to `stream.jsonl` (for example a hosted setup, see below) before the next Anchor can create an alternate fork: replace arbitrary records and recompute the SHA-256 chain — the chain is valid for each fork. At anchor publish only one fork is fixed. Protection against this attack grows inversely proportional to the anchor interval; per-window anchoring reduces the window to the τ₁ period, daily — to 24 hours.
 
-- **Continuity proof работает пока сохраняется Account Chain agent в state.** При pruning dormant agent (`balance == 0` + 4τ₂ inactivity, см. [I-15] компонент 2) вся история Anchor удаляется автоматически — proof становится non-recoverable. Pattern предполагает active agent (любая операция за 4τ₂ продлевает TTL).
+- **The continuity proof works as long as the agent's Account Chain is preserved in state.** On pruning a dormant agent (`balance == 0` + 4τ₂ inactivity, see the [I-15] component 2) the entire Anchor history is deleted automatically — the proof becomes non-recoverable. The pattern assumes an active agent (any operation over 4τ₂ extends the TTL).
 
-- **Конфиденциальность `stream.jsonl` зависит от инфраструктуры на которой работает agent.** При hosted deployment hosting operator имеет физический доступ к файлу journal — protocol этого не предотвращает. Шифрование journal под отдельным ключом владельца либо self-hosted runtime — выбор владельца, не protocol-enforced. Single-machine deployment (см. § 28.6 Юнона как design study) — типовой self-hosted случай где hosting operator = сам владелец.
+- **The confidentiality of `stream.jsonl` depends on the infrastructure the agent runs on.** In a hosted deployment the hosting operator has physical access to the journal file — the protocol does not prevent this. Encrypting the journal under a separate owner key or a self-hosted runtime — the owner's choice, not protocol-enforced. A single-machine deployment (see § 28.6 Juno as a design study) — the typical self-hosted case where the hosting operator = the owner themselves.
 
-- **Локальный `stream.jsonl` подвержен отказу диска.** Anchor цепочка на сети сохраняется, но без локального файла невозможно reconstruct content. Репликация по выбору владельца (зеркала на других узлах владельца, IPFS pinning, etc.) — обязательная инженерная практика для production deployment, не protocol-enforced.
+- **The local `stream.jsonl` is susceptible to disk failure.** The Anchor chain on the network is preserved, but without the local file it is impossible to reconstruct the content. Replication at the owner's choice (mirrors on the owner's other nodes, IPFS pinning, etc.) — a mandatory engineering practice for a production deployment, not protocol-enforced.
 
-- **Семантическая классификация novelty зависит от эмбеддинговой модели agent.** Разные модели дают разную классификацию идентичного content. Это не влияет на continuity proof (proof работает на SHA-256 chain без зависимости от классификации), но влияет на selective load: agent с заменённой моделью загружает другое подмножество записей.
+- **The semantic novelty classification depends on the agent's embedding model.** Different models give a different classification of identical content. This does not affect the continuity proof (the proof works on the SHA-256 chain without dependence on the classification), but it affects selective load: an agent with a replaced model loads a different subset of records.
 
-- **Ротация ключа agent через `ChangeKey`** меняет ML-DSA-65 pubkey но сохраняет `account_id`. Anchor подписанные старым ключом остаются валидными в historical state; новые Anchor подписаны новым ключом. SHA-256 chain `stream.jsonl` независима от смены ключа. Best practice: создать запись `kind = 2 (identity_change)` с `metadata = {"old_pubkey": <bytes>, "new_pubkey": <bytes>, "rotation_window": <u64>}` для аудитной trail; никакого нового namespace для этого не требуется.
+- **Rotation of the agent's key through `ChangeKey`** changes the ML-DSA-65 pubkey but preserves the `account_id`. Anchors signed with the old key remain valid in historical state; new Anchors are signed with the new key. The `stream.jsonl` SHA-256 chain is independent of the key change. Best practice: create a record `kind = 2 (identity_change)` with `metadata = {"old_pubkey": <bytes>, "new_pubkey": <bytes>, "rotation_window": <u64>}` for an audit trail; no new namespace is required for this.
 
-**Что pattern гарантирует:** доказательство тождественности «вчерашний agent = сегодняшний agent» через SHA-256 chain записей, anchored через Anchor с ML-DSA-65 подписью; восстановление состояния в новой сессии без потери identity; обнаружение любой подмены **anchored** истории третьей стороной с доступом к `stream.jsonl`.
+**What the pattern guarantees:** a proof of identity "yesterday's agent = today's agent" through the SHA-256 chain of records, anchored through an Anchor with an ML-DSA-65 signature; recovery of state in a new session without loss of identity; detection of any tampering with **anchored** history by a third party with access to `stream.jsonl`.
 
-**Что pattern НЕ гарантирует:** сохранение полного LLM-контекста (вне области приложения); защиту записей в pre-anchor period (см. ограничения выше); atomic recovery при отказе диска (требует выбранной владельцем репликации); межагентскую совместимость семантической классификации novelty при разных эмбеддинговых моделях; конфиденциальность journal от hosting operator при hosted deployment; защиту от потери agent ключа подписи.
+**What the pattern does NOT guarantee:** preservation of the full LLM context (outside the application's scope); protection of records in the pre-anchor period (see limitations above); atomic recovery on disk failure (requires owner-chosen replication); inter-agent compatibility of the semantic novelty classification under different embedding models; confidentiality of the journal from the hosting operator in a hosted deployment; protection against loss of the agent's signing key.
 
-**Референсная реализация:** канонический класс `AgentHippocampus` в репозитории Montana, `Hippocampus/agent_hippocampus.py`. Текущая реализация использует HMAC-SHA256 для подписи записей (январский экспериментальный вариант) — требует переписать под чистую SHA-256 chain без подписей записей в соответствии с § 28.7 (отдельная задача после commit подсекции).
+**Reference implementation:** the canonical class `AgentHippocampus` in the Montana repository, `Hippocampus/agent_hippocampus.py`. The current implementation uses HMAC-SHA256 for signing records (a January experimental variant) — it needs to be rewritten to a pure SHA-256 chain without record signatures in accordance with § 28.7 (a separate task after committing the subsection).
 
-**Trigger conditions для возможной протокольной эволюции** (по образцу § 28.5):
+**Trigger conditions for a possible protocol evolution** (modeled on § 28.5):
 
-- 5+ независимых agent framework реализаций столкнулись с проблемой межагентской верификации continuity proof через несовместимые сериализации записей (CBOR vs альтернативы) — может потребовать стандартизация протокольного объекта `agent_continuity_proof` вместо application convention
-- Production deployment Montana с >1000 active agents показывает что app-layer naming conventions (`mt-app:agent-*` namespace) создают collision incidents — может потребовать formal protocol-level namespace registry
-- Внешний security audit identifies pre-anchor fork vulnerability как vulnerable surface в специфическом сценарии — может потребовать pre-anchor commitment (более частый Anchor checkpoint либо protocol-level commit log) чтобы forks обнаруживались до Anchor publishing
+- 5+ independent agent framework implementations encounter the problem of inter-agent verification of the continuity proof through incompatible record serializations (CBOR vs alternatives) — may require standardizing a protocol object `agent_continuity_proof` instead of an application convention
+- A production deployment of Montana with >1000 active agents shows that app-layer naming conventions (the `mt-app:agent-*` namespace) create collision incidents — may require a formal protocol-level namespace registry
+- An external security audit identifies the pre-anchor fork vulnerability as a vulnerable surface in a specific scenario — may require a pre-anchor commitment (a more frequent Anchor checkpoint or a protocol-level commit log) so that forks are detected before Anchor publishing
 
-До trigger conditions — pattern остаётся application-level. Это conscious choice в рамках [I-7] минимальной криптографической поверхности.
+Until the trigger conditions — the pattern remains application-level. This is a conscious choice within [I-7] minimal cryptographic surface.
 
 ---
 
-## Заключение
+## Conclusion
 
-Montana App — эталонная реализация приложения для сети Montana. Приложение объединяет кошелёк, мессенджер, обозреватель контента, обнаружение контактов, профиль, **агент Юнона** и **встроенный браузер** в едином интерфейсе, работающем на iOS, Android и десктоп-платформах.
+Montana App is the reference application for the Montana network. The application combines a wallet, messenger, content browser, contact discovery, profile, **the Juno agent**, and a **built-in browser** in a single interface running on iOS, Android, and desktop platforms.
 
-Ключевые архитектурные принципы:
+Key architectural principles:
 
-- **Разделение протокола и приложения.** Приложение использует API протокола, не реализует логику консенсуса. Юнона работает через тот же API что и пользователь. Протокол не знает о существовании Юноны.
-- **Приватность по умолчанию.** Профиль, ключи шифрования — всё опционально. Облачный запасной путь Юноны выключен по умолчанию. Маскировка трафика включена по умолчанию.
-- **Постквантовая безопасность.** Все криптооперации используют PQ-безопасные примитивы (ML-DSA-65, ML-KEM-768, SHA-256, ChaCha20-Poly1305).
-- **Стандарты совместимости.** Приложение следует стандартам совместимости (раздел 23), обеспечивая совместимость с другими клиентами Montana.
-- **Ядро на Rust + интерфейс на Flutter.** Максимальная производительность ядра и единая кодовая база интерфейса для всех платформ.
-- **Глубокоэшелонированная защита.** Четыре изолированных процесса (ядро, Юнона, браузер, демон подписи). Приватный ключ только в демоне подписи. Уровни полномочий с накопительными лимитами. Журнал аудита. Период охлаждения при первичной настройке и обновлениях.
-- **Лояльность к владельцу.** Юнона защищает человека за экраном. Предупреждает, рекомендует, не решает за пользователя.
+- **Separation of protocol and application.** The application uses the protocol API and does not implement consensus logic. Juno works through the same API as the user. The protocol is unaware of Juno's existence.
+- **Privacy by default.** Profile, encryption keys — all optional. Juno's cloud fallback is off by default. Traffic mimicry is on by default.
+- **Post-quantum security.** All crypto operations use PQ-secure primitives (ML-DSA-65, ML-KEM-768, SHA-256, ChaCha20-Poly1305).
+- **Compatibility standards.** The application follows the compatibility standards (section 23), ensuring compatibility with other Montana clients.
+- **Rust core + Flutter interface.** Maximum core performance and a single interface codebase for all platforms.
+- **Defense in depth.** Four isolated processes (core, Juno, browser, Signer Daemon). The private key only in the Signer Daemon. Permission levels with cumulative limits. An audit log. A cooldown period at onboarding and updates.
+- **Loyalty to the owner.** Juno protects the person behind the screen. It warns, recommends, does not decide for the user.
 
-Это фундамент с ИИ-агентом. Дальнейшие итерации расширят функциональность (группы, многоустройственная синхронизация, голосовой интерфейс Юноны, продвинутая приватность), основываясь на опыте эксплуатации.
+This is a foundation with an AI agent. Further iterations will expand the functionality (groups, multi-device synchronization, the Juno voice interface, advanced privacy), building on operational experience.
+
