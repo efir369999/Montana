@@ -3418,106 +3418,106 @@ Montana privacy protection:
 For maximum protection — Light-Node-at-Home + Tor entry. See § 26.
 ```
 
-## 27. Категории клиентов и реализация [I-17]
+## 27. Client categories and [I-17] implementation
 
-Клиенты Монтаны распространяются по трём категориям с разными каналами дистрибуции и разными операционными threat models. Инвариант [I-17] (публичная аудиторская поверхность клиентского бинарника, главная спека) применяется ко всем категориям, обеспечивая разную глубину защиты в зависимости от контроля пользователя над каналом установки.
+Montana clients are distributed across three categories with different distribution channels and different operational threat models. Invariant [I-17] (public audit surface of the client binary, the main spec) applies to all categories, providing different depths of protection depending on the user's control over the installation channel.
 
-### 27.1 Категория 1 — Мобильный клиент
+### 27.1 Category 1 — Mobile client
 
-**Канал дистрибуции:** магазины приложений (iOS App Store, Google Play) с централизованной подписью платформы.
+**Distribution channel:** app stores (iOS App Store, Google Play) with centralized platform signing.
 
-**Threat model:** компрометация канала дистрибуции даёт атакующему возможность доставить таргетированную имплантированную сборку конкретному пользователю через легитимный механизм обновления.
+**Threat model:** compromise of the distribution channel gives an attacker the ability to deliver a targeted, implanted build to a specific user through the legitimate update mechanism.
 
-**Реализация [I-17]:**
+**[I-17] implementation:**
 
-- Reproducible build — бинарник в магазине приложений собирается из публичного исходного кода воспроизводимо
-- Hash релизной сборки публикуется в сети Монтана через Anchor от координационного аккаунта команды разработки
-- Hash подтверждается независимыми рецензентами через их Anchor
-- Клиент при запуске вычисляет self-hash и отображает его в разделе «О приложении» пользовательского интерфейса
-- Security researchers и независимые аудиторы имеют технические условия для сверки hash бинарника из магазина приложений с опубликованным anchored hash
+- Reproducible build — the binary in the app store is built reproducibly from the public source code
+- The hash of the release build is published on the Montana network through an Anchor from the development team's coordination account
+- The hash is confirmed by independent reviewers through their Anchors
+- On launch the client computes a self-hash and displays it in the "About" section of the user interface
+- Security researchers and independent auditors have the technical conditions to compare the hash of the binary from the app store with the published anchored hash
 
-**Защита:** детективная через публичный аудит. Таргетированная подмена сборки обнаруживается расхождением hash; публикация расхождения создаёт репутационную и правовую стоимость для атакующего.
+**Protection:** detective, through public audit. A targeted build substitution is detected by a hash mismatch; publishing the mismatch creates reputational and legal cost for the attacker.
 
-**Остаточный риск:** массовый пользователь не проводит ручную сверку. Защита работает через экономику раскрытия, не через превентивную блокировку.
+**Residual risk:** the mass user does not perform a manual comparison. The protection works through the economics of disclosure, not through preventive blocking.
 
-### 27.2 Категория 2 — Desktop-клиент
+### 27.2 Category 2 — Desktop client
 
-**Канал дистрибуции:** прямая загрузка с публичных зеркал (официальный сайт, распределённые зеркала, P2P-распространение через сеть Монтана).
+**Distribution channel:** direct download from public mirrors (the official site, distributed mirrors, P2P distribution through the Montana network).
 
-**Threat model:** компрометация зеркала, атака «человек посередине» на загрузку, подмена бинарника в пути между сервером и пользователем.
+**Threat model:** mirror compromise, a man-in-the-middle attack on the download, binary substitution in transit between the server and the user.
 
-**Реализация [I-17]:**
+**[I-17] implementation:**
 
-- Официальный сайт публикует hash каждой релизной сборки рядом с ссылкой на скачивание
-- Hash дублируется через Anchor в сети Монтана (независимый источник проверки)
-- Подписанные Git tags в публичном репозитории исходного кода
-- Клиент поддерживает команду `montana-cli verify-self` для сверки hash установленного бинарника с anchored hash из сети
-- Reproducible build позволяет пользователю пересобрать бинарник из исходного кода и сверить byte-exact
+- The official site publishes the hash of each release build next to the download link
+- The hash is duplicated through an Anchor on the Montana network (an independent verification source)
+- Signed Git tags in the public source-code repository
+- The client supports a `montana-cli verify-self` command to compare the hash of the installed binary with the anchored hash from the network
+- The reproducible build allows the user to rebuild the binary from source and compare byte-exact
 
-**Защита:** полная для пользователей выполняющих сверку. Атакующий не может подменить бинарник на конкретной машине без обнаружения пользователем через стандартный hash-check.
+**Protection:** complete for users who perform the comparison. An attacker cannot substitute the binary on a specific machine without detection by the user through a standard hash check.
 
-**Остаточный риск:** пользователь пропускает сверку (человеческий фактор). Приложение при первом запуске отображает шаг визуальной сверки для ручного подтверждения.
+**Residual risk:** the user skips the comparison (the human factor). On first launch the application displays a visual comparison step for manual confirmation.
 
-### 27.3 Категория 3 — Node-local клиент
+### 27.3 Category 3 — Node-local client
 
-**Канал дистрибуции:** встроен в установку узла. Оператор собирает клиент из исходного кода либо использует официальный бинарник с узла.
+**Distribution channel:** bundled with the node installation. The operator builds the client from source or uses the official binary from the node.
 
-**Threat model:** компрометация исходного репозитория, атака на сборочную машину разработчика, внедрение в upstream зависимости.
+**Threat model:** compromise of the source repository, an attack on the developer's build machine, an injection into an upstream dependency.
 
-**Реализация [I-17]:**
+**[I-17] implementation:**
 
-- Оператор клонирует официальный репозиторий, проверяет подписи Git tag
-- Оператор собирает бинарник reproducibly; сравнивает локальный hash с hash от других операторов через их Anchor подтверждения
-- Независимая пересборка оператором обеспечивает почти полную защиту — атака требует компрометации upstream source, что видимо в истории коммитов и публично аудируемо
+- The operator clones the official repository and verifies the Git tag signatures
+- The operator builds the binary reproducibly; compares the local hash with the hash from other operators through their Anchor confirmations
+- An independent rebuild by the operator provides almost complete protection — an attack requires compromising the upstream source, which is visible in the commit history and publicly auditable
 
-**Защита:** почти полная для операторов выполняющих самостоятельную сборку. Экосистема аудиторов (независимые сборщики) проверяет upstream integrity.
+**Protection:** almost complete for operators who perform an independent build. An ecosystem of auditors (independent builders) verifies upstream integrity.
 
-**Остаточный риск:** компрометация самого исходного кода через pull request с имплантом. Защита — открытое code review процесса принятия изменений в официальный репозиторий.
+**Residual risk:** compromise of the source code itself through a pull request with an implant. The protection — open code review of the process of accepting changes into the official repository.
 
-### 27.4 Альтернативные и пользовательские клиенты
+### 27.4 Alternative and custom clients
 
-**Канал дистрибуции:** различный — сообщество, исследовательские форки, специализированные клиенты.
+**Distribution channel:** various — community, research forks, specialized clients.
 
-**Threat model:** широкий спектр в зависимости от источника.
+**Threat model:** a wide spectrum depending on the source.
 
-**Реализация [I-17]:** протокол не блокирует подключение альтернативных клиентов. Экосистема альтернативных реализаций, пользовательских модификаций и исследовательских инструментов поддерживается по дизайну. Пользователь осознанно выбирает alternative клиент и самостоятельно оценивает его доверенность.
+**[I-17] implementation:** the protocol does not block the connection of alternative clients. An ecosystem of alternative implementations, custom modifications, and research tools is supported by design. The user deliberately chooses an alternative client and assesses its trustworthiness themselves.
 
-**Защита:** ответственность пользователя. Альтернативные клиенты не получают репутационной anchor-поддержки команды разработки, но технически полнофункциональны.
+**Protection:** the user's responsibility. Alternative clients do not get the reputational anchor support of the development team, but are technically fully functional.
 
-### 27.5 UI-индикация верификации
+### 27.5 UI indication of verification
 
-Приложение отображает текущее состояние верификации в разделе «О приложении» или «Безопасность»:
+The application displays the current verification state in the "About" or "Security" section:
 
-- **Самостоятельная сверка hash пользователем** — галочка «Verified by user», timestamp последней проверки
-- **Anchored hash из сети** — публично известный hash текущей релизной версии с датой публикации и подписывающим аккаунтом
-- **Self-computed hash** — hash фактически запущенного бинарника, вычисленный при старте
-- **Status match** — совпадают ли anchored и self-computed hashes
+- **User's own hash comparison** — a "Verified by user" checkmark, the timestamp of the last check
+- **Anchored hash from the network** — the publicly known hash of the current release version with the publication date and the signing account
+- **Self-computed hash** — the hash of the actually running binary, computed at startup
+- **Status match** — whether the anchored and self-computed hashes match
 
-Mismatch между self-computed и anchored hash **не блокирует** работу клиента (пользователь может использовать modified/alternative сборку осознанно), но отображает визуальное предупреждение с рекомендацией проверить источник установки.
+A mismatch between the self-computed and anchored hash **does not block** the client's operation (the user may deliberately use a modified/alternative build), but displays a visual warning with a recommendation to check the installation source.
 
-### 27.6 Команды для верификации
+### 27.6 Verification commands
 
-Desktop и node клиенты поддерживают стандартный набор команд:
+Desktop and node clients support a standard set of commands:
 
-- `montana-cli hash-self` — вывести hash текущего бинарника
-- `montana-cli hash-anchored` — получить актуальный anchored hash из сети
-- `montana-cli verify-self` — сравнить self-hash с anchored hash, вернуть exit code 0 при совпадении
-- `montana-cli rebuild-check` — инструкция по reproducible rebuild из исходного кода
+- `montana-cli hash-self` — output the hash of the current binary
+- `montana-cli hash-anchored` — get the current anchored hash from the network
+- `montana-cli verify-self` — compare the self-hash with the anchored hash, return exit code 0 on a match
+- `montana-cli rebuild-check` — instructions for a reproducible rebuild from source
 
-Mobile клиенты обеспечивают эквивалентную функциональность через меню «О приложении».
+Mobile clients provide equivalent functionality through the "About" menu.
 
-### 27.7 Сборочный процесс для reproducible builds
+### 27.7 Build process for reproducible builds
 
-Команда разработки обеспечивает:
+The development team ensures:
 
-- Публичный исходный код в открытом репозитории
-- Документированный сборочный процесс с фиксированными версиями toolchain
-- Подписанные Git tags для каждого релиза
-- CI-pipeline с воспроизводимыми образами сборки (Docker / Nix)
-- Инструкции для независимых сборщиков по воспроизведению byte-identical бинарника
-- Публикация hash каждого релиза через Anchor немедленно после публикации в каналах дистрибуции
+- Public source code in an open repository
+- A documented build process with fixed toolchain versions
+- Signed Git tags for each release
+- A CI pipeline with reproducible build images (Docker / Nix)
+- Instructions for independent builders to reproduce a byte-identical binary
+- Publication of each release hash through an Anchor immediately after publication in the distribution channels
 
-Любой независимый сборщик из публичного исходного кода с теми же toolchain-параметрами получает байт-идентичный бинарник. Отклонение — индикатор компрометации сборочного процесса, публично расследуется.
+Any independent builder from the public source code with the same toolchain parameters gets a byte-identical binary. A deviation is an indicator of a compromise of the build process and is publicly investigated.
 
 ---
 
