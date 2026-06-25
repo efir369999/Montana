@@ -200,29 +200,29 @@ Files are stored in each platform's application-specific directory. Large blobs 
 
 ---
 
-## 3. Управление идентичностью
+## 3. Identity management
 
-### 3.1 Генерация сида и BIP-39
+### 3.1 Seed generation and BIP-39
 
-При первом запуске пользователь создаёт новую идентичность:
+On first launch the user creates a new identity:
 
-1. Приложение генерирует 256 бит случайности из системного CSPRNG
-2. Конвертирует в 24 слова мнемоники BIP-39
-3. Пользователь записывает мнемонику на бумагу
-4. Приложение требует ввести несколько слов для подтверждения
-5. Только после подтверждения сид сохраняется в зашифрованное хранилище
+1. The app generates 256 bits of randomness from the system CSPRNG
+2. Converts it into a 24-word BIP-39 mnemonic
+3. The user writes the mnemonic down on paper
+4. The app asks for a few words back to confirm
+5. Only after confirmation is the seed saved to encrypted storage
 
-Мнемоника — единственный способ восстановить доступ. Приложение нигде не отправляет сид по сети, не делает автоматическую облачную резервную копию, не логирует.
+The mnemonic is the only way to recover access. The app never sends the seed over the network, makes no automatic cloud backup, and does not log it.
 
-### 3.2 Вывод ключей
+### 3.2 Key derivation
 
-Вывод ключей byte-exactly следует каноническому пути спеки протокола (см. раздел «Вывод ключей из сид-фразы» протокольной спецификации). Отклонение недопустимо — клиент не совместимый с канонической дерivацией не сможет подписывать операции принимаемые сетью, а восстановление из мнемоники на другом клиенте даст другой аккаунт.
+Key derivation follows the canonical path of the protocol specification byte-for-byte (see the "Key derivation from the seed phrase" section of the protocol specification). Deviation is not allowed — a client incompatible with the canonical derivation cannot sign operations the network accepts, and recovery from the mnemonic on another client would yield a different account.
 
-**Шаг 1. Мастер-сид из мнемоники BIP-39.**
+**Step 1. Master seed from the BIP-39 mnemonic.**
 
 ```
-entropy_32   = BIP-39.mnemonic_to_entropy(24_words)   // 32 байта
-salt         = ascii_bytes("mt-seed")                 // 7 байт, domain separator
+entropy_32   = BIP-39.mnemonic_to_entropy(24_words)   // 32 bytes
+salt         = ascii_bytes("mt-seed")                 // 7 bytes, domain separator
 master_seed  = PBKDF2-HMAC-SHA-256(
                  password = entropy_32,
                  salt     = salt,
@@ -231,7 +231,7 @@ master_seed  = PBKDF2-HMAC-SHA-256(
                )
 ```
 
-**Шаг 2. Три keypair через HKDF-Expand.**
+**Step 2. Three keypairs through HKDF-Expand.**
 
 ```
 mldsa_seed_32(role) = HKDF-Expand(PRK = master_seed, info = role, L = 32)
@@ -242,62 +242,62 @@ node_keypair           = ML-DSA-65.KeyGen( mldsa_seed_32("mt-node-key") )
 app_encryption_keypair = ML-KEM-768.KeyGen( mlkem_seed_64("mt-app-encryption-key") )
 ```
 
-**Шаг 3. Идентификаторы.**
+**Step 3. Identifiers.**
 
 ```
-account_id = SHA-256("mt-account" || suite_id || account_pubkey)   // 32 байта
-node_id    = SHA-256("mt-node"    || node_pubkey)                   // 32 байта
+account_id = SHA-256("mt-account" || suite_id || account_pubkey)   // 32 bytes
+node_id    = SHA-256("mt-node"    || node_pubkey)                   // 32 bytes
 ```
 
-Все три keypair детерминированы из одного сида. Восстановление мнемоники восстанавливает все три идентичности одновременно. Канонические test-vectors фиксированы в спеке протокола — приложение обязано пройти их байт-в-байт.
+All three keypairs are deterministic from a single seed. Recovering the mnemonic restores all three identities at once. The canonical test vectors are fixed in the protocol specification — the app must pass them byte-for-byte.
 
-### 3.3 Резервная копия и восстановление
+### 3.3 Backup and recovery
 
-**Основная резервная копия** — мнемоника 24 слова, записанная пользователем. Это единственный критичный бэкап.
+**Primary backup** — the 24-word mnemonic written down by the user. This is the only critical backup.
 
-**Дополнительные копии** (опционально, по желанию пользователя):
-- Зашифрованный экспорт в файл (история чата, контакты, локальные данные), защищённый паролем
-- QR-код с зашифрованным сидом (для переноса на другое устройство)
+**Additional copies** (optional, at the user's discretion):
+- Encrypted export to a file (chat history, contacts, local data), password-protected
+- A QR code with the encrypted seed (to move to another device)
 
-**Процесс восстановления:**
+**Recovery process:**
 
-1. Пользователь вводит 24 слова мнемоники
-2. Приложение вычисляет все три keypair согласно 3.2
-3. Приложение запрашивает у сети текущий баланс (через запрос к Таблице аккаунтов)
-4. Приложение скачивает недавние Anchor текущего аккаунта для восстановления истории
-5. Если есть зашифрованный экспорт — пользователь загружает его и расшифровывает паролем
-6. История чата восстанавливается локально из экспорта или с нуля
+1. The user enters the 24-word mnemonic
+2. The app computes all three keypairs per 3.2
+3. The app queries the network for the current balance (via a request to the Account Table)
+4. The app downloads recent Anchors of the current account to reconstruct history
+5. If an encrypted export exists — the user loads it and decrypts it with the password
+6. Chat history is restored locally from the export, or from scratch
 
-**Что не восстанавливается из мнемоники:**
-- Открытый текст старых сообщений (они шифруются эфемерными ключами Double Ratchet)
-- Локальная адресная книга (имена контактов)
-- Состояния сессий Double Ratchet (нужно начать новые сессии)
+**What is not recovered from the mnemonic:**
+- The plaintext of old messages (encrypted with ephemeral Double Ratchet keys)
+- The local address book (contact names)
+- Double Ratchet session states (new sessions must be started)
 
-Это означает: для полного восстановления нужна мнемоника **плюс** зашифрованный экспорт. Только мнемоника восстанавливает доступ к аккаунту и балансу, но не историю.
+This means: full recovery needs the mnemonic **plus** the encrypted export. The mnemonic alone recovers access to the account and balance, but not history.
 
-### 3.4 Синхронизация между устройствами
+### 3.4 Synchronization across devices
 
-Пользователь может использовать Montana App на нескольких устройствах одновременно (телефон + десктоп). Каждое устройство имеет доступ к одному сиду, то есть одному аккаунту.
+A user can run Montana App on several devices at once (phone + desktop). Each device has access to one seed, i.e. one account.
 
-**Текущая модель: простая многоустройственность.**
+**Current model: simple multi-device.**
 
-- Все устройства разделяют один сид (пользователь вводит мнемонику на каждом)
-- Каждое устройство имеет свою локальную копию истории чата (начинает с момента установки)
-- Новое устройство не видит историю предыдущих устройств автоматически
-- Для синхронизации — ручной зашифрованный экспорт и импорт
+- All devices share one seed (the user enters the mnemonic on each)
+- Each device keeps its own local copy of chat history (starting from the time of installation)
+- A new device does not see the history of previous devices automatically
+- For synchronization — manual encrypted export and import
 
-**Что пока не работает:**
-- Автоматическая синхронизация сообщений между устройствами
-- Согласованность состояния чата в реальном времени
-- Дедупликация двойного получения (если Алиса отправит на телефон, десктоп не получит)
+**What does not work yet:**
+- Automatic message synchronization across devices
+- Real-time chat-state consistency
+- Deduplication of double delivery (if Alice sends to the phone, the desktop does not receive it)
 
-**Перспектива:** полноценная многоустройственная синхронизация через зашифрованное хранилище сообщений с симметричным расшифровыванием между устройствами. Это требует дополнительной инфраструктуры и откладывается.
+**Outlook:** full multi-device synchronization through encrypted message storage with symmetric decryption across devices. This requires additional infrastructure and is deferred.
 
-**Практически на текущем этапе:** пользователь выбирает «основное устройство» для мессенджера, другие устройства используют в основном для кошелька и обозревателя контента. Это приемлемо для первой версии.
+**In practice at this stage:** the user chooses a "primary device" for the messenger; other devices are used mainly for the wallet and content browser. This is acceptable for the first version.
 
 ---
 
-## 4. Модуль кошелька
+## 4. Wallet module
 
 ### 4.1 Account activation (first entry)
 
@@ -317,93 +317,93 @@ First-entry flow:
 
 **Public sponsor nodes.** Community nodes that send first-entry transfers with a minimal amount are a standard early-period practice. The list of public sponsors is maintained as a community advisory registry (analogous to the public host list, see 11.5.5). The protocol's per-sponsor creation rate limit applies to them as to any account.
 
-### 4.2 Отправка Монтана
+### 4.2 Sending Montana
 
-Процесс отправки перевода:
+The transfer-sending process:
 
-1. Пользователь выбирает контакт из адресной книги или сканирует QR-код
-2. Приложение резолвит получателя → `account_id`
-3. Пользователь вводит сумму (в Ɉ, отображается с конвертацией в nɈ)
-4. Приложение проверяет `amount <= balance` локально
-5. Приложение показывает подтверждение с деталями (получатель, сумма, комиссия = 0)
-6. Пользователь подтверждает
-7. Приложение формирует операцию `Transfer`:
-   - `sender = свой account_id`
-   - `prev_hash = текущий frontier_hash своего аккаунта`
-   - `link = account_id получателя`
-   - `amount = сумма в nɈ`
-8. Приложение подписывает ML-DSA-65 своим ключом аккаунта
-9. Приложение публикует через API протокола (отправка в P2P gossip)
-10. Интерфейс показывает «подтверждено» когда операция сцементирована (≈ 60 секунд после отправки)
-11. Интерфейс показывает «применено» когда операция применена на границе окна τ₂
-12. Баланс обновляется после применения
+1. The user selects a contact from the address book or scans a QR code
+2. The app resolves the recipient → `account_id`
+3. The user enters the amount (in Ɉ, shown with conversion to nɈ)
+4. The app checks `amount <= balance` locally
+5. The app shows a confirmation with details (recipient, amount, fee = 0)
+6. The user confirms
+7. The app builds a `Transfer` operation:
+   - `sender = own account_id`
+   - `prev_hash = current frontier_hash of own account`
+   - `link = recipient's account_id`
+   - `amount = amount in nɈ`
+8. The app signs with ML-DSA-65 using its account key
+9. The app publishes through the protocol API (sent into P2P gossip)
+10. The interface shows "confirmed" when the operation is cemented (≈ 60 seconds after sending)
+11. The interface shows "applied" when the operation is applied at the τ₂ window boundary
+12. The balance updates after application
 
-**Локальная проверка перед отправкой (чтобы не тратить время сети):**
-- `sender != receiver` (самоперевод запрещён протоколом)
+**Local check before sending (to avoid wasting network time):**
+- `sender != receiver` (self-transfer is forbidden by the protocol)
 - `amount > 0`
 - `balance >= amount`
-- Получатель существует в Таблице аккаунтов (если его ещё нет — этот же `Transfer` создаёт аккаунт получателя, первый вход, см. 4.1)
+- The recipient exists in the Account Table (if not yet present, this same `Transfer` creates the recipient account — first entry, see 4.1)
 
-Если что-то не проходит — приложение показывает ошибку до отправки.
+If something fails, the app shows the error before sending.
 
-### 4.3 Приём (QR-коды, глубокие ссылки)
+### 4.3 Receiving (QR codes, deep links)
 
-Для приёма средств пользователю нужно поделиться своим `account_id` с отправителем.
+To receive funds the user shares their `account_id` with the sender.
 
-**QR-код:**
-- Приложение генерирует QR, содержащий строку `montana:<account_id>`
-- Опционально в QR может быть включена сумма: `montana:<account_id>?amount=10`
-- Опционально отображаемое имя: `montana:<account_id>?name=Alice`
-- Сканирование QR другим приложением открывает отправку с заранее заполненными данными
+**QR code:**
+- The app generates a QR containing the string `montana:<account_id>`
+- Optionally the QR may include an amount: `montana:<account_id>?amount=10`
+- Optionally a display name: `montana:<account_id>?name=Alice`
+- Scanning the QR with another app opens the send screen with prefilled data
 
-**Глубокие ссылки:**
-- Формат URL: `https://montana.app/pay/<account_id>?amount=10`
-- Открытие ссылки запускает Montana App и заполняет форму отправки
-- Работает на iOS (Universal Links) и Android (App Links)
+**Deep links:**
+- URL format: `https://montana.app/pay/<account_id>?amount=10`
+- Opening the link launches Montana App and fills the send form
+- Works on iOS (Universal Links) and Android (App Links)
 
-**Обмен текстом:**
-- Просто копирование строки `mt4ZGfe...` (кодировка Base58 account_id с контрольной суммой)
-- Вставка в другое приложение для отправки
+**Text exchange:**
+- Simply copying the string `mt4ZGfe...` (Base58 encoding of `account_id` with a checksum)
+- Pasting into another app to send
 
-### 4.4 Отображение баланса и истории
+### 4.4 Balance and history display
 
-**Баланс:**
-- Отображается в Ɉ (с точностью до nɈ)
-- Источник: `Account Table[my_account_id].balance` через API протокола
-- Обновляется в реальном времени через потоки протокола (подписка на изменения своего аккаунта)
-- В настройках можно переключить на отображение в nɈ или в альтернативных единицах
+**Balance:**
+- Shown in Ɉ (to nɈ precision)
+- Source: `Account Table[my_account_id].balance` through the protocol API
+- Updated in real time through protocol streams (subscription to changes of one's own account)
+- Settings allow switching to display in nɈ or in alternative units
 
-**История:**
-- Список операций отсортированных по времени (последние первыми)
-- Для каждой операции: тип (отправка / приём / зачисление Монтана), сумма, контрагент, время, статус (подтверждено / применено)
-- Данные из локальной базы SQLite — история, которую приложение отслеживало с момента установки
-- Для старых операций (до установки приложения) — опциональное восстановление через сканирование proposals
+**History:**
+- A list of operations sorted by time (most recent first)
+- For each operation: type (send / receive / Montana credit), amount, counterparty, time, status (confirmed / applied)
+- Data from the local SQLite database — the history the app has tracked since installation
+- For older operations (before the app was installed) — optional recovery by scanning proposals
 
-**Восстановление истории** для свежеустановленного приложения:
+**History recovery** for a freshly installed app:
 
-1. Приложение сканирует proposals начиная с genesis или с недавнего checkpoint
-2. Для каждого proposal проверяет содержит ли он операции своего аккаунта
-3. Извлекает Transfer в и из своего аккаунта
-4. Строит локальную историю
-5. Процесс фоновый, может занимать минуты или часы для активного аккаунта
+1. The app scans proposals starting from genesis or from a recent checkpoint
+2. For each proposal it checks whether it contains operations of its own account
+3. It extracts Transfers to and from its account
+4. It builds the local history
+5. The process runs in the background and may take minutes or hours for an active account
 
-### 4.5 Ротация ключа
+### 4.5 Key rotation
 
-Ротация ключей (например при подозрении на компрометацию):
+Key rotation (for example on suspected compromise):
 
-1. Приложение генерирует новый ML-DSA-65 keypair (но **не** из того же сида — это был бы тот же ключ)
-2. Пользователь записывает новую мнемонику (новый сид)
-3. Приложение формирует операцию `ChangeKey`:
-   - `prev_hash = текущий frontier_hash`
-   - `new_suite_id = 0x0001` (та же ML-DSA-65, или другая при миграции между suite)
-   - `new_pubkey = новый публичный ключ`
-   - Подписано **старым** ключом
-4. Публикация через протокол
-5. После применения приложение обновляет свой локальный сид на новый
+1. The app generates a new ML-DSA-65 keypair (but **not** from the same seed — that would be the same key)
+2. The user writes down a new mnemonic (a new seed)
+3. The app builds a `ChangeKey` operation:
+   - `prev_hash = current frontier_hash`
+   - `new_suite_id = 0x0001` (the same ML-DSA-65, or a different one when migrating between suites)
+   - `new_pubkey = the new public key`
+   - Signed with the **old** key
+4. Publication through the protocol
+5. After application the app updates its local seed to the new one
 
-Этот процесс меняет `current_pubkey` и `current_suite_id` в Таблице аккаунтов. `account_id` **не меняется** — остаётся тот же. Все входящие переводы продолжают работать.
+This process changes `current_pubkey` and `current_suite_id` in the Account Table. The `account_id` does **not** change — it stays the same. All incoming transfers keep working.
 
-**Критично:** пользователь обязан сохранить новую мнемонику перед `ChangeKey`. Если новая мнемоника потеряна — аккаунт недоступен навсегда.
+**Critical:** the user must save the new mnemonic before `ChangeKey`. If the new mnemonic is lost, the account is inaccessible forever.
 
 ---
 
