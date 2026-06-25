@@ -407,92 +407,92 @@ This process changes `current_pubkey` and `current_suite_id` in the Account Tabl
 
 ---
 
-## 5. Модуль мессенджера
+## 5. Messenger module
 
-### 5.1 Реализация Double Ratchet PQ
+### 5.1 Double Ratchet PQ implementation
 
-Montana App использует адаптированный протокол Double Ratchet с заменой X25519 на ML-KEM-768. Это даёт forward secrecy и post-compromise security в постквантовой модели.
+Montana App uses an adapted Double Ratchet protocol with ML-KEM-768 replacing X25519. This provides forward secrecy and post-compromise security in a post-quantum model.
 
-**Базовая архитектура храповика:**
+**Basic ratchet architecture:**
 
 ```
-Состояние сессии:
-  - root_key (выведен из общего секрета KEM)
+Session state:
+  - root_key (derived from the KEM shared secret)
   - sending_chain_key
   - receiving_chain_key
   - sending_message_number
   - receiving_message_number
   - sent_ratchet_public_key (ML-KEM-768)
   - received_ratchet_public_key (ML-KEM-768)
-  - skipped_message_keys (для доставки не по порядку)
+  - skipped_message_keys (for out-of-order delivery)
 ```
 
-**Два храповика:**
+**Two ratchets:**
 
-1. **Симметричный храповик** — продвижение на каждое сообщение в одном направлении:
+1. **Symmetric ratchet** — advances on every message in one direction:
    - `message_key = HKDF(chain_key, "mt-message")`
    - `chain_key   = HKDF(chain_key, "mt-chain")`
-   - Каждое сообщение имеет уникальный `message_key`, который используется один раз и удаляется
-   - Forward secrecy: компрометация `chain_key` не раскрывает прошлые `message_key` (они удалены)
+   - Each message has a unique `message_key`, used once and deleted
+   - Forward secrecy: compromise of `chain_key` does not reveal past `message_key`s (they are deleted)
 
-2. **KEM-храповик** — продвижение при смене направления или периодически:
-   - Получатель генерирует свежий keypair ML-KEM-768
-   - Включает новый публичный ключ в первый ответный пакет
-   - Отправитель видит новый публичный ключ, выполняет `ML-KEM-768.encaps(new_pubkey)` → общий секрет
-   - Обе стороны вычисляют новый `root_key` через `HKDF(root_key || shared_secret)`
-   - Post-compromise security: после KEM-шага новый `root_key` недоступен атакующему даже если был скомпрометирован старый
+2. **KEM ratchet** — advances on a direction change or periodically:
+   - The receiver generates a fresh ML-KEM-768 keypair
+   - Includes the new public key in the first reply packet
+   - The sender sees the new public key and performs `ML-KEM-768.encaps(new_pubkey)` → shared secret
+   - Both sides compute a new `root_key` via `HKDF(root_key || shared_secret)`
+   - Post-compromise security: after a KEM step the new `root_key` is unavailable to an attacker even if the old one was compromised
 
-### 5.2 Рукопожатие через pre-key bundle
+### 5.2 Handshake through a pre-key bundle
 
-Алиса хочет отправить первое сообщение Бобу, который офлайн. Боб не может участвовать в рукопожатии в реальном времени.
+Alice wants to send the first message to Bob, who is offline. Bob cannot take part in a real-time handshake.
 
-**Решение:** Боб заранее публикует pre-key bundle через Content Layer. Алиса использует его для установки начальной сессии без участия Боба.
+**Solution:** Bob publishes a pre-key bundle in advance through the Content Layer. Alice uses it to set up the initial session without Bob's participation.
 
-**Публикация Бобом pre-key bundle:**
+**Bob publishes a pre-key bundle:**
 
-1. Боб генерирует `identity_key` (долговременный keypair ML-KEM-768)
-2. Боб генерирует `signed_prekey` (средне-живущий keypair ML-KEM-768, ротируется примерно раз в неделю)
-3. Боб подписывает `signed_prekey` своим ключом аккаунта (подпись ML-DSA-65)
-4. Боб генерирует массив `one_time_prekeys` (100 одноразовых публичных ключей ML-KEM-768)
-5. Боб формирует `PreKeyBundle` по формату из стандартов совместимости (раздел 23)
-6. Боб публикует blob через Content Layer в `app_id` ключей предварительной установки мессенджера
-7. Боб создаёт Anchor, ссылающийся на blob
+1. Bob generates an `identity_key` (a long-term ML-KEM-768 keypair)
+2. Bob generates a `signed_prekey` (a medium-lived ML-KEM-768 keypair, rotated roughly once a week)
+3. Bob signs the `signed_prekey` with his account key (an ML-DSA-65 signature)
+4. Bob generates an array of `one_time_prekeys` (100 one-time ML-KEM-768 public keys)
+5. Bob builds a `PreKeyBundle` in the format from the compatibility standards (section 23)
+6. Bob publishes the blob through the Content Layer under the messenger pre-key `app_id`
+7. Bob creates an Anchor referring to the blob
 
-**Алиса инициирует сессию:**
+**Alice initiates the session:**
 
-1. Алиса ищет актуальный `PreKeyBundle` Боба через историю Anchor по `app_id` мессенджера
-2. Алиса верифицирует подпись `signed_prekey` через публичный ключ аккаунта Боба
-3. **Обязательная сверка отпечатка аккаунта Боба по [I-16]** (см. раздел «Отпечаток аккаунта и out-of-band сверка» ниже). До подтверждения сверки пользователем шаги 4–8 не выполняются — приложение блокирует отправку первого сообщения
-4. Алиса выбирает один `one_time_prekey` из bundle
-5. Алиса выполняет multi-KEM рукопожатие:
+1. Alice looks up Bob's current `PreKeyBundle` through the Anchor history of the messenger `app_id`
+2. Alice verifies the `signed_prekey` signature with Bob's account public key
+3. **Mandatory verification of Bob's account fingerprint per [I-16]** (see the "Account fingerprint and out-of-band verification" section below). Until the user confirms the verification, steps 4–8 are not performed — the app blocks sending the first message
+4. Alice picks one `one_time_prekey` from the bundle
+5. Alice performs the multi-KEM handshake:
    - `ss1 = ML-KEM-768.encaps(Bob.identity_key)`
    - `ss2 = ML-KEM-768.encaps(Bob.signed_prekey)`
    - `ss3 = ML-KEM-768.encaps(Bob.one_time_prekey)`
    - `initial_root_key = HKDF(ss1 || ss2 || ss3, "mt-initial-root")`
-6. Алиса инициализирует сессию храповика с этим `root_key`
-7. Алиса выводит метки очереди сессии из `initial_root_key` (см. ниже)
-8. Алиса шифрует первое сообщение и включает в заголовок: идентификационную информацию, использованный идентификатор `one_time_prekey`, свой эфемерный публичный ключ храповика
-9. Алиса публикует зашифрованный blob с Anchor на свою очередь отправки для Боба
+6. Alice initializes the ratchet session with this `root_key`
+7. Alice derives the session queue labels from `initial_root_key` (see below)
+8. Alice encrypts the first message and includes in the header: identification information, the used `one_time_prekey` identifier, and her ephemeral ratchet public key
+9. Alice publishes the encrypted blob with an Anchor on her send queue for Bob
 
-**Боб получает первое сообщение (когда приходит онлайн):**
+**Bob receives the first message (when he comes online):**
 
-1. Боб подписан на метки очереди всех активных сессий; при первичном рукопожатии от неизвестного контакта Боб дополнительно мониторит `app_id` ключей предварительной установки мессенджера на упоминание использованного `one_time_prekey`
-2. Боб скачивает blob через Content Layer
-3. Боб извлекает заголовок, идентифицирует какой `one_time_prekey` использован
-4. Боб выполняет ту же multi-KEM расшифровку с своими приватными ключами
-5. Боб вычисляет тот же `initial_root_key`
-6. Боб выводит метки очереди сессии из `initial_root_key` идентично Алисе, добавляет метки в список активных очередей
-7. Боб инициализирует состояние сессии
-8. Боб расшифровывает сообщение
-9. Боб удаляет использованный `one_time_prekey` из своего локального хранилища (одноразовость)
+1. Bob is subscribed to the queue labels of all active sessions; on a first handshake from an unknown contact Bob additionally monitors the messenger pre-key `app_id` for a mention of the used `one_time_prekey`
+2. Bob downloads the blob through the Content Layer
+3. Bob extracts the header and identifies which `one_time_prekey` was used
+4. Bob performs the same multi-KEM decryption with his private keys
+5. Bob computes the same `initial_root_key`
+6. Bob derives the session queue labels from `initial_root_key` identically to Alice and adds the labels to his list of active queues
+7. Bob initializes the session state
+8. Bob decrypts the message
+9. Bob deletes the used `one_time_prekey` from his local storage (one-time use)
 
-**Метки очереди сессии — канонический вывод.**
+**Session queue labels — canonical derivation.**
 
-Канонический вывод меток очереди сессии зафиксирован в разделе 23.2 (стандарты совместимости) как единственный источник истины. Ниже — краткое изложение применимое при рукопожатии.
+The canonical derivation of session queue labels is fixed in section 23.2 (compatibility standards) as the single source of truth. Below is a summary applicable during the handshake.
 
-После вычисления `initial_root_key` обе стороны детерминированно выводят пару меток очереди, которые задают направленные маршрутные точки для доставки сообщений через Content Layer.
+After computing `initial_root_key` both sides deterministically derive a pair of queue labels that define the directed routing points for message delivery through the Content Layer.
 
-Канонический порядок участников. Чтобы Алиса и Боб вывели идентичную пару меток, роли `lower` и `higher` определяются byte-lexicographically по публичному ключу ML-DSA-65 (`current_pubkey` из Таблицы аккаунтов):
+Canonical participant order. So that Alice and Bob derive an identical pair of labels, the `lower` and `higher` roles are defined byte-lexicographically by the ML-DSA-65 public key (`current_pubkey` from the Account Table):
 
 ```
 if pubkey_alice < pubkey_bob:       # byte-lexicographic compare, 1952 B
@@ -503,17 +503,17 @@ else:
     higher_pubkey = pubkey_alice
 ```
 
-Сравнение байт-в-байт по 1952-байтной сериализации публичного ключа ML-DSA-65. Равенство невозможно — разные аккаунты имеют разные ключи по построению.
+A byte-for-byte comparison over the 1952-byte serialization of the ML-DSA-65 public key. Equality is impossible — different accounts have different keys by construction.
 
-Queue labels **ротируются каждое окно τ₁** детерминистически на основе текущего `window_index`. Это закрывает класс long-term session identification atакой хостящим узлом — хост не может построить stable map `account_X → {sessions_X}`, потому что labels меняются каждые 60 секунд.
+Queue labels **rotate every τ₁ window** deterministically based on the current `window_index`. This closes the class of long-term session identification attacks by the hosting node — the host cannot build a stable map `account_X → {sessions_X}`, because the labels change every 60 seconds.
 
-`session_id` выводится один раз при рукопожатии как byte-lexicographic конкатенация двух публичных ключей:
+`session_id` is derived once at handshake as the byte-lexicographic concatenation of the two public keys:
 
 ```
-session_id = lower_pubkey || higher_pubkey    # 1952 + 1952 = 3904 байта (ML-DSA-65)
+session_id = lower_pubkey || higher_pubkey    # 1952 + 1952 = 3904 bytes (ML-DSA-65)
 ```
 
-Формула label (ротируется per τ₁):
+The label formula (rotated per τ₁):
 
 ```
 queue_label(session_id, direction_byte, W) = HKDF-SHA-256(
@@ -524,28 +524,28 @@ queue_label(session_id, direction_byte, W) = HKDF-SHA-256(
 )
 ```
 
-Направления:
-- `direction_byte = 0x00` — сообщения от `lower` к `higher`
-- `direction_byte = 0x01` — сообщения от `higher` к `lower`
+Directions:
+- `direction_byte = 0x00` — messages from `lower` to `higher`
+- `direction_byte = 0x01` — messages from `higher` to `lower`
 
-Каждое направление имеет отдельную метку в каждом окне — внешний наблюдатель цепочки, видящий активность на `queue_label(..., 0x00, W)` и `queue_label(..., 0x01, W)`, не может связать их без знания `initial_root_key`.
+Each direction has a separate label in each window — an external chain observer that sees activity on `queue_label(..., 0x00, W)` and `queue_label(..., 0x01, W)` cannot link them without knowing `initial_root_key`.
 
-**Поведение при ротации.** Отправитель публикует blob с `queue_label(..., direction, W_current)`. Получатель подписан на labels для окон `W ∈ {W_current, W_current − 1}` — двухоконная tolerance к clock skew между участниками (до 120 sec). Каждое новое окно клиент обновляет subscription: удаляет label для `W − 2` и добавляет label для `W_current`.
+**Rotation behavior.** The sender publishes a blob with `queue_label(..., direction, W_current)`. The receiver is subscribed to labels for windows `W ∈ {W_current, W_current − 1}` — a two-window tolerance to clock skew between participants (up to 120 sec). Each new window the client updates the subscription: it removes the label for `W − 2` and adds the label for `W_current`.
 
-**Стабильность `initial_root_key` + эфемерность labels.** Ratchet root_key изменяется после шагов KEM-храповика, но labels выводятся только из `initial_root_key` рукопожатия — стабильного на всю жизнь сессии. Храповик меняет ключи шифрования содержимого; labels меняются по window anchor, не по ratchet step. Эти два измерения ортогональны; сообщения не теряются при продвижении храповика.
+**Stability of `initial_root_key` + ephemerality of labels.** The ratchet `root_key` changes after KEM-ratchet steps, but labels are derived only from the handshake `initial_root_key` — stable for the entire session lifetime. The ratchet changes the content-encryption keys; the labels change by window anchor, not by ratchet step. These two dimensions are orthogonal; messages are not lost as the ratchet advances.
 
-**Catch-up после offline** — если клиент был offline несколько окон (более 1 τ₁), он должен запросить blobs опубликованные в пропущенных окнах. См. раздел 5.8.1 ниже.
+**Catch-up after offline** — if the client was offline for several windows (more than 1 τ₁), it must request the blobs published in the missed windows. See section 5.8.1 below.
 
-Применение при публикации Anchor:
+Application when publishing an Anchor:
 
 ```
 app_id_l2h = SHA-256("mt-app" || queue_label_l2h)
 app_id_h2l = SHA-256("mt-app" || queue_label_h2l)
 ```
 
-Публикация Anchor использует полученный `app_id` напрямую — инвариант протокола `app_id = SHA-256("mt-app" || app_name)` сохранён, никаких изменений формата Anchor или правил валидации не требуется.
+Publishing an Anchor uses the resulting `app_id` directly — the protocol invariant `app_id = SHA-256("mt-app" || app_name)` is preserved, and no change to the Anchor format or validation rules is required.
 
-Сопоставление отправки и приёма для каждой стороны:
+Matching send and receive for each side:
 
 ```
 if pubkey_self == lower_pubkey:
@@ -556,82 +556,82 @@ else:  # pubkey_self == higher_pubkey
     app_id_receive = app_id_l2h
 ```
 
-Сторона публикует blob-ы на `app_id_send` и подписана через Content Layer на `app_id_receive`. Встречное направление реализует отдельный канал приёма — наблюдатель не может связать два канала без знания состояния сессии.
+A side publishes blobs on `app_id_send` and is subscribed through the Content Layer to `app_id_receive`. The opposite direction implements a separate receive channel — an observer cannot link the two channels without knowing the session state.
 
-### 5.3 Отпечаток аккаунта и out-of-band сверка
+### 5.3 Account fingerprint and out-of-band verification
 
-Реализация [I-16] в клиенте-мессенджере.
+Implementation of [I-16] in the messenger client.
 
-**Канонический вывод.** Отпечаток аккаунта выводится по формуле, зафиксированной в [I-16] главной спеки: `SHA-256("mt-account-fingerprint" || account_pubkey)` → первые 66 бит → 6 слов из `Montana wordlist.txt` (2048 слов, 11 бит каждое).
+**Canonical derivation.** The account fingerprint is derived by the formula fixed in [I-16] of the main specification: `SHA-256("mt-account-fingerprint" || account_pubkey)` → the first 66 bits → 6 words from `Montana wordlist.txt` (2048 words, 11 bits each).
 
-**Сценарий первой сверки.** При инициировании первой end-to-end сессии с новым контактом клиент показывает оба отпечатка (свой и контакта) рядом и требует от пользователя одно из действий подтверждения:
+**First-verification scenario.** When initiating the first end-to-end session with a new contact, the client shows both fingerprints (its own and the contact's) side by side and requires one of the following confirmation actions from the user:
 
-1. Произнести 6 слов вслух при звонке / видеовстрече, собеседник подтверждает совпадение
-2. Показать QR-код с обоими отпечатками, собеседник сканирует и подтверждает
-3. Передать отпечаток через вторичный проверенный канал связи и получить подтверждение
+1. Read the 6 words aloud during a call / video meeting; the other party confirms the match
+2. Show a QR code with both fingerprints; the other party scans and confirms
+3. Pass the fingerprint over a secondary trusted channel and receive confirmation
 
-До явного подтверждения пользователем приложение блокирует отправку первого зашифрованного сообщения (шаги 4–9 раздела 5.2 Алиса инициирует сессию). Кнопка отправки неактивна, в интерфейсе чата отображается блок «Сверить отпечаток с собеседником перед первым сообщением».
+Until the user explicitly confirms, the app blocks sending the first encrypted message (steps 4–9 of section 5.2, Alice initiates the session). The send button is disabled, and the chat interface shows a block: "Verify the fingerprint with the other party before the first message".
 
-**Повторная сверка при смене ключа.** При получении `ChangeKey` для контакта (смена публичного ключа аккаунта) отпечаток пересчитывается с новым ключом. Клиент помечает сессию как «идентичность изменена», блокирует отправку до подтверждения нового отпечатка тем же out-of-band путём. Старая история чата сохраняется, но помечена визуально: «до смены ключа» / «после смены ключа».
+**Re-verification on key change.** On receiving a `ChangeKey` for a contact (a change of the account public key), the fingerprint is recomputed with the new key. The client marks the session as "identity changed", blocks sending until the new fingerprint is confirmed over the same out-of-band path. The old chat history is kept but visually marked: "before key change" / "after key change".
 
-**Отображение отпечатка.** В карточке контакта отпечаток отображается постоянно (шесть слов крупным моноширинным шрифтом) — пользователь может сверить его повторно в любой момент без инициирования новой сессии.
+**Fingerprint display.** In the contact card the fingerprint is shown permanently (six words in a large monospace font) — the user can re-verify it at any time without initiating a new session.
 
-**Хранение состояния сверки.** Клиент сохраняет локально флаг `fingerprint_verified: bool` на каждый контакт + публичный ключ на момент сверки. При расхождении сохранённого ключа и текущего — возврат в состояние «требуется сверка».
+**Storing the verification state.** The client stores locally a `fingerprint_verified: bool` flag per contact plus the public key at the moment of verification. On a mismatch between the stored key and the current one — it returns to the "verification required" state.
 
-### 5.4 Управление pre-key bundle
+### 5.4 Pre-key bundle management
 
-**Обновление pre-key-ов:**
+**Refreshing pre-keys:**
 
-Боб должен мониторить использование `one_time_prekeys`. Когда приближается к исчерпанию — публикует новый bundle.
+Bob must monitor the use of `one_time_prekeys`. When approaching exhaustion he publishes a new bundle.
 
-- Боб узнаёт какие pre-key использованы через отслеживание принятых сообщений (каждое указывает использованный pre-key)
-- Когда использовано более 80% — запускается публикация нового bundle
-- Новый bundle содержит новые `one_time_prekeys` (100 штук)
-- `signed_prekey` может быть тот же или ротирован
+- Bob learns which pre-keys are used by tracking received messages (each indicates the used pre-key)
+- When more than 80% are used, publication of a new bundle is triggered
+- The new bundle contains new `one_time_prekeys` (100 of them)
+- The `signed_prekey` may be the same or rotated
 
-**Ротация `signed_prekey`:**
+**`signed_prekey` rotation:**
 
-- `signed_prekey` ротируется периодически (примерно раз в неделю)
-- Старый `signed_prekey` остаётся валидным для старых сессий (обратная совместимость)
-- Новые сессии инициируются с новым `signed_prekey`
+- The `signed_prekey` is rotated periodically (roughly once a week)
+- The old `signed_prekey` remains valid for old sessions (backward compatibility)
+- New sessions are initiated with the new `signed_prekey`
 
-**Ротация `identity_key`:**
+**`identity_key` rotation:**
 
-- `identity_key` долговременный — ротируется редко (раз в год или при компрометации)
-- Ротация требует публикации нового `identity_key` и уведомления существующих контактов (через сообщение в почтовый ящик)
+- The `identity_key` is long-term — rotated rarely (once a year or on compromise)
+- Rotation requires publishing a new `identity_key` and notifying existing contacts (through a mailbox message)
 
-### 5.5 Формат сообщения
+### 5.5 Message format
 
-Зашифрованное сообщение в blob содержит:
+An encrypted message in a blob contains:
 
 ```
 MessageBlob {
   version              u16
   ratchet_header {
-    sender_ephemeral_pubkey  1184 B  (текущий публичный ключ храповика ML-KEM-768)
-    prev_chain_length        u32     (для детекции пропущенных сообщений)
-    message_number           u32     (внутри текущей цепочки)
+    sender_ephemeral_pubkey  1184 B  (current ML-KEM-768 ratchet public key)
+    prev_chain_length        u32     (for detecting skipped messages)
+    message_number           u32     (within the current chain)
   }
-  kem_ciphertext       1088 B  (ML-KEM-768 инкапсуляция нового общего секрета, если это шаг KEM-храповика)
-  nonce                12 B    (для ChaCha20-Poly1305)
-  aead_ciphertext      variable  (зашифрованный открытый текст + padding)
-  auth_tag             16 B    (тег Poly1305)
+  kem_ciphertext       1088 B  (ML-KEM-768 encapsulation of a new shared secret, if this is a KEM-ratchet step)
+  nonce                12 B    (for ChaCha20-Poly1305)
+  aead_ciphertext      variable  (encrypted plaintext + padding)
+  auth_tag             16 B    (Poly1305 tag)
 }
 ```
 
-Для начального сообщения дополнительно включается информация рукопожатия (идентификатор использованного `one_time_prekey`, идентификационная информация отправителя).
+For the initial message, handshake information is additionally included (the used `one_time_prekey` identifier, the sender's identification information).
 
-Открытый текст до шифрования содержит:
+The plaintext before encryption contains:
 
 ```
 Plaintext {
-  message_type   u8   (0 = текст, 1 = ссылка на изображение, 2 = ссылка на файл, 3 = системное)
-  timestamp      u64  (миллисекунды Unix)
+  message_type   u8   (0 = text, 1 = image reference, 2 = file reference, 3 = system)
+  timestamp      u64  (Unix milliseconds)
   body           variable
 }
 ```
 
-Для файлов и медиа `body` содержит ссылку на отдельный blob с зашифрованным содержимым (через Content Layer).
+For files and media, `body` contains a reference to a separate blob with encrypted content (through the Content Layer).
 
 ### 5.6 Экраны чата и офлайн-платежи через mesh
 
