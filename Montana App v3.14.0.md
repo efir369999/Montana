@@ -825,101 +825,101 @@ In Montana App this is provided through the KEM ratchet:
 
 ---
 
-## 6. Широковещательные каналы
+## 6. Broadcast channels
 
-### 6.1 Создание канала
+### 6.1 Creating a channel
 
-Пользователь хочет создать публичный канал (блог, новости, сообщество):
+A user wants to create a public channel (a blog, news, a community):
 
-1. Пользователь придумывает уникальное имя канала (например `montana-news`)
-2. Приложение вычисляет `app_id_channel = SHA-256("mt-app" || "montana-news")`
-3. Приложение проверяет, существуют ли уже Anchor с этим `app_id` (если да — канал занят другим пользователем, нужно выбрать другое имя)
-4. Приложение создаёт первый Anchor в этом `app_id` — «создание канала» с метаданными (название, описание, автор = `account_id`)
-5. Метаданные публикуются как персистентный blob
-6. С этого момента пользователь — владелец канала (только он может публиковать в него с подписью своим ключом аккаунта)
+1. The user chooses a unique channel name (for example `montana-news`)
+2. The app computes `app_id_channel = SHA-256("mt-app" || "montana-news")`
+3. The app checks whether Anchors with this `app_id` already exist (if so — the channel is taken by another user, a different name must be chosen)
+4. The app creates the first Anchor under this `app_id` — a "channel creation" with metadata (title, description, author = `account_id`)
+5. The metadata is published as a persistent blob
+6. From this point the user is the channel owner (only they can publish to it, signing with their account key)
 
-**Валидация владения:**
-- Все дальнейшие Anchor в этом `app_id` должны быть подписаны тем же `account_id`, что создал канал (первый Anchor)
-- Подписчики верифицируют подписи при получении постов
-- Если кто-то публикует Anchor в том же `app_id`, но с другим `account_id` — это считается невалидным постом и игнорируется подписчиками
+**Ownership validation:**
+- All further Anchors under this `app_id` must be signed by the same `account_id` that created the channel (the first Anchor)
+- Subscribers verify signatures on receiving posts
+- If someone publishes an Anchor under the same `app_id` but with a different `account_id` — it is treated as an invalid post and ignored by subscribers
 
-### 6.2 Публикация постов
+### 6.2 Publishing posts
 
-Владелец канала публикует новый пост:
+The channel owner publishes a new post:
 
-1. Автор создаёт контент (текст и опциональные медиа)
-2. Приложение сериализует пост в blob `Post`:
+1. The author creates content (text and optional media)
+2. The app serializes the post into a `Post` blob:
    ```
    Post {
      version         u16
-     title           строка (UTF-8, максимум 256 байт)
-     body            строка (UTF-8, максимум 64 KB, или ссылка на вложение если длиннее)
-     attachments     [data_hash × N]  (ссылки на другие blob с медиа)
+     title           string (UTF-8, at most 256 bytes)
+     body            string (UTF-8, at most 64 KB, or a reference to an attachment if longer)
+     attachments     [data_hash × N]  (references to other media blobs)
      published_at    u64
    }
    ```
-3. Приложение вычисляет `data_hash = SHA-256(serialized_post)`
-4. Приложение сохраняет пост как персистентный blob по паре `(app_id_channel, data_hash)`
-5. Если пост длинный или содержит медиа — чанкуется через Chunking Standard (раздел 23.3)
-6. Приложение публикует Anchor с этим `data_hash`
-7. После цементирования автор виден другим узлам, подписчики получают уведомление о новом посте
+3. The app computes `data_hash = SHA-256(serialized_post)`
+4. The app stores the post as a persistent blob under the pair `(app_id_channel, data_hash)`
+5. If the post is long or contains media — it is chunked through the Chunking Standard (section 23.3)
+6. The app publishes an Anchor with this `data_hash`
+7. After cementing the author is visible to other nodes, and subscribers receive a notification about the new post
 
-### 6.3 Подписка и репликация
+### 6.3 Subscription and replication
 
-Пользователь подписывается на канал:
+A user subscribes to a channel:
 
-1. Пользователь знает `app_id` канала (из ссылки, QR-кода или каталога каналов)
-2. Приложение добавляет `app_id` в локальный список подписок
-3. Приложение запрашивает все Anchor с этим `app_id` через Content Layer
-4. Для каждого Anchor — скачивает соответствующий blob (пост)
-5. Приложение реплицирует blob-ы локально как персистентное хранилище
-6. С этого момента узел приложения становится провайдером этого `app_id` в DHT
+1. The user knows the channel's `app_id` (from a link, a QR code, or a channel directory)
+2. The app adds the `app_id` to the local subscription list
+3. The app requests all Anchors with this `app_id` through the Content Layer
+4. For each Anchor — it downloads the corresponding blob (the post)
+5. The app replicates the blobs locally as persistent storage
+6. From this point the application's node becomes a provider of this `app_id` in the DHT
 
-**Обязательное и опциональное:**
-- Подписка на канал — всегда опциональная (решение пользователя)
-- Единственный обязательный канал — genesis-контент (книга Montana)
+**Mandatory and optional:**
+- Channel subscription is always optional (the user's decision)
+- The only mandatory channel is the genesis content (the Montana book)
 
-**Отписка:**
-- Пользователь удаляет канал из подписок
-- Локальные blob-ы этого канала удаляются с диска
-- Узел перестаёт быть провайдером этого `app_id` в DHT
+**Unsubscribing:**
+- The user removes the channel from subscriptions
+- The local blobs of this channel are deleted from disk
+- The node stops being a provider of this `app_id` in the DHT
 
-### 6.4 Просмотр подписанных каналов
+### 6.4 Viewing subscribed channels
 
-**Экран списка каналов:**
-- Список подписанных каналов
-- Для каждого: иконка, название, предпросмотр последнего поста, счётчик непрочитанных
-- Сортировка: по времени последнего поста
+**Channel list screen:**
+- A list of subscribed channels
+- For each: icon, title, preview of the last post, unread counter
+- Sorting: by the time of the last post
 
-**Экран канала:**
-- Метаданные канала вверху (название, описание, автор, количество подписчиков если доступно)
-- Лента постов
-- Каждый пост — карточка с заголовком, фрагментом, предпросмотром медиа, временной меткой
-- Касание поста открывает полный вид
+**Channel screen:**
+- Channel metadata at the top (title, description, author, subscriber count if available)
+- A feed of posts
+- Each post is a card with a title, a snippet, a media preview, a timestamp
+- Tapping a post opens the full view
 
-**Экран поста:**
-- Полное содержимое поста
-- Медиа в инлайн-галерее
-- Опции для распространения
-- Значок верификации если пост верифицирован подписью владельца канала
+**Post screen:**
+- The full post content
+- Media in an inline gallery
+- Options for sharing
+- A verification badge if the post is verified by the channel owner's signature
 
-### 6.5 Читалка книг
+### 6.5 Book reader
 
-Специальный интерфейс для длинного контента, в основном для книги Montana.
+A special interface for long-form content, primarily for the Montana book.
 
-**Экран читалки:**
-- Полноэкранный текстовый читатель
-- Навигация по главам
-- Закладки, выделения, заметки
-- Настройка размера и шрифта текста
-- Тёмный режим
-- Прогресс чтения сохраняется локально
+**Reader screen:**
+- A full-screen text reader
+- Chapter navigation
+- Bookmarks, highlights, notes
+- Text size and font settings
+- Dark mode
+- Reading progress is saved locally
 
-**Genesis-контент (книга Montana) обязателен:**
-- Автоматически загружается при первом запуске приложения как часть быстрой синхронизации
-- Хранится как персистентный blob без возможности удалить через интерфейс
-- Обновления книги приходят автоматически когда автор публикует новый Anchor
-- Старые версии доступны через историю в настройках читалки
+**Genesis content (the Montana book) is mandatory:**
+- Automatically downloaded on the first app launch as part of fast synchronization
+- Stored as a persistent blob with no option to delete through the interface
+- Book updates arrive automatically when the author publishes a new Anchor
+- Older versions are available through the history in the reader settings
 
 ---
 
