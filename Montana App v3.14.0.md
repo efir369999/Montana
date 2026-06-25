@@ -1069,132 +1069,132 @@ When the user searches for a **new** name (not in the local cache):
 - **Cyrillic or kana input:** the allowed set of name characters is defined by the application; the reference application uses ASCII `[a-z0-9_-]` for compatibility with URLs and QR
 - **Cross-app aliases:** a user may register the same `@alice` in several applications; resolution is always per-app namespace
 
-### 7.4a Получение связки предварительных ключей (pre-key bundle)
+### 7.4a Obtaining a pre-key bundle
 
-Перед первой end-to-end сессией с новым контактом клиент обязан получить pre-key bundle собеседника (см. раздел 5.2 «Рукопожатие через pre-key bundle»). На масштабе 1B пользователей клиент не может хранить bundle всех messenger-пользователей локально, поэтому запрос идёт через batch lookup:
+Before the first end-to-end session with a new contact, the client must obtain the other party's pre-key bundle (see section 5.2 "Handshake through a pre-key bundle"). At the scale of 1B users the client cannot store the bundles of all messenger users locally, so the request goes through a batch lookup:
 
-1. Клиент формирует batch из 16 account_id: real target + 15 decoy-аккаунтов из messenger dummy pool (см. «Passively-observed dummy pools»)
-2. Отправляет `BatchLookupRequest(query_type=0x01 pre_key_bundle, count=16, queries=[...])`
-3. Хост возвращает 16 bundles (некоторые могут быть empty если decoy-аккаунт не публиковал bundle)
-4. Клиент извлекает bundle по запомненной позиции
-5. Клиент вычисляет отпечаток аккаунта из public_key собеседника (per [I-16]) и показывает его пользователю для out-of-band сверки
+1. The client builds a batch of 16 account_ids: the real target + 15 decoy accounts from the messenger dummy pool (see "Passively-observed dummy pools")
+2. Sends `BatchLookupRequest(query_type=0x01 pre_key_bundle, count=16, queries=[...])`
+3. The host returns 16 bundles (some may be empty if a decoy account did not publish a bundle)
+4. The client extracts the bundle by the remembered position
+5. The client computes the account fingerprint from the other party's public_key (per [I-16]) and shows it to the user for out-of-band verification
 
-**Hot-path кэш:** после успешной сверки отпечатка клиент сохраняет `(account_id, current_pubkey, verified_fingerprint_flag)` локально. При повторной инициации сессии (после потери ratchet state или очень долгого отсутствия контакта) — извлекает кэшированный pubkey без обращения к сети.
+**Hot-path cache:** after a successful fingerprint verification the client stores `(account_id, current_pubkey, verified_fingerprint_flag)` locally. On re-initiating the session (after losing the ratchet state or a very long contact absence) — it retrieves the cached pubkey without contacting the network.
 
-### 7.4b Проверка существования аккаунта
+### 7.4b Account existence check
 
-Перед отправкой `Transfer` клиент проверяет, что получатель существует в `AccountTable` (иначе Transfer отклонится с `ReceiverNotActive`). Для account-only пользователей через чужой хост эта проверка тоже использует batch lookup:
+Before sending a `Transfer` the client checks that the recipient exists in the `AccountTable` (otherwise the Transfer is rejected with `ReceiverNotActive`). For account-only users over a third-party host this check also uses a batch lookup:
 
-1. Клиент формирует batch из 16 account_id: real target + 15 decoy
-2. Отправляет `BatchLookupRequest(query_type=0x03 account_exists, count=16, queries=[...])`
-3. Хост возвращает 16 bytes (`0x01` = exists, `0x00` = not found)
-4. Клиент извлекает ответ по запомненной позиции
+1. The client builds a batch of 16 account_ids: the real target + 15 decoys
+2. Sends `BatchLookupRequest(query_type=0x03 account_exists, count=16, queries=[...])`
+3. The host returns 16 bytes (`0x01` = exists, `0x00` = not found)
+4. The client extracts the answer by the remembered position
 
-**Оптимизация hot path:** если клиент уже ранее успешно получал bundle или отправлял Transfer этому аккаунту, он кэширует факт существования локально. Повторные проверки — zero-leak через локальный кэш.
+**Hot-path optimization:** if the client has already successfully obtained a bundle or sent a Transfer to this account, it caches the existence fact locally. Repeated checks are zero-leak through the local cache.
 
 ### 7.4c Passively-observed dummy pools
 
-K-anonymity работает только если decoy-аккаунты выбраны из правдоподобного pool. Клиент собирает decoy pools **пассивно через наблюдение gossip proposals** — никаких отдельных protocol-level механизмов для discovery dummy-аккаунтов не требуется.
+K-anonymity only works if the decoy accounts are picked from a plausible pool. The client builds decoy pools **passively through observing gossip proposals** — no separate protocol-level mechanisms for discovering dummy accounts are needed.
 
-**Два независимых pool per protocol-level query type:**
+**Two independent pools per protocol-level query type:**
 
-1. **Messenger pool (для `pre_key_bundle` lookups):** клиент наблюдает cemented Anchor-операции с `app_id = SHA-256("mt-app" || "messenger")` — это authoritative публикации pre-key bundles. За период τ₂ (20 160 окон) клиент накапливает pool активных messenger-пользователей.
-2. **Active account pool (для `account_exists` lookups):** клиент наблюдает cemented operations любого типа — sender account_id добавляется в pool. За τ₂ накапливается pool активных аккаунтов.
+1. **Messenger pool (for `pre_key_bundle` lookups):** the client observes cemented Anchor operations with `app_id = SHA-256("mt-app" || "messenger")` — these are the authoritative publications of pre-key bundles. Over a period of τ₂ (20 160 windows) the client accumulates a pool of active messenger users.
+2. **Active account pool (for `account_exists` lookups):** the client observes cemented operations of any type — the sender account_id is added to the pool. Over τ₂ a pool of active accounts accumulates.
 
-App-level name resolution (см. §7.4) идёт через app-side resolver, не через protocol batch lookup — отдельный nickname pool на protocol уровне не нужен.
+App-level name resolution (see §7.4) goes through the app-side resolver, not through a protocol batch lookup — a separate nickname pool at the protocol level is not needed.
 
-**Realistic pool sizes на 1B сети:**
+**Realistic pool sizes on a 1B network:**
 
-- Messenger pool: ~10K–100K аккаунтов (зависит от TPS сети и длительности observation)
-- Active account pool: ~100K–1M аккаунтов
+- Messenger pool: ~10K–100K accounts (depends on network TPS and observation duration)
+- Active account pool: ~100K–1M accounts
 
-**Ротация:**
+**Rotation:**
 
-- Новый аккаунт добавляется в pool при первом наблюдении его cemented op
-- Аккаунт удаляется из pool если не наблюдался в cemented ops за последние 4τ₂ (совпадает с pruning threshold)
-- Плавная ротация не создаёт observable events для intersection attack
+- A new account is added to the pool on the first observation of its cemented op
+- An account is removed from the pool if it has not been observed in cemented ops over the last 4τ₂ (matching the pruning threshold)
+- Smooth rotation creates no observable events for an intersection attack
 
-**Хранилище:**
+**Storage:**
 
-Pool хранится локально на клиенте как `Vec<account_id>`. При pool size 100K × 32 B = 3.2 МБ — приемлемо для смартфона.
+The pool is stored locally on the client as a `Vec<account_id>`. At a pool size of 100K × 32 B = 3.2 MB — acceptable for a smartphone.
 
-**Honest limitation:** effective anonymity при K=16 и pool size 10K-100K — примерно 2–3 бита practical protection против determined adversary с long-horizon observations. Не абсолютная защита. Пользователи которым нужна полная приватность lookups — Light-Node-at-Home (раздел 26).
+**Honest limitation:** the effective anonymity at K=16 and a pool size of 10K–100K is roughly 2–3 bits of practical protection against a determined adversary with long-horizon observations. Not absolute protection. Users who need full lookup privacy — Light-Node-at-Home (section 26).
 
 ### 7.4d Rate limiting
 
-Protocol ограничивает `max_batch_lookups_per_τ₁ = 16` per аккаунт. Клиент планирует lookups с учётом лимита:
+The protocol limits `max_batch_lookups_per_τ₁ = 16` per account. The client schedules lookups within the limit:
 
-- Hot path (локальный кэш) не считается против лимита (нет network)
-- Cold path batch lookups — не более 16 за минуту
-- При превышении сервер возвращает `BatchLookupError(RateLimited)` — клиент применяет exponential backoff до следующего окна
+- The hot path (local cache) does not count against the limit (no network)
+- Cold-path batch lookups — at most 16 per minute
+- On exceeding it the server returns `BatchLookupError(RateLimited)` — the client applies exponential backoff until the next window
 
-**UI fallback при rate limit:** уведомить пользователя «Слишком много запросов. Подождите минуту.» Важно для offline-first UX — операция не fail, а deferred.
+**UI fallback on rate limit:** notify the user "Too many requests. Wait a minute." Important for an offline-first UX — the operation does not fail, it is deferred.
 
-### 7.5 Интерфейс приобретения имени (app-level)
+### 7.5 Name acquisition interface (app-level)
 
-Эталонное приложение Монтаны реализует name allocation через app-private registry с auction либо first-come-first-served моделью. Allocation полностью на app layer — protocol не участвует. Pricing и expiry policy определяет приложение; payment идёт через стандартный `Transfer` к app SPA (см. §19.7 Pattern F — Auction).
+The Montana reference application implements name allocation through an app-private registry with an auction or first-come-first-served model. Allocation is entirely at the app layer — the protocol does not participate. Pricing and expiry policy are defined by the application; payment goes through a standard `Transfer` to the app SPA (see §19.7 Pattern F — Auction).
 
-**7.5.1 Просмотр доступных имён.**
+**7.5.1 Browsing available names.**
 
-- Экран «Найти имя» с поиском по точному имени или по паттернам (`@*_photo`, `@a??`)
-- Для каждого результата показывается статус:
-  - **Свободно** (ещё никто не зарегистрировал) — показывается current price (если аукцион — current Dutch price; если first-come-first-served — fixed registration fee)
-  - **На аукционе** — показывается current bid, осталось time до конца аукциона, число bids
-  - **Занято** — показывается владелец (`account_id` и petname если добавлен в контакты), статус «Свободно через `expiry_window`» если applicable, кнопка «Попробовать другое»
+- A "Find a name" screen with search by exact name or by patterns (`@*_photo`, `@a??`)
+- For each result a status is shown:
+  - **Free** (not yet registered) — the current price is shown (if an auction — the current Dutch price; if first-come-first-served — a fixed registration fee)
+  - **At auction** — the current bid, the time left until the auction ends, the number of bids
+  - **Taken** — the owner is shown (`account_id` and petname if added to contacts), the status "Free in `expiry_window`" if applicable, and a "Try another" button
 
-**7.5.2 Процесс подачи заявки.**
+**7.5.2 Application process.**
 
-1. Пользователь выбирает имя
-2. Приложение проверяет local право на заявку:
-   - `balance >= price` (либо `>= bid_amount` если аукцион)
-3. Если денег недостаточно — интерфейс объясняет: «Недостаточно Ɉ для регистрации; нужно X Ɉ»
-4. Если право есть — показ подтверждения:
-   - Сумма в Ɉ + получатель (app SPA `account_id`)
-   - Информация о policy: «Имя закрепится за вами на N окон, после чего автоматически освободится либо требует продления»
-   - Кнопка «Подтвердить заявку» → публикация `Transfer(amount, link=app_SPA)` с associated `Anchor(app_id="mt-app:montana-names", data_hash=H(name + intent_metadata))`
+1. The user selects a name
+2. The app checks the local right to apply:
+   - `balance >= price` (or `>= bid_amount` if an auction)
+3. If funds are insufficient — the interface explains: "Not enough Ɉ to register; X Ɉ are needed"
+4. If the right exists — a confirmation is shown:
+   - The amount in Ɉ + the recipient (app SPA `account_id`)
+   - Policy information: "The name will be reserved for you for N windows, after which it is automatically released or requires renewal"
+   - A "Confirm application" button → publishing `Transfer(amount, link=app_SPA)` with an associated `Anchor(app_id="mt-app:montana-names", data_hash=H(name + intent_metadata))`
 
-**7.5.3 Мониторинг аукциона** (если приложение использует аукционный pattern)**.**
+**7.5.3 Auction monitoring** (if the application uses the auction pattern)**.**
 
-- После публикации заявки — клиент отслеживает app-side gossip auction status
-- Обратный отсчёт до конца аукциона в реальном времени
-- Push-уведомление при перебиде: «Вас перебили на `@alice`. Текущая цена X Ɉ. [Перебить] [Пропустить]»
-- Refund losing bids автоматически — app SPA публикует `Transfer(losing_bid_amount, link=user_account_id)` после finalisation аукциона
+- After publishing the application — the client tracks the app-side gossip auction status
+- A real-time countdown to the end of the auction
+- A push notification on being outbid: "You were outbid on `@alice`. The current price is X Ɉ. [Outbid] [Skip]"
+- Losing bids are refunded automatically — the app SPA publishes `Transfer(losing_bid_amount, link=user_account_id)` after the auction is finalized
 
-**7.5.4 Завершение приобретения.**
+**7.5.4 Completing the acquisition.**
 
-- При финализации allocation:
-  - Push: «Имя `@alice` зарегистрировано за вами в registry приложения»
-  - App-side service публикует canonical award через `Anchor(app_id="mt-app:montana-names", data_hash=H(name + owner_account_id + awarded_window))`
-  - Имя появляется в «Настройки → Мои имена»
-  - Свой QR-код обновляется — теперь содержит имя для быстрого обмена
+- On allocation finalization:
+  - Push: "The name `@alice` is registered to you in the application registry"
+  - The app-side service publishes the canonical award through `Anchor(app_id="mt-app:montana-names", data_hash=H(name + owner_account_id + awarded_window))`
+  - The name appears under "Settings → My names"
+  - Your QR code is updated — it now contains the name for quick exchange
 
-**7.5.5 Настройки моих имён.**
+**7.5.5 My names settings.**
 
-- Отображение текущих имён (пользователь может owned несколько имён в разных приложениях), даты регистрации, уплаченной цены, expiry если applicable
-- Кнопка «Показать подтверждение владения» — для внешнего обмена подтверждения владения (`account_id` и canonical Anchor reference)
-- Renewal — клиент может включить auto-renewal через recurring `Transfer` (Pattern B) если приложение поддерживает renewal model
-- Напоминание: «Имя привязано к сид-фразе через app-side registry. Потеря сида = потеря возможности доказать ownership. Восстановление сида = восстановление доступа»
+- Display of current names (a user may own several names in different applications), registration dates, the price paid, expiry if applicable
+- A "Show proof of ownership" button — for external exchange of an ownership proof (`account_id` and the canonical Anchor reference)
+- Renewal — the client can enable auto-renewal through a recurring `Transfer` (Pattern B) if the application supports a renewal model
+- Reminder: "The name is bound to the seed phrase through the app-side registry. Loss of the seed = loss of the ability to prove ownership. Recovery of the seed = recovery of access"
 
-### 7.6 Распространение имени
+### 7.6 Name distribution
 
-Пользователь может делиться именем через любые существующие каналы (Signal, Telegram, электронная почта, SMS, устно):
+A user can share a name through any existing channels (Signal, Telegram, email, SMS, verbally):
 
 ```
-«Я в Монтане: @alice»
-→ получатель вводит @alice в Montana App
-→ app-side resolver резолвит @alice → account_id (см. §7.4)
-→ account_id получен
-→ добавление в контакты с petname
+"I'm on Montana: @alice"
+→ the recipient enters @alice in Montana App
+→ the app-side resolver resolves @alice → account_id (see §7.4)
+→ the account_id is obtained
+→ adding to contacts with a petname
 ```
 
-Пригласительные ссылки включают имя + опциональный hint app namespace:
+Invite links include the name + an optional app-namespace hint:
 
 ```
 montana://contact?name=alice&app=montana-names
-  → клиент делает app-level resolve("@alice", namespace="montana-names") → account_id → add contact
+  → the client does an app-level resolve("@alice", namespace="montana-names") → account_id → add contact
 ```
 
-Если получатель использует другое приложение с другим namespace — клиент показывает «Имя `@alice` не найдено в registry вашего приложения. Попросите контакт сообщить `account_id` напрямую через QR».
+If the recipient uses a different application with a different namespace — the client shows "The name `@alice` was not found in your application's registry. Ask the contact to send the `account_id` directly via QR".
 
 ---
 
