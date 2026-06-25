@@ -1589,217 +1589,217 @@ Clear visual indicators:
 
 ---
 
-## 14. Интеграция с платформами
+## 14. Platform integration
 
-### 14.1 Особенности iOS
+### 14.1 iOS specifics
 
-**Стек технологий:**
-- Интерфейс Flutter
-- Ядро Rust через flutter_rust_bridge
-- Нативные модули для:
-  - iOS Keychain (защищённое хранилище)
-  - CryptoKit (где применимо для хеширования)
-  - AVFoundation (камера для QR)
-  - Уведомления (APNs для новых сообщений)
+**Technology stack:**
+- Flutter interface
+- Rust core through flutter_rust_bridge
+- Native modules for:
+  - iOS Keychain (secure storage)
+  - CryptoKit (where applicable for hashing)
+  - AVFoundation (camera for QR)
+  - Notifications (APNs for new messages)
 
-**Фоновая работа:**
-- iOS жёстко ограничивает фоновое выполнение
-- Приложение не может постоянно слушать сеть в фоне
-- Push-уведомления через APNs будят приложение для получения новых сообщений
-- VoIP-push для сообщений чата (если использовать)
+**Background operation:**
+- iOS strictly limits background execution
+- The app cannot continuously listen to the network in the background
+- Push notifications through APNs wake the app to receive new messages
+- VoIP push for chat messages (if used)
 
-**Требования App Store:**
-- Чёткая политика приватности
-- Раскрытие сбора данных
-- Соответствие экспорту шифрования
-- Правила внутренних покупок (неприменимо — IAP нет)
+**App Store requirements:**
+- A clear privacy policy
+- Disclosure of data collection
+- Encryption export compliance
+- In-app purchase rules (not applicable — there is no IAP)
 
-### 14.2 Особенности Android
+### 14.2 Android specifics
 
-**Стек технологий:**
-- Интерфейс Flutter
-- Ядро Rust через flutter_rust_bridge
-- Нативные модули для:
-  - Android Keystore (защищённое хранилище)
-  - CameraX (сканирование QR)
-  - FCM для уведомлений
-  - WorkManager для фоновой синхронизации
+**Technology stack:**
+- Flutter interface
+- Rust core through flutter_rust_bridge
+- Native modules for:
+  - Android Keystore (secure storage)
+  - CameraX (QR scanning)
+  - FCM for notifications
+  - WorkManager for background synchronization
 
-**Фоновая работа:**
-- Android более гибок чем iOS для фона
-- Foreground-сервис для критичных операций (активная сессия чата)
-- WorkManager для периодической синхронизации
-- Оптимизации батареи — пользователь может добавить приложение в белый список
+**Background operation:**
+- Android is more flexible than iOS for background work
+- A foreground service for critical operations (an active chat session)
+- WorkManager for periodic synchronization
+- Battery optimizations — the user can whitelist the app
 
-**Требования Google Play:**
-- Требования по целевому API level
-- Раскрытие безопасности данных
-- Соответствие экспорту
+**Google Play requirements:**
+- Target API level requirements
+- Data safety disclosure
+- Export compliance
 
-### 14.3 Десктоп (Linux / macOS / Windows)
+### 14.3 Desktop (Linux / macOS / Windows)
 
-**Стек технологий:**
-- Desktop-интерфейс Flutter
-- Ядро Rust
-- Нативные модули для:
+**Technology stack:**
+- Flutter desktop interface
+- Rust core
+- Native modules for:
   - OS keyring (macOS Keychain, Windows Credential Manager, Linux libsecret)
-  - Интеграция с системным треем
-  - Диалоги файлов
+  - System tray integration
+  - File dialogs
 
-**Доступность режима полного узла:**
-- Только десктоп — мобильный не подходит для полного узла
-- Переключатель в настройках для включения
-- Дополнительные экраны мониторинга для прогресса SSHA, `chain_length`, статистики лотереи
+**Full-node mode availability:**
+- Desktop only — mobile is not suitable for a full node
+- A toggle in settings to enable it
+- Additional monitoring screens for SSHA progress, `chain_length`, lottery statistics
 
-**Распространение:**
-- macOS: DMG через прямую загрузку, опционально App Store
-- Windows: MSI-установщик, опционально Microsoft Store
-- Linux: AppImage, Flatpak, deb / rpm пакеты
+**Distribution:**
+- macOS: DMG through direct download, optionally App Store
+- Windows: an MSI installer, optionally Microsoft Store
+- Linux: AppImage, Flatpak, deb / rpm packages
 
-### 14.4 Публикация в магазинах приложений
+### 14.4 Publishing to app stores
 
-**App Store (iOS) и Play Store (Android):**
-- Регулярный цикл релизов
-- Поэтапное развёртывание для снижения рисков
-- Бета-тестирование через TestFlight / Play Console
-- Отчёты о падениях через инструменты платформ
+**App Store (iOS) and Play Store (Android):**
+- A regular release cycle
+- Staged rollout to reduce risk
+- Beta testing through TestFlight / Play Console
+- Crash reports through platform tools
 
-**Альтернативные источники:**
-- F-Droid для Android (сборка открытого кода)
-- Прямая загрузка APK для максимальной независимости
-- Загрузка через веб с верификацией GPG
+**Alternative sources:**
+- F-Droid for Android (an open-source build)
+- Direct APK download for maximum independence
+- Web download with GPG verification
 
 ---
 
-## 15. Требования к тестированию
+## 15. Testing requirements
 
-### 15.1 Юнит-тесты криптографии
+### 15.1 Cryptography unit tests
 
-**Обязательное тестовое покрытие для криптографии:**
+**Mandatory test coverage for cryptography:**
 
-- ML-DSA-65: генерация ключа, подпись, верификация
-- ML-KEM-768: генерация ключа, инкапсуляция, декапсуляция
-- ChaCha20-Poly1305: шифрование, расшифровка, верификация тега
-- HKDF-SHA-256: вывод
-- Переходы состояния Double Ratchet
-- Обработка pre-key bundle
-- Все операции против стандартных test-vectors
-- Канонический вывод ключей из сид-фразы (тест-векторы из спеки протокола, byte-exact)
+- ML-DSA-65: key generation, signing, verification
+- ML-KEM-768: key generation, encapsulation, decapsulation
+- ChaCha20-Poly1305: encryption, decryption, tag verification
+- HKDF-SHA-256: derivation
+- Double Ratchet state transitions
+- Pre-key bundle handling
+- All operations against standard test vectors
+- Canonical key derivation from the seed phrase (test vectors from the protocol spec, byte-exact)
 
-**Принципы:**
-- 100% покрытие критичного криптокода
-- Test-vectors из документов NIST и RFC
-- Фаззинг для парсера и сериализации
-- Верификация постоянного времени (без утечек тайминга)
+**Principles:**
+- 100% coverage of critical crypto code
+- Test vectors from NIST and RFC documents
+- Fuzzing for the parser and serialization
+- Constant-time verification (no timing leaks)
 
-### 15.2 Интеграционные тесты
+### 15.2 Integration tests
 
-**Сценарии мессенджера:**
-- Первое сообщение Алиса → Боб (через pre-key)
-- Несколько сообщений в обе стороны (продвижение храповика)
-- Доставка не по порядку
-- Обработка отсутствующих pre-key
-- Восстановление сессии после офлайна
+**Messenger scenarios:**
+- The first message Alice → Bob (through a pre-key)
+- Several messages in both directions (ratchet advancement)
+- Out-of-order delivery
+- Handling of a missing pre-key
+- Session recovery after offline
 
-**Сценарии кошелька:**
-- Первый `Transfer` от спонсора → новый аккаунт создан, `balance = amount`
-- Принять `Transfer` → баланс обновляется
-- Отправить `Transfer` → баланс уменьшается, история показывает
-- `ChangeKey` → старая подпись отклонена, новая принята
+**Wallet scenarios:**
+- The first `Transfer` from a sponsor → a new account is created, `balance = amount`
+- Receive a `Transfer` → the balance updates
+- Send a `Transfer` → the balance decreases, the history shows it
+- `ChangeKey` → the old signature is rejected, the new one is accepted
 
 **Content Layer:**
-- Публикация Anchor и blob → запрашиваемо другим узлом
-- Загрузка и скачивание чанкованного файла
-- Верификация против изменённых данных
-- Регистрация и поиск провайдера DHT
+- Publishing an Anchor and a blob → requestable by another node
+- Upload and download of a chunked file
+- Verification against tampered data
+- DHT provider registration and lookup
 
-### 15.3 Тесты интерфейса
+### 15.3 Interface tests
 
-**Критические сценарии:**
-- Первичная настройка (создание нового и восстановление)
-- Отправка денег
-- Отправка сообщения
-- Добавление контакта через QR
-- Просмотр контента канала
+**Critical scenarios:**
+- Onboarding (creating new and restoring)
+- Sending money
+- Sending a message
+- Adding a contact via QR
+- Viewing channel content
 
-**Фреймворк:**
-- Интеграционные тесты Flutter
-- Тестирование скриншотов для регрессий интерфейса
-- Тестирование доступности (экранные читалки, крупный текст)
+**Framework:**
+- Flutter integration tests
+- Screenshot testing for interface regressions
+- Accessibility testing (screen readers, large text)
 
-### 15.4 Симуляция сети
+### 15.4 Network simulation
 
-**Тестовые сценарии:**
-- Медленные сети (2G, крайние случаи)
-- Прерывистое соединение
-- Разделение сети
-- Вредоносные пиры (отправляют мусор, игнорируют запросы)
-- Большие группы сообщений приходящих одновременно
-- Длительные периоды офлайн с последующей синхронизацией
+**Test scenarios:**
+- Slow networks (2G, edge cases)
+- Intermittent connection
+- Network partition
+- Malicious peers (send garbage, ignore requests)
+- Large bursts of messages arriving at once
+- Long offline periods followed by synchronization
 
-**Инструменты:**
-- Собственный тестовый фреймворк libp2p
-- Шейпинг трафика для симуляции задержки и потерь
-- Chaos-инжиниринг в staging-окружении
+**Tools:**
+- A custom libp2p test framework
+- Traffic shaping to simulate latency and loss
+- Chaos engineering in a staging environment
 
 ---
 
-## 16. Версионирование и обновления
+## 16. Versioning and updates
 
-### 16.1 Совместимость с протоколом
+### 16.1 Protocol compatibility
 
-**Семантическое версионирование Montana App:**
+**Montana App semantic versioning:**
 - Major.Minor.Patch
-- Major: breaking-изменения взаимодействия или удаление функций
-- Minor: новые функции, обратная совместимость
-- Patch: исправления ошибок
+- Major: breaking interaction changes or feature removal
+- Minor: new features, backward compatible
+- Patch: bug fixes
 
-**Совместимость с протоколом:**
-- Приложение привязывает в своём header целевую версию протокола
-- При выходе major-версии протокола — требуется соответствующее обновление приложения
-- Breaking-изменения протокола требуют координированного обновления
+**Protocol compatibility:**
+- The app pins the target protocol version in its header
+- On a major protocol release — a corresponding app update is required
+- Breaking protocol changes require a coordinated update
 
-**Пути отката:**
-- Приложение не должно позволять откат если возможна порча данных
-- Миграции схемы базы — только вперёд
-- Пользовательские данные должны быть экспортируемы для миграции
+**Rollback paths:**
+- The app must not allow a rollback if data corruption is possible
+- Database schema migrations — forward only
+- User data must be exportable for migration
 
-### 16.2 Доставка обновлений
+### 16.2 Update delivery
 
-**Мобильный:**
-- Стандартные обновления App Store / Play Store
-- Уведомления о доступности обновления
-- Принудительное обновление при критическом исправлении безопасности
+**Mobile:**
+- Standard App Store / Play Store updates
+- Notifications of update availability
+- Forced update on a critical security fix
 
-**Десктоп:**
-- Уведомление об обновлении в приложении
-- Загрузка и установка через встроенный обновлятор
-- Верификация подписи обновлений (защита от вредоносных)
+**Desktop:**
+- An in-app update notice
+- Download and install through the built-in updater
+- Update signature verification (protection against malicious updates)
 
-**Лёгкие обновления и полные:**
-- Исправления интерфейса — минимальное обновление
-- Обновления совместимости протокола — могут требовать полной переустановки
-- Мастер миграции для переноса данных между major-версиями
+**Lightweight and full updates:**
+- Interface fixes — a minimal update
+- Protocol-compatibility updates — may require a full reinstall
+- A migration wizard for moving data between major versions
 
-### 16.3 Миграции между версиями
+### 16.3 Migrations between versions
 
-**Миграции данных:**
-- Миграции схемы SQLite
-- Миграции формата зашифрованной резервной копии
-- Миграции формата ключей (если криптосхемы меняются)
+**Data migrations:**
+- SQLite schema migrations
+- Encrypted-backup format migrations
+- Key-format migrations (if crypto schemes change)
 
-**Сценарий пользователя при major-обновлении:**
-1. Обновление установлено
-2. Приложение обнаруживает данные предыдущей версии
-3. Запускается мастер миграции
-4. Показывает прогресс
-5. Верификация успешной миграции
-6. Удаляет данные старого формата (после подтверждения)
+**User scenario on a major update:**
+1. The update is installed
+2. The app detects data from the previous version
+3. A migration wizard starts
+4. It shows progress
+5. Verification of a successful migration
+6. It deletes old-format data (after confirmation)
 
-**План отката:**
-- Резервная копия до миграции создаётся автоматически
-- Если миграция не удалась — восстановление из копии
-- Если миграция удалась — старая копия хранится 7 дней, затем автоудаляется
+**Rollback plan:**
+- A pre-migration backup is created automatically
+- If the migration fails — restoration from the backup
+- If the migration succeeds — the old backup is kept for 7 days, then auto-deleted
 
 ---
 
