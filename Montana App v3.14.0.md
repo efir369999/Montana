@@ -1,155 +1,155 @@
-# Montana App — Спецификация приложения
+# Montana App — Application Specification
 
 **Version:** 3.14.0 (2026-06-25) — account creation deduplicated to the Montana Protocol SSOT: section 4.1 is now wallet UX plus a pointer to the protocol's account creation via `Transfer`; the separate `TransferActivation` opcode description and references are removed
 
 
 ---
 
-## 1. Обзор
+## 1. Overview
 
-### 1.1 Цель приложения
+### 1.1 Purpose of the application
 
-**Montana даёт человеку цифровую собственность в мире, где всё арендуется.**
+**Montana gives a person digital property in a world where everything is rented.**
 
-Твой ключ — твоя идентичность.
-Твой узел — твоё хранилище.
-Твой uptime — твои монеты.
-Твой агент — твоё расширение.
+Your key is your identity.
+Your node is your storage.
+Your uptime is your coins.
+Your agent is your extension.
 
-Один сид. Полный контроль. Постквантовая криптография на десятилетия вперёд.
+One seed. Full control. Post-quantum cryptography for decades ahead.
 
-Не приватность. Не децентрализация. Не криптовалюта. Не мессенджер. Цифровая собственность.
-
----
-
-Montana App — персональный интернет в одном приложении. Кошелёк, мессенджер, хранилище данных, ИИ-агент, обнаружение контактов и браузер — всё под контролем владельца, на его узле. Один сид восстанавливает всё.
-
-Montana App реализует четыре слоя персонального интернета, определённые в спецификации протокола:
-
-- **Агент-посредник (Юнона).** ИИ-агент на узле. Фильтрует информацию по критериям владельца. Управляет контентом, мессенджером, кошельком. Может ходить во внешний интернет через встроенный браузер — собирать данные для владельца, не для платформы.
-- **Локальное хранилище знаний.** Фото, сообщения, файлы, заметки — на узле владельца, зашифрованы его ключом. Индексировано, доступно для поиска. Контекст накапливается со временем.
-- **Управление вниманием.** Нет алгоритмической ленты, нет рекламы, нет метрик вовлечения. Юнона дал нужное — отпустил. Приложение работает на пользователя, не на рекламодателя.
-- **Контроль данных.** Пользователь решает что публиковать. Профиль, ключи шифрования — всё опционально. Данные на узле зашифрованы. Выборочное предоставление доступа через адресное шифрование (ML-KEM-768).
-
-Montana App — **эталонная реализация**. Другие приложения могут реализовать свои клиенты; если они следуют тем же стандартам совместимости (раздел 23) — они совместимы с Montana App по обмену сообщениями, профилями, контентом.
-
-**Точка входа для массового пользователя.** Montana App использует чат-центрированный интерфейс как наиболее доступную метафору — переписка с контактами знакома каждому владельцу смартфона. Чат-центрированный интерфейс объединяет в одной точке все четыре слоя персонального интернета: Юнона отвечает в чате от имени пользователя, история переписки — часть локального хранилища знаний, хронологическая лента чатов без алгоритмических сортировок реализует управление вниманием, публикация профиля и контактов подчиняется контролю данных. Платежи — через тот же контактный экран; контент и широковещательные каналы доступны из того же приложения без переключения. Чат — точка входа, не ограничение: Montana остаётся цифровой собственностью, а не «просто мессенджером».
-
-**Реалистичные первые пользователи — сегменты с острой потребностью в устойчивой связи:** пользователи в юрисдикциях где основные мессенджеры имеют ограниченную доступность, фрилансеры нуждающиеся в платёжном канале без централизованного посредника, технически осознанные пользователи ожидающие долгосрочной устойчивости к квантовому компьютеру. Массовое распространение — через вирусные сетевые эффекты от этих сегментов, реализующие исторический сценарий вынужденной миграции при ограничениях доступа к существующим платформам.
-
-### 1.2 Область приложения
-
-**Входит в текущую область:**
-
-- Кошелёк: отправка и приём Монтана, баланс, история переводов
-- Мессенджер: приватная 1-на-1 переписка через Double Ratchet PQ
-- Широковещательные каналы: публичные каналы через Content Layer (как книга Montana)
-- Обнаружение контактов: добавление контактов через QR-коды, пригласительные ссылки, прямой обмен account_id; локальные псевдонимы (petname-ы) для контактов
-- Обозреватель контента: читалка книги Montana и подписанных каналов
-- Профиль: опциональный публичный профиль с отображаемым именем и аватаром
-- Управление идентичностью: резервная копия сида, восстановление, ротация ключа
-- **Агент Юнона**: ИИ-агент на узле — управление контентом, мессенджером, кошельком, мониторинг, техподдержка, автоматизация задач. Архитектура песочницы с уровнями полномочий и делегированием подписи
-- **Встроенный браузер**: маскировка трафика — трафик Montana неотличим от обычного веб-трафика
-
-**Вне текущей области:**
-
-- Групповые чаты (много-к-многим) — ждут зрелости PQ MLS
-- Голосовой интерфейс Юноны (Whisper)
-- Встроенный обмен / swap
-- Смарт-контракты или скриптинг
-- Многоподписные кошельки
-
-### 1.3 Отношение к протоколу Montana
-
-Montana App — **клиент** протокола. Приложение использует API протокола через ядро на Rust, не имеет прямого доступа к логике консенсуса. Все операции с состоянием проходят через протокол:
-
-- Кошелёк создаёт операции Transfer (включая первый перевод-активацию), ChangeKey
-- Мессенджер публикует Anchor с data_hash зашифрованного сообщения
-- Обнаружение читает Таблицу аккаунтов через API протокола
-- Обозреватель контента использует Content Layer (ContentRequest, ChunkRequest)
-
-Montana App **не** реализует логику консенсуса. Не участвует в лотерее, не публикует proposals, не валидирует блоки. Это лёгкий клиент, взаимодействующий с узлами Montana через P2P.
-
-Опционально Montana App на десктопе может запускать режим полного узла — тогда приложение одновременно является узлом сети с полным участием в консенсусе. В режиме полного узла доступен агент Юнона — ИИ-агент, управляющий узлом через тот же API протокола, что и пользователь вручную. Юнона — механизм уровня приложения, протокол не знает о её существовании.
-
-### 1.4 Публичный и приватный слои доверия
-
-Montana App предоставляет две модели доверия. Владелец выбирает слой под задачу; слои сосуществуют в одном приложении.
-
-**Приватный слой — суверенный.** Идентичность выводится из сид-фразы владельца (24 слова → ключи, раздел 4). Личность есть ключ; хост выступает ретранслятором, не доверенным хранителем. Переписка 1-на-1 защищена сквозным шифрованием (храповик ML-KEM-768, раздел 5): хост хранит только зашифрованные блобы под эфемерными метками, открытый текст находится лишь на устройстве владельца. Профиль, контакты и история под контролем владельца, зашифрованы его ключом. Приватный слой реализует тезис цифровой собственности: владелец не передаёт третьей стороне ничего в открытом виде.
-
-**Публичный слой — кастодиальный.** Идентичность — номер телефона, подтверждённый любым способом верификации номера. Учётная запись, профиль и переписка публичного слоя хранятся на сервере-хосте в его операционной модели; владелец доверяет хосту хранение и доступность этих данных. Публичный слой обеспечивает вход без сид-фразы и обнаружение владельца по номеру телефона.
-
-**Явная граница доверия.** Публичный слой не суверенный. Данные публичного слоя доступны хосту в открытом виде. Гарантии приватного слоя — нулевое знание хоста, эфемерные маршрутные метки, шифрование ключом владельца — к публичному слою не относятся и действуют исключительно в приватном слое.
-
-**Отношение к протоколу.** Публичный слой — сервис уровня приложения. Он не входит в состояние консенсуса, не порождает операций протокола, не участвует в TimeChain, лотерее и финализации. Идентичность протокола — `account_id`, выведенный из ключа, — принадлежит приватному слою.
-
-**Связывание слоёв.** Учётная запись публичного слоя связывается с суверенной идентичностью приватного слоя по выбору владельца: владелец привязывает свой `account_id` и публичный ключ ML-DSA-65 к публичной записи подписью этим ключом. После связывания переписка с контактом, поддерживающим приватный слой, ведётся сквозным шифрованием; обнаружение по номеру телефона сохраняется как атрибут публичного слоя.
+Not privacy. Not decentralization. Not a cryptocurrency. Not a messenger. Digital property.
 
 ---
 
-## 2. Архитектура
+Montana App is a personal internet in a single application. Wallet, messenger, data storage, AI agent, contact discovery and a browser — all under the owner's control, on the owner's node. One seed restores everything.
 
-### 2.1 Общая схема
+Montana App implements the four layers of the personal internet defined in the protocol specification:
 
-Montana App построен как **ядро на Rust + интерфейс на Flutter** через flutter_rust_bridge.
+- **Mediating agent (Juno).** An AI agent on the node. Filters information by the owner's criteria. Manages content, messenger, wallet. Can reach the external internet through the built-in browser — collecting data for the owner, not for a platform.
+- **Local knowledge storage.** Photos, messages, files, notes — on the owner's node, encrypted with the owner's key. Indexed and searchable. Context accumulates over time.
+- **Attention management.** No algorithmic feed, no advertising, no engagement metrics. Juno delivers what is needed, then steps back. The application works for the user, not for an advertiser.
+- **Data control.** The user decides what to publish. Profile and encryption keys are all optional. Data on the node is encrypted. Selective access is granted through addressed encryption (ML-KEM-768).
+
+Montana App is the **reference implementation**. Other applications may implement their own clients; if they follow the same compatibility standards (section 23) they interoperate with Montana App for messaging, profiles and content.
+
+**Entry point for the mass user.** Montana App uses a chat-centric interface as the most accessible metaphor — messaging with contacts is familiar to every smartphone owner. The chat-centric interface unifies all four layers of the personal internet in one place: Juno replies in the chat on the user's behalf, the message history is part of the local knowledge storage, the chronological chat list with no algorithmic sorting realizes attention management, and publishing a profile and contacts follows data control. Payments go through the same contact screen; content and broadcast channels are reachable from the same application without switching. Chat is the entry point, not a limitation: Montana remains digital property rather than "just a messenger".
+
+**Realistic first users — segments with an acute need for resilient communication:** users in jurisdictions where mainstream messengers have limited availability, freelancers needing a payment channel without a centralized intermediary, and technically aware users expecting long-term resistance to a quantum computer. Mass adoption follows from viral network effects out of these segments, realizing the historical pattern of forced migration under access restrictions to existing platforms.
+
+### 1.2 Application scope
+
+**In the current scope:**
+
+- Wallet: sending and receiving Montana, balance, transfer history
+- Messenger: private 1-to-1 conversation through Double Ratchet PQ
+- Broadcast channels: public channels through the Content Layer (such as the Montana book)
+- Contact discovery: adding contacts via QR codes, invite links, direct `account_id` exchange; local petnames for contacts
+- Content browser: reader for the Montana book and for subscribed channels
+- Profile: optional public profile with a display name and avatar
+- Identity management: seed backup, recovery, key rotation
+- **Juno agent**: an AI agent on the node — managing content, messenger, wallet, monitoring, support, task automation. A sandbox architecture with permission levels and signature delegation
+- **Built-in browser**: traffic mimicry — Montana traffic is indistinguishable from ordinary web traffic
+
+**Out of the current scope:**
+
+- Group chats (many-to-many) — awaiting PQ MLS maturity
+- Juno voice interface (Whisper)
+- Built-in exchange / swap
+- Smart contracts or scripting
+- Multisignature wallets
+
+### 1.3 Relation to the Montana protocol
+
+Montana App is a **client** of the protocol. The application uses the protocol API through a Rust core and has no direct access to consensus logic. All state operations go through the protocol:
+
+- The wallet creates Transfer (including the first-entry activation transfer) and ChangeKey operations
+- The messenger publishes an Anchor with the `data_hash` of the encrypted message
+- Discovery reads the Account Table through the protocol API
+- The content browser uses the Content Layer (ContentRequest, ChunkRequest)
+
+Montana App does **not** implement consensus logic. It does not take part in the lottery, does not publish proposals, does not validate blocks. It is a light client interacting with Montana nodes over P2P.
+
+Optionally, Montana App on the desktop can run a full-node mode — the application is then also a network node with full participation in consensus. In full-node mode the Juno agent is available — an AI agent that manages the node through the same protocol API a user would use by hand. Juno is an application-level mechanism; the protocol is unaware of its existence.
+
+### 1.4 Public and private trust layers
+
+Montana App provides two trust models. The owner chooses the layer for the task; the layers coexist in one application.
+
+**Private layer — sovereign.** The identity is derived from the owner's seed phrase (24 words → keys, section 4). The identity is the key; the host acts as a relay, not a trusted custodian. 1-to-1 conversation is end-to-end encrypted (ML-KEM-768 ratchet, section 5): the host stores only encrypted blobs under ephemeral labels, the plaintext exists only on the owner's device. Profile, contacts and history are under the owner's control, encrypted with the owner's key. The private layer realizes the digital-property thesis: the owner hands no plaintext to any third party.
+
+**Public layer — custodial.** The identity is a phone number, confirmed by any number-verification method. The account, profile and conversation of the public layer are stored on the host server in its operational model; the owner trusts the host to store and keep these data available. The public layer provides entry without a seed phrase and discovery of the owner by phone number.
+
+**Explicit trust boundary.** The public layer is not sovereign. Public-layer data are available to the host in plaintext. The guarantees of the private layer — zero host knowledge, ephemeral routing labels, encryption with the owner's key — do not apply to the public layer and hold exclusively within the private layer.
+
+**Relation to the protocol.** The public layer is an application-level service. It is not part of the consensus state, generates no protocol operations, and does not participate in the TimeChain, the lottery, or finalization. The protocol identity — the `account_id` derived from the key — belongs to the private layer.
+
+**Binding the layers.** A public-layer account is bound to the sovereign private-layer identity at the owner's choice: the owner binds their `account_id` and ML-DSA-65 public key to the public record by signing with that key. After binding, conversation with a contact that supports the private layer is end-to-end encrypted; discovery by phone number remains a public-layer attribute.
+
+---
+
+## 2. Architecture
+
+### 2.1 Overall scheme
+
+Montana App is built as a **Rust core + Flutter interface** through flutter_rust_bridge.
 
 ```
 ┌─────────────────────────────────────┐
-│ Интерфейс Flutter (Dart)            │
-│ ─ экраны, навигация, виджеты        │
-│ ─ обработка пользовательского ввода │
-│ ─ локальное состояние интерфейса    │
+│ Flutter interface (Dart)            │
+│ ─ screens, navigation, widgets      │
+│ ─ user input handling               │
+│ ─ local interface state             │
 └───────────────┬─────────────────────┘
                 │ flutter_rust_bridge (FFI)
                 │
 ┌───────────────▼─────────────────────┐
-│ Ядро Montana (Rust)                 │
-│ ─ логика кошелька                   │
-│ ─ мессенджер (Double Ratchet PQ)    │
-│ ─ обнаружение контактов             │
-│ ─ клиент Content Layer              │
-│ ─ управление профилем               │
-│ ─ идентичность и ключи              │
-│ ─ локальное хранилище (SQLite + файлы) │
-│ ─ клиент API протокола (libp2p)     │
+│ Montana core (Rust)                 │
+│ ─ wallet logic                      │
+│ ─ messenger (Double Ratchet PQ)     │
+│ ─ contact discovery                 │
+│ ─ Content Layer client              │
+│ ─ profile management                │
+│ ─ identity and keys                 │
+│ ─ local storage (SQLite + files)    │
+│ ─ protocol API client (libp2p)      │
 └───────────────┬─────────────────────┘
                 │ libp2p
                 │
 ┌───────────────▼─────────────────────┐
-│ Сеть Montana                        │
-│ ─ узлы сети                         │
-│ ─ консенсус (TimeChain, лотерея,   │
-│   proposals, финализация)           │
-│ ─ хранилище Content Layer           │
+│ Montana network                     │
+│ ─ network nodes                     │
+│ ─ consensus (TimeChain, lottery,    │
+│   proposals, finalization)          │
+│ ─ Content Layer storage             │
 └─────────────────────────────────────┘
 ```
 
-Ядро на Rust содержит всю логику приложения. Интерфейс на Flutter — тонкий слой для отображения и ввода.
+The Rust core holds all application logic. The Flutter interface is a thin layer for display and input.
 
-### 2.2 Модули
+### 2.2 Modules
 
-Ядро Montana состоит из следующих модулей:
+The Montana core consists of the following modules:
 
-| Модуль | Ответственность |
+| Module | Responsibility |
 |---|---|
-| **identity** | Генерация сида, вывод ключей, резервная копия и восстановление |
-| **wallet** | Операции Transfer / ChangeKey, баланс, история |
-| **messenger** | Управление сессиями Double Ratchet PQ, шифрование и расшифровка, состояние чата |
-| **discovery** | Сканирование QR, запрос ключей шифрования, локальная адресная книга |
-| **content** | Клиент Content Layer, чанкование, хранение персистентных blob, управление подписками |
-| **profile** | Публикация ProfileBlob, запрос, локальные переопределения имени |
-| **network** | Транспорт libp2p, обработка сообщений протокола |
-| **storage** | База SQLite, зашифрованное хранилище ключей, файловый кэш |
-| **bridge** | FFI API для интерфейса Flutter |
+| **identity** | Seed generation, key derivation, backup and recovery |
+| **wallet** | Transfer / ChangeKey operations, balance, history |
+| **messenger** | Double Ratchet PQ session management, encryption and decryption, chat state |
+| **discovery** | QR scanning, encryption-key requests, local address book |
+| **content** | Content Layer client, chunking, persistent blob storage, subscription management |
+| **profile** | ProfileBlob publication, requests, local name overrides |
+| **network** | libp2p transport, protocol message handling |
+| **storage** | SQLite database, encrypted key storage, file cache |
+| **bridge** | FFI API for the Flutter interface |
 
-Каждый модуль изолирован с чётким API. Модули взаимодействуют через внутренние Rust-интерфейсы.
+Each module is isolated with a clear API. Modules interact through internal Rust interfaces.
 
-### 2.3 FFI-мост Rust ↔ Dart
+### 2.3 Rust ↔ Dart FFI bridge
 
-Интерфейс Flutter вызывает ядро на Rust через автоматически сгенерированные Dart-биндинги. flutter_rust_bridge генерирует типизированные биндинги из Rust API.
+The Flutter interface calls the Rust core through automatically generated Dart bindings. flutter_rust_bridge generates typed bindings from the Rust API.
 
-Примерные API, доступные из Flutter:
+Example APIs available from Flutter:
 
 - `wallet.get_balance() → u128`
 - `wallet.send_transfer(recipient, amount) → Result<Hash, Error>`
@@ -161,42 +161,42 @@ Montana App построен как **ядро на Rust + интерфейс н
 - `identity.create_seed() → Mnemonic`
 - `identity.restore_from_mnemonic(Mnemonic) → Result<(), Error>`
 
-Интерфейс наблюдает за изменениями через потоки (Dart Stream API, привязанный к Rust-каналам). Обновления баланса, новые сообщения, новые сцементированные операции — все приходят через потоки.
+The interface observes changes through streams (the Dart Stream API bound to Rust channels). Balance updates, new messages, newly cemented operations all arrive through streams.
 
-### 2.4 Архитектура хранилища
+### 2.4 Storage architecture
 
-Montana App хранит данные в нескольких местах:
+Montana App stores data in several places:
 
-**Зашифрованная база SQLite** — основное хранилище:
-- Сообщения чата (открытый текст после расшифровки)
-- Метаданные чата (контакты, состояния сессий Double Ratchet)
-- Локальная история операций (для удобства, не заменяет Таблицу аккаунтов)
-- Локальная адресная книга (имена, локальные переопределения, аватары)
-- Подписки на контент и метаданные blob-ов
-- Конфигурация и предпочтения
+**Encrypted SQLite database** — the primary storage:
+- Chat messages (plaintext after decryption)
+- Chat metadata (contacts, Double Ratchet session states)
+- Local operation history (for convenience; does not replace the Account Table)
+- Local address book (names, local overrides, avatars)
+- Content subscriptions and blob metadata
+- Configuration and preferences
 
-База зашифрована паролем или биометрией пользователя при открытии приложения.
+The database is encrypted with the user's password or biometrics when the application opens.
 
-**Защищённое хранилище ключей** — платформо-специфичное:
+**Secure key storage** — platform-specific:
 - iOS: Keychain
 - Android: Keystore / EncryptedSharedPreferences
-- Десктоп: OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+- Desktop: OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
 
-Хранит: сид (если пользователь разрешил кэшировать), выведенные ключи во время работы, ключи сессий для Double Ratchet.
+Stores: the seed (if the user allowed caching), keys derived at runtime, session keys for the Double Ratchet.
 
-**Файловое хранилище** — для крупных данных:
-- Персистентные blob-ы Content Layer (книга Montana, файлы каналов, медиа)
-- Зашифрованные вложения сообщений
-- Кэш изображений (аватары, контент каналов)
-- Локальные индексные файлы
+**File storage** — for large data:
+- Persistent Content Layer blobs (the Montana book, channel files, media)
+- Encrypted message attachments
+- Image cache (avatars, channel content)
+- Local index files
 
-Файлы хранятся в специфичной для приложения директории каждой платформы. Крупные blob-ы чанкуются и хранятся по чанкам, как на узле протокола.
+Files are stored in each platform's application-specific directory. Large blobs are chunked and stored per chunk, as on a protocol node.
 
-**Только в оперативной памяти:**
-- Сид (после ввода мнемоники, пока приложение открыто и разблокировано)
-- Приватные ключи (расшифрованные из хранилища ключей)
-- Активные состояния сессий Double Ratchet
-- Состояние интерфейса
+**In memory only:**
+- The seed (after the mnemonic is entered, while the application is open and unlocked)
+- Private keys (decrypted from key storage)
+- Active Double Ratchet session states
+- Interface state
 
 ---
 
