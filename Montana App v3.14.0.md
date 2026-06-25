@@ -2905,201 +2905,201 @@ Book update: a new Anchor in `genesis_content_app_id`. Nodes download the new ve
 
 ---
 
-## 24. Потенциальные расширения функций приложения
+## 24. Potential application feature extensions
 
-Раздел фиксирует классы применений, построенных поверх существующих протокольных примитивов без изменений уровня консенсуса. Каждое применение использует только уже определённые в спеке протокола объекты: `account_id`, `account_chain_length`, `Anchor`, `app_id`, `data_hash`, `window_index`, `cemented_bundle_aggregate`, `AccountRecord.nickname`, `ChangeKey`. Ни одно из расширений не требует новых operation codes, новых полей в layout-ах state или новых domain separators.
+The section records classes of applications built on top of existing protocol primitives without changes at the consensus level. Each application uses only objects already defined in the protocol spec: `account_id`, `account_chain_length`, `Anchor`, `app_id`, `data_hash`, `window_index`, `cemented_bundle_aggregate`, `AccountRecord.nickname`, `ChangeKey`. None of the extensions requires new operation codes, new fields in state layouts, or new domain separators.
 
-**Статус раздела.** Применения описаны как кандидаты расширения. Они не входят в текущую область приложения (раздел 1.2) и не обязательны для эталонной реализации. Каждое применение может быть реализовано независимо от других, в любом порядке, без координации с ядром протокола. Опубликованный здесь список — открытый: новые применения добавляются по мере выкристаллизовывания сценариев.
+**Section status.** The applications are described as extension candidates. They are not part of the current application scope (section 1.2) and are not mandatory for the reference implementation. Each application can be implemented independently of the others, in any order, without coordination with the protocol core. The list published here is open: new applications are added as scenarios crystallize.
 
-**Критерий разделения слоёв.** Что меняет cemented state или правила валидации — уровень протокола (раздел 16.1 спеки протокола о breaking changes). Что интерпретирует публично наблюдаемые объекты цепочки или строит UX над существующим API — уровень приложения. Шесть применений ниже проходят второй критерий целиком.
+**Layer separation criterion.** What changes cemented state or validation rules is the protocol level (section 16.1 of the protocol spec on breaking changes). What interprets publicly observable chain objects or builds UX over an existing API is the application level. The six applications below pass the second criterion entirely.
 
-### 24.1 Вход через Montana
+### 24.1 Sign in with Montana
 
-Кросс-сервисная идентификация по аналогии «Войти через Google» / «Войти через Apple», но без центрального провайдера.
+Cross-service identification by analogy with "Sign in with Google" / "Sign in with Apple", but without a central provider.
 
-**Использованные протокольные примитивы:**
-- `account_id` — стабильный глобальный идентификатор пользователя
-- `ChangeKey` (opcode 0x03) — ротация ключа без смены `account_id`
-- App-level name registry (см. §7.4) — опциональное человекочитаемое имя поверх `account_id`
-- Подпись ML-DSA-65 — ключ аккаунта подписывает challenge внешнего сервиса
+**Protocol primitives used:**
+- `account_id` — a stable global user identifier
+- `ChangeKey` (opcode 0x03) — key rotation without changing the `account_id`
+- App-level name registry (see §7.4) — an optional human-readable name on top of `account_id`
+- ML-DSA-65 signature — the account key signs an external service's challenge
 
-**Клиентский слой:**
-- Совместимый с OAuth процесс (challenge-response, redirect URI, токены)
-- Формат ID-токена (подписанный аккаунтом JWT-подобный объект) с claim-ами: `account_id`, `nickname` (если есть), `account_chain_length_snapshot` (опционально как индикатор «стажа» в сети), временная метка, nonce
-- Стандарт маппинга сущностей Montana на claim-ы протокола OpenID Connect
-- Виджет «Войти через Montana» с отображением никнейма и опционально `chain_length`
-- API верификации для внешнего сервиса: как через ближайший узел проверить подпись challenge и актуальность `current_pubkey` аккаунта
-- Эталонный клиент (мобильный и десктоп) + эталонный бэкенд-валидатор для интеграций на сервере
-- Политики управления «разрешёнными сервисами»: журнал выданных токенов, отзыв доверия
+**Client layer:**
+- An OAuth-compatible process (challenge-response, redirect URI, tokens)
+- An ID-token format (a JWT-like object signed by the account) with claims: `account_id`, `nickname` (if any), `account_chain_length_snapshot` (optionally as an indicator of "seniority" in the network), a timestamp, a nonce
+- A standard for mapping Montana entities onto OpenID Connect protocol claims
+- A "Sign in with Montana" widget displaying the nickname and optionally `chain_length`
+- A verification API for an external service: how, through the nearest node, to verify the challenge signature and the freshness of the account's `current_pubkey`
+- A reference client (mobile and desktop) + a reference backend validator for server-side integrations
+- Policies for managing "permitted services": a log of issued tokens, trust revocation
 
-**Что нужно добавить в спеку протокола:** ничего. Все примитивы присутствуют.
+**What needs adding to the protocol spec:** nothing. All primitives are present.
 
-**Что нужно добавить в спеку приложения:** документ «Montana Identity Provider» — формат токена, процессы запроса и верификации, endpoint-ы.
+**What needs adding to the application spec:** a "Montana Identity Provider" document — the token format, the request and verification processes, the endpoints.
 
-### 24.2 Служба временных меток Montana
+### 24.2 Montana timestamp service
 
-Проставление криптографической метки времени на произвольный файл. Верификация без доверия к центральному органу.
+Applying a cryptographic timestamp to an arbitrary file. Verification without trust in a central authority.
 
-**Использованные протокольные примитивы:**
-- `Anchor` (opcode 0x04) с полями `sender`, `app_id`, `data_hash`
-- Привязка Anchor к `window_index` через цементирование
-- Merkle-путь AccountChain как доказательство включения
+**Protocol primitives used:**
+- `Anchor` (opcode 0x04) with the `sender`, `app_id`, `data_hash` fields
+- Binding of the Anchor to a `window_index` through cementing
+- The AccountChain Merkle path as a proof of inclusion
 
-**Клиентский слой:**
-- Процесс в интерфейсе: «загрузить файл → вычислить `data_hash` → опубликовать Anchor → получить сертификат»
-- Формат сертификата временной метки: `(file_name, data_hash, window_index, sender_account_id, merkle_path, proposal_signature)`
-- Стандартный URI `montana:timestamp/<data_hash>` для распространения
-- Утилита командной строки для верификации без запуска полного узла (проверка merkle-пути против опубликованного proposal root)
-- API для интеграций с системами документооборота, регистраторами, нотариальными сервисами
-- Возможный `app_id` для массовой службы: `SHA-256("mt-app" || "timestamp")`
+**Client layer:**
+- An interface process: "upload a file → compute `data_hash` → publish an Anchor → receive a certificate"
+- A timestamp certificate format: `(file_name, data_hash, window_index, sender_account_id, merkle_path, proposal_signature)`
+- A standard URI `montana:timestamp/<data_hash>` for distribution
+- A command-line utility for verification without running a full node (checking the Merkle path against the published proposal root)
+- An API for integrations with document-management systems, registrars, notary services
+- A possible `app_id` for a mass service: `SHA-256("mt-app" || "timestamp")`
 
-**Что нужно добавить в спеку протокола:** ничего.
+**What needs adding to the protocol spec:** nothing.
 
-**Что нужно добавить в спеку приложения:** документ «Montana Timestamp Authority» — формат сертификата, процесс верификации, рекомендации по интеграции.
+**What needs adding to the application spec:** a "Montana Timestamp Authority" document — the certificate format, the verification process, integration recommendations.
 
-### 24.3 Переносимая репутация
+### 24.3 Portable reputation
 
-Накопление и обмен репутационными записями между сервисами. Пользователь может «взять с собой» репутацию с одного сервиса на другой.
+Accumulating and exchanging reputation records between services. A user can "take their reputation with them" from one service to another.
 
-**Использованные протокольные примитивы:**
-- `Anchor` — любая сторона может опубликовать запись про любую другую
-- `account_chain_length` и `chain_length_snapshot` — встроенная «репутация стажа в сети» без оценок
-- `app_id` в формате `SHA-256("mt-app" || issuer_name || "-reputation")` — разделение выдающих
+**Protocol primitives used:**
+- `Anchor` — any party can publish a record about any other
+- `account_chain_length` and `chain_length_snapshot` — built-in "network-seniority reputation" without ratings
+- `app_id` in the format `SHA-256("mt-app" || issuer_name || "-reputation")` — separation of issuers
 
-**Клиентский слой:**
-- Стандарт формата записи репутации в `data_hash`-блобе:
+**Client layer:**
+- A standard for the reputation record format in the `data_hash` blob:
   ```
   ReputationRecord {
     version            u16
-    subject_account_id 32 B    // кого оценивают
-    issuer_account_id  32 B    // кто оценивает
-    score              i16     // знаковая оценка (или structured rating)
-    context            строка  // комментарий или категория
+    subject_account_id 32 B    // who is being rated
+    issuer_account_id  32 B    // who is rating
+    score              i16     // a signed score (or a structured rating)
+    context            string  // a comment or category
     issued_at_window   u64
-    signature          3309 B  // подпись issuer-а (ML-DSA-65)
+    signature          3309 B  // the issuer's signature (ML-DSA-65)
   }
   ```
-  Поле `subject_account_id` помещается **внутрь** `data_hash`-блоба, не в payload `Anchor`. Это оставляет протокол неизменным.
-- Реестр известных выдающих (advisory directory): какие `app_id` соответствуют каким организациям, по какому критерию добавляются
-- Агрегатор: интерфейс «все оценки обо мне», «все оценки о контакте»
-- Клиентский антиспам: фильтрация фальшивых записей через критерии выдающего (chain_length, membership в directory, кворум K из M независимых выдающих)
-- Скоринг-формулы — выбор пользователя или интегратора (без консенсуса)
+  The `subject_account_id` field is placed **inside** the `data_hash` blob, not in the `Anchor` payload. This leaves the protocol unchanged.
+- A directory of known issuers (an advisory directory): which `app_id`s correspond to which organizations, by what criteria they are added
+- An aggregator: a "all ratings about me", "all ratings about a contact" interface
+- Client anti-spam: filtering fake records by issuer criteria (chain_length, membership in the directory, a quorum of K out of M independent issuers)
+- Scoring formulas — the choice of the user or integrator (without consensus)
 
-**Что нужно добавить в спеку протокола:** ничего обязательного. Опционально — расширение `Anchor.payload` полем `subject_id (32 B)` для ускорения индексации узлом. Без этого индексация возможна на стороне приложения (прочитать все Anchor в релевантных `app_id`, распарсить блобы). Добавление поля — отдельное протокольное решение и не условие работоспособности расширения.
+**What needs adding to the protocol spec:** nothing mandatory. Optionally — extending `Anchor.payload` with a `subject_id (32 B)` field to speed up indexing by a node. Without it, indexing is possible on the application side (read all Anchors in the relevant `app_id`s, parse the blobs). Adding the field is a separate protocol decision and not a condition for the extension to work.
 
-**Что нужно добавить в спеку приложения:** документ «Reputation Anchor Format» — формат записи, принципы directory, фильтры клиента.
+**What needs adding to the application spec:** a "Reputation Anchor Format" document — the record format, directory principles, client filters.
 
-### 24.4 Посмертная публикация (Dead Man's Switch)
+### 24.4 Posthumous publication (Dead Man's Switch)
 
-Условное раскрытие подготовленного заранее сообщения при длительном отсутствии активности владельца аккаунта.
+Conditional disclosure of a pre-prepared message on a prolonged absence of activity from the account owner.
 
-**Использованные протокольные примитивы:**
-- `Anchor` с `data_hash` зашифрованного блоба — публикация «посмертного» контента в Content Layer
-- AccountChain и поле `last_op_window` в `AccountRecord` — проверяемое отсутствие активности
-- Persistent-хранение блоба через Content Layer (раздел 9)
+**Protocol primitives used:**
+- `Anchor` with the `data_hash` of an encrypted blob — publication of "posthumous" content in the Content Layer
+- AccountChain and the `last_op_window` field in `AccountRecord` — verifiable absence of activity
+- Persistent storage of the blob through the Content Layer (section 9)
 
-**Клиентский слой:**
-- Модуль «Посмертная публикация» в интерфейсе приложения:
-  - Создание блоба (текст, ссылки на файлы, инструкции наследникам)
-  - Шифрование блоба симметричным ключом
-  - Разделение ключа через схему Шамира `(n, k)` — стандартная внешняя криптобиблиотека
-  - Распространение `n` долей ключа доверенным лицам (через зашифрованные сообщения мессенджера, или через `ProfileBlob`-подобные записи получателей)
-  - Публикация `Anchor` с `data_hash` зашифрованного блоба
-- Клиентский мониторинг активности `account_id` (периодическая проверка каждые τ₁):
-  - Условие раскрытия: `current_window - AccountRecord.last_op_window >= N_windows` (по умолчанию 4 × τ₂)
-  - Отсутствие операций означает отсутствие владельца; ложные срабатывания ограничены выбранным порогом
-- Интерфейс для наследников:
-  - Ввод собственной доли ключа
-  - Координация с другими держателями долей (через мессенджер, через групповой канал)
-  - Восстановление симметричного ключа из `k` долей
-  - Расшифровка блоба
-- Опционально — «heartbeat-операция»: дешёвая периодическая активность (например, обновление `ProfileBlob` раз в N окон) для предотвращения случайного срабатывания
+**Client layer:**
+- A "Posthumous publication" module in the application interface:
+  - Creating a blob (text, file references, instructions for heirs)
+  - Encrypting the blob with a symmetric key
+  - Splitting the key through a Shamir `(n, k)` scheme — a standard external crypto library
+  - Distributing the `n` key shares to trusted persons (through encrypted messenger messages, or through `ProfileBlob`-like records of the recipients)
+  - Publishing an `Anchor` with the `data_hash` of the encrypted blob
+- Client monitoring of `account_id` activity (a periodic check every τ₁):
+  - Disclosure condition: `current_window - AccountRecord.last_op_window >= N_windows` (by default 4 × τ₂)
+  - The absence of operations means the absence of the owner; false positives are bounded by the chosen threshold
+- An interface for the heirs:
+  - Entering their own key share
+  - Coordinating with other share holders (through the messenger, through a group channel)
+  - Recovering the symmetric key from `k` shares
+  - Decrypting the blob
+- Optionally — a "heartbeat operation": a cheap periodic activity (for example, updating the `ProfileBlob` once every N windows) to prevent accidental triggering
 
-**Что нужно добавить в спеку протокола:** ничего.
+**What needs adding to the protocol spec:** nothing.
 
-**Что нужно добавить в спеку приложения:** документ «Legacy Module» — процессы создания, распространения долей, мониторинга, восстановления. Secret Sharing — внешняя библиотека (например `sss-rs`), не протокольный примитив.
+**What needs adding to the application spec:** a "Legacy Module" document — the processes of creation, share distribution, monitoring, recovery. Secret Sharing — an external library (for example `sss-rs`), not a protocol primitive.
 
-### 24.5 Скоординированные действия и голосования
+### 24.5 Coordinated actions and voting
 
-Проведение голосований, опросов, коллективных решений без центрального организатора.
+Conducting votes, polls, collective decisions without a central organizer.
 
-**Использованные протокольные примитивы:**
-- `window_index` — каноническая временная координата начала и конца голосования
-- `Anchor` с `app_id = SHA-256("mt-app" || "vote" || vote_id)` — объявление голосования и голоса
-- `account_chain_length_snapshot` — анти-Sybil-порог для участия
-- `cemented_bundle_aggregate(W)` — источник рандомности для жеребьёвок, раскрытий, распределений
-- Подпись ML-DSA-65 — верифицируемость происхождения голоса
+**Protocol primitives used:**
+- `window_index` — a canonical time coordinate for the start and end of a vote
+- `Anchor` with `app_id = SHA-256("mt-app" || "vote" || vote_id)` — announcing a vote and votes
+- `account_chain_length_snapshot` — an anti-Sybil threshold for participation
+- `cemented_bundle_aggregate(W)` — a source of randomness for draws, reveals, distributions
+- ML-DSA-65 signature — verifiability of a vote's origin
 
-**Клиентский слой:**
-- Формат объявления голосования:
+**Client layer:**
+- A vote-announcement format:
   ```
   VoteProposal {
     version        u16
-    vote_id        32 B          // хэш объявления
+    vote_id        32 B          // hash of the announcement
     organizer_id   32 B
-    title          строка
-    options        [строка × N]
-    W_start        u64           // окно начала
-    W_end          u64           // окно окончания
-    eligibility    структура     // account_chain_length порог, список допустимых,
-                                 // публичный vs приватный, и т.п.
+    title          string
+    options        [string × N]
+    W_start        u64           // start window
+    W_end          u64           // end window
+    eligibility    structure     // account_chain_length threshold, list of eligible,
+                                 // public vs private, etc.
     count_rule     enum (simple_majority | weighted | quadratic | commit_reveal)
     signature      3309 B  // ML-DSA-65
   }
   ```
-- Формат голоса: `Anchor` в `app_id_vote` с `data_hash = SHA-256("mt-vote" || vote_id || choice)`
-- Детерминированный алгоритм подсчёта: все клиенты, читающие цепочку, получают один и тот же результат
-- Поддержка схем:
-  - Простое большинство — по одному голосу на `account_id`
-  - Взвешенное по `chain_length_snapshot` — старожилы сети имеют больший вес
-  - Квадратичное — n-й голос стоит `n²` единиц чего-либо (кредиты, реплики)
-  - Commit-reveal — первый раунд публикует хэш выбора, второй раунд раскрывает; защита от peer-влияния
-  - Жеребьёвка — выбор случайного `account_id` из голосовавших через `cemented_bundle_aggregate(W_end)` как seed
-- Интерфейс: просмотр активных голосований, участие, отслеживание результатов, история
+- Vote format: an `Anchor` in `app_id_vote` with `data_hash = SHA-256("mt-vote" || vote_id || choice)`
+- A deterministic counting algorithm: all clients reading the chain get the same result
+- Support for schemes:
+  - Simple majority — one vote per `account_id`
+  - Weighted by `chain_length_snapshot` — network veterans have greater weight
+  - Quadratic — the n-th vote costs `n²` units of something (credits, replies)
+  - Commit-reveal — the first round publishes the hash of the choice, the second round reveals it; protection against peer influence
+  - Draw — selecting a random `account_id` among the voters via `cemented_bundle_aggregate(W_end)` as the seed
+- Interface: viewing active votes, participating, tracking results, history
 
-**Что нужно добавить в спеку протокола:** ничего.
+**What needs adding to the protocol spec:** nothing.
 
-**Что нужно добавить в спеку приложения:** документ «Coordinated Decision Protocol» — общий стандарт для межклиентской совместимости (два разных клиента подсчитают один результат для одного голосования).
+**What needs adding to the application spec:** a "Coordinated Decision Protocol" document — a common standard for inter-client compatibility (two different clients count the same result for the same vote).
 
-### 24.6 Доказательство неопубликованности
+### 24.6 Proof of non-publication
 
-Подтверждение факта, что определённый контент или заявление **не были** опубликованы конкретным аккаунтом в заданном временном диапазоне.
+Confirming the fact that certain content or a statement was **not** published by a specific account in a given time range.
 
-**Использованные протокольные примитивы:**
-- Полнота канонической истории proposals — встроена в консенсус, каждое окно содержит полное множество cemented операций
-- Публичная наблюдаемость всех `Anchor` и `Transfer`
+**Protocol primitives used:**
+- The completeness of the canonical proposals history — built into consensus, each window contains the complete set of cemented operations
+- Public observability of all `Anchor`s and `Transfer`s
 
-**Клиентский слой:**
-- Процесс запроса: «показать все `Anchor` в `app_id_X` от `account_id_Y` в окнах `[W1, W2]`»
-- Формат негативного доказательства:
+**Client layer:**
+- A request process: "show all `Anchor`s in `app_id_X` from `account_id_Y` in windows `[W1, W2]`"
+- A negative-proof format:
   ```
   NonPublicationProof {
     subject_account_id 32 B
     app_id             32 B
     W_range            [u64, u64]
-    examined_proposals [hash × N]   // хэши всех proposals из диапазона
-    matching_anchors   [Anchor × 0] // пустой список как декларация «не найдено»
-    witness_signatures [665 B × K]  // подписи K независимых узлов,
-                                    // подтверждающих полноту examined_proposals
+    examined_proposals [hash × N]   // hashes of all proposals in the range
+    matching_anchors   [Anchor × 0] // an empty list as a declaration of "not found"
+    witness_signatures [665 B × K]  // signatures of K independent nodes
+                                    // confirming the completeness of examined_proposals
     generated_at       u64
   }
   ```
-- Подпись свидетеля-узла: `ML-DSA-65.sign(node_key, "mt-nonpub" || serialize(proof))`
-- Верификация: проверить подписи K свидетелей, проверить что examined_proposals покрывает весь диапазон без пропусков, проверить отсутствие релевантных Anchor
-- Кворум свидетелей для устойчивости к одному недобросовестному узлу (рекомендация K ≥ 3 из разных юрисдикций, не аффилированных)
-- Целевые сценарии: журналисты, юристы, процессуальные заявления «заявление X не было публично сделано стороной Y до даты Z»
+- The witness-node signature: `ML-DSA-65.sign(node_key, "mt-nonpub" || serialize(proof))`
+- Verification: check the signatures of K witnesses, check that examined_proposals covers the entire range without gaps, check the absence of relevant Anchors
+- A quorum of witnesses for resilience to a single dishonest node (recommendation K ≥ 3 from different jurisdictions, unaffiliated)
+- Target scenarios: journalists, lawyers, procedural statements "statement X was not publicly made by party Y before date Z"
 
-**Что нужно добавить в спеку протокола:** ничего обязательного. Опционально — стандартизированный API узла для запросов по диапазону (`app_id`, `account_id`, `[W1, W2]`) — деталь реализации узла, не консенсуса.
+**What needs adding to the protocol spec:** nothing mandatory. Optionally — a standardized node API for range queries (`app_id`, `account_id`, `[W1, W2]`) — a node implementation detail, not consensus.
 
-**Что нужно добавить в спеку приложения:** документ «Non-Publication Proof Format» — формат доказательства, процесс запроса и сбора свидетельств, верификация.
+**What needs adding to the application spec:** a "Non-Publication Proof Format" document — the proof format, the request and witness-collection process, verification.
 
-### 24.7 Наблюдение об архитектурной чистоте
+### 24.7 An observation about architectural cleanliness
 
-Из шести описанных применений ни одно не требует изменений протокола Montana на уровне консенсуса. Все строятся поверх базовых примитивов: `Anchor`, `account_id`, `window_index`, `chain_length`, `app_id`, ключевые пары, подпись. Это — проверка архитектурной чистоты спецификации протокола: базовые примитивы оказались достаточно общими, чтобы широкий класс применений выстраивался без трогания ядра.
+Of the six described applications, not one requires changes to the Montana protocol at the consensus level. All are built on top of the base primitives: `Anchor`, `account_id`, `window_index`, `chain_length`, `app_id`, key pairs, signature. This is a test of the architectural cleanliness of the protocol specification: the base primitives turned out to be general enough that a wide class of applications is built without touching the core.
 
-Аналогия: TCP/IP не трогается при появлении нового сервиса поверх — появляются новые RFC на прикладном уровне, стек остаётся тем же. У Montana архитектура работает так же.
+An analogy: TCP/IP is not touched when a new service appears on top — new RFCs appear at the application level, the stack stays the same. With Montana the architecture works the same way.
 
-Следствие для роадмапа: расширения раздела 24 могут вестись параллельно и независимо. Приоритизация — по запросу пользователей и доступности реализаторов, не по зависимостям от протокола. Новые применения добавляются сюда по мере формулирования, без необходимости синхронного обновления протокольной спеки.
+A consequence for the roadmap: the extensions of section 24 can be developed in parallel and independently. Prioritization — by user demand and implementer availability, not by dependencies on the protocol. New applications are added here as they are formulated, without the need for a synchronous update of the protocol spec.
 
 ---
 
