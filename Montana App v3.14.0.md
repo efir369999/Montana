@@ -3247,177 +3247,176 @@ A violation of this rule is a methodological failure at the level of compromisin
 
 ---
 
-## 26. Light-Node-at-Home — собственный узел для обычного пользователя
+## 26. Light-Node-at-Home — your own node for the ordinary user
 
-Приватность metadata для большинства пользователей достигается не protocol-level механизмами, а переходом от роли account-only к роли оператора собственного узла. Переход должен быть максимально дешёвым и автоматизированным для типичного пользователя смартфона.
+Metadata privacy for most users is achieved not by protocol-level mechanisms, but by moving from the account-only role to the role of operating one's own node. The transition must be as cheap and automated as possible for a typical smartphone user.
 
-### 26.1 Зачем это делать
+### 26.1 Why do this
 
-Для класса угроз «компрометация хостящего узла раскрывает граф связей пользователей» (EncroChat / Sky ECC-class vector для account-only пользователей) — переход на собственный узел устраняет угрозу архитектурно, а не через дополнительные protocol-level механизмы. Узел владельца = узел пользователя, третьей стороны нет.
+For the threat class "compromise of the hosting node reveals the graph of user connections" (an EncroChat / Sky ECC-class vector for account-only users) — moving to one's own node removes the threat architecturally, not through additional protocol-level mechanisms. The owner's node = the user's node, there is no third party.
 
-### 26.2 Минимальные требования к оборудованию
+### 26.2 Minimum hardware requirements
 
-Узел Монтаны требует:
-- **1 ядро CPU** с поддержкой SHA-NI (современные ARM Cortex / x86_64) — достаточно для TimeChain SSHA
-- **4 ГБ RAM** (реально работает на 2 ГБ, 4 ГБ с запасом)
-- **50 ГБ SSD** (consensus state при 1M аккаунтов ≈ 2 ГБ, запас для roста + proposals)
-- **Постоянное сетевое подключение** (круглосуточное; при перерывах узел теряет chain_length и выпадает из active set через 2τ₂)
-- **Публичный IP либо туннель** (через VPS / dynamic DNS / WireGuard к домашнему роутеру / Tailscale)
+A Montana node requires:
+- **1 CPU core** with SHA-NI support (modern ARM Cortex / x86_64) — enough for TimeChain SSHA
+- **4 GB RAM** (actually runs on 2 GB, 4 GB with headroom)
+- **50 GB SSD** (consensus state at 1M accounts ≈ 2 GB, headroom for growth + proposals)
+- **A permanent network connection** (24/7; on interruptions the node loses chain_length and falls out of the active set after 2τ₂)
+- **A public IP or a tunnel** (through a VPS / dynamic DNS / WireGuard to the home router / Tailscale)
 
-### 26.3 Паттерны установки
+### 26.3 Installation patterns
 
-Четыре основных паттерна, упорядоченных по стоимости:
+Four main patterns, ordered by cost:
 
-**Паттерн A — Raspberry Pi 4/5 дома.** Одноразовая стоимость ~$35–80 за плату + $20 за microSD/SSD. Ежемесячно — только электричество (~$1–2). Подключение через WireGuard туннель к смартфону. Подходит для пользователей с постоянным домашним интернетом.
+**Pattern A — Raspberry Pi 4/5 at home.** One-time cost ~$35–80 for the board + $20 for a microSD/SSD. Monthly — only electricity (~$1–2). Connection through a WireGuard tunnel to the smartphone. Suitable for users with permanent home internet.
 
-**Паттерн B — старый компьютер.** Неиспользуемый ноутбук / мини-ПК / десктоп. Нулевая одноразовая стоимость. Электричество выше (~$5–10 в месяц). Тот же WireGuard туннель. Подходит если пользователь уже имеет неиспользуемое железо.
+**Pattern B — an old computer.** An unused laptop / mini-PC / desktop. Zero one-time cost. Electricity higher (~$5–10 per month). The same WireGuard tunnel. Suitable if the user already has unused hardware.
 
-**Паттерн C — VPS в дружественной юрисдикции.** $3–6 в месяц за базовый VPS (Hetzner / Timeweb / DigitalOcean / OVH). Публичный IP из коробки, не требует domashnego интернета. Trade-off: оператор VPS теоретически имеет доступ к железу (мягче чем хостящий узел, но не нулевой риск). Рекомендуется для пользователей без стабильного домашнего интернета или в юрисдикциях с частыми shutdown.
+**Pattern C — a VPS in a friendly jurisdiction.** $3–6 per month for a basic VPS (Hetzner / Timeweb / DigitalOcean / OVH). A public IP out of the box, no home internet required. Trade-off: the VPS operator theoretically has access to the hardware (milder than a hosting node, but not zero risk). Recommended for users without stable home internet or in jurisdictions with frequent shutdowns.
 
-**Паттерн D — NUC / mini-ПК дома.** Средняя стоимость $150–300. Более производительный чем Pi, более тихий чем старый компьютер. Подходит пользователям готовым инвестировать в dedicated железо.
+**Pattern D — a NUC / mini-PC at home.** Medium cost $150–300. More performant than a Pi, quieter than an old computer. Suitable for users ready to invest in dedicated hardware.
 
-Приложение Монтаны предоставляет **one-click setup скрипт** для каждого паттерна. Скрипт:
-1. Устанавливает бинарник узла Монтаны (из проверенного источника)
-2. Генерирует node keypair локально
-3. Создаёт systemd unit для автозапуска
-4. Настраивает WireGuard / Tailscale overlay
-5. Генерирует QR-код для Phone-to-Own-Node pairing
-6. Показывает статус синхронизации через Fast Sync
+The Montana application provides a **one-click setup script** for each pattern. The script:
+1. Installs the Montana node binary (from a verified source)
+2. Generates a node keypair locally
+3. Creates a systemd unit for auto-start
+4. Configures the WireGuard / Tailscale overlay
+5. Generates a QR code for Phone-to-Own-Node pairing
+6. Shows the synchronization status through Fast Sync
 
-### 26.4 Phone-to-Own-Node pairing через QR
+### 26.4 Phone-to-Own-Node pairing through QR
 
-Первое подключение смартфона к своему узлу — через QR-код, показанный на экране узла при завершении setup-скрипта.
+The first connection of a smartphone to its node — through a QR code shown on the node's screen at the end of the setup script.
 
-**Формат QR-кода:**
+**QR code format:**
 
 ```
 mt-pair:
   node_id         32B (base32 encoded)
   node_pubkey     1952B (base32 encoded)
-  endpoint        string (WireGuard endpoint либо IP:port)
-  session_token   32B (ephemeral, одноразовый; expires 5 минут)
-  mac             32B (HMAC-SHA-256 от выше полей на session_token)
+  endpoint        string (WireGuard endpoint or IP:port)
+  session_token   32B (ephemeral, single-use; expires in 5 minutes)
+  mac             32B (HMAC-SHA-256 of the above fields over session_token)
 ```
 
-**Сценарий pairing:**
+**Pairing scenario:**
 
-1. Пользователь запускает setup-скрипт на узле, получает QR на экране
-2. Пользователь открывает приложение Монтаны на смартфоне, выбирает «Подключить свой узел»
-3. Приложение сканирует QR
-4. Приложение инициирует IBT уровня 3 к `endpoint` с proof на `session_token`
-5. Узел верифицирует `session_token`, устанавливает Noise session с клиентом
-6. Клиент сохраняет `(node_id, node_pubkey, endpoint)` как «primary home node»
-7. Последующие подключения — автоматические через WireGuard/Tailscale (без нового QR)
+1. The user runs the setup script on the node and gets a QR on the screen
+2. The user opens the Montana application on the smartphone and selects "Connect your node"
+3. The application scans the QR
+4. The application initiates an IBT level 3 to the `endpoint` with a proof over `session_token`
+5. The node verifies the `session_token` and establishes a Noise session with the client
+6. The client stores `(node_id, node_pubkey, endpoint)` as the "primary home node"
+7. Subsequent connections — automatic through WireGuard/Tailscale (without a new QR)
 
-**После pairing** индикатор приватности клиента переключается в «Свой узел» (зелёный).
+**After pairing** the client's privacy indicator switches to "Own node" (green).
 
-**Смена узла** (переезд, замена железа) — повтор процедуры pairing с новым QR. Старый `node_id` помечается как «archived», но данные на старом узле остаются доступны для recovery.
+**Changing the node** (a move, a hardware replacement) — repeating the pairing procedure with a new QR. The old `node_id` is marked as "archived", but the data on the old node remains available for recovery.
 
-### 26.5 Recovery при потере узла
+### 26.5 Recovery on node loss
 
-Узел хранит consensus state (публичный, восстановим из сети через Fast Sync) + данные владельца (приватные, требуют backup). Recovery сценарии:
+The node stores consensus state (public, recoverable from the network through Fast Sync) + the owner's data (private, requires a backup). Recovery scenarios:
 
-**Утрата узла, seed сохранён:**
-1. Установить новый узел (любой из паттернов A–D)
-2. Восстановить keypair из seed-фразы (24 слова)
-3. Fast Sync загрузит consensus state с сети (несколько минут)
-4. Данные владельца (фото, сообщения, файлы) — **безвозвратно утрачены**, если не было backup
-5. Mitigation: периодический backup ключом владельца (опциональный клиентский функционал)
+**Node loss, seed preserved:**
+1. Install a new node (any of patterns A–D)
+2. Recover the keypair from the seed phrase (24 words)
+3. Fast Sync downloads the consensus state from the network (a few minutes)
+4. The owner's data (photos, messages, files) — **irrecoverably lost** if there was no backup
+5. Mitigation: periodic backup with the owner's key (optional client functionality)
 
-**Утрата и узла, и seed:**
-Keypair аккаунта невосстановим. Аккаунт потерян. Mitigation: хранить seed в нескольких надёжных местах (стальная пластина, сейф, доверенный человек).
+**Loss of both the node and the seed:**
+The account keypair is unrecoverable. The account is lost. Mitigation: store the seed in several reliable places (a steel plate, a safe, a trusted person).
 
-**Компрометация узла без утраты seed:**
-1. Выполнить `ChangeKey` с гарантированно чистой среды (новое устройство, переустановленная ОС, проверенный бинарник клиента)
-2. Установить новый узел, подключить через новый pairing
-3. Старый узел и его данные больше не доверенны, используются только как reference для recovery
+**Node compromise without seed loss:**
+1. Perform a `ChangeKey` from a guaranteed clean environment (a new device, a reinstalled OS, a verified client binary)
+2. Install a new node, connect it through a new pairing
+3. The old node and its data are no longer trusted and are used only as a reference for recovery
 
-### 26.6 Ограничения паттерна «Свой узел»
+### 26.6 Limitations of the "Own node" pattern
 
-Собственный узел не устраняет архитектурные границы защиты раздела 25.3. В частности:
+Your own node does not remove the architectural boundaries of protection of section 25.3. In particular:
 
-- **IP узла становится публичным** в Node Table. Пользователь переносит приватность metadata с хоста на себя, но получает публичную идентификацию в сети как оператор.
-- **Оператор подписывает BundledConfirmation** (если накопил chain_length для confirmer role). Паттерны активности видны сети.
-- **Финансовые операции остаются публичными по [I-2].**
+- **The node's IP becomes public** in the Node Table. The user moves metadata privacy from the host to themselves, but gets public identification on the network as an operator.
+- **The operator signs BundledConfirmation** (if they have accumulated chain_length for the confirmer role). Activity patterns are visible to the network.
+- **Financial operations remain public per [I-2].**
 
-Переход на собственный узел — это правильный выбор для большинства пользователей, но **не универсальное решение**. Каждый пользователь должен оценить свою threat model и принять осознанное решение.
+Moving to one's own node is the right choice for most users, but **not a universal solution**. Each user must assess their threat model and make an informed decision.
 
 ---
 
-### 26.7 Privacy Tier mapping для пользователя
+### 26.7 Privacy Tier mapping for the user
 
-Light-Node-at-Home + Tor entry + Noise_PQ — это **Tier 2 Recommended** в общей tiered модели Montana network privacy (см. Montana Network spec § Privacy Scope).
+Light-Node-at-Home + Tor entry + Noise_PQ is **Tier 2 Recommended** in Montana's overall tiered network-privacy model (see the Montana Network spec § Privacy Scope).
 
-#### Что Light-Node-at-Home закрывает полностью
+#### What Light-Node-at-Home closes completely
 
-- **Hosting third-party metadata**: никакой третьей стороны нет, queries / activity / content sovereignty полная.
-- **Long-term data retention attacks**: всё локально на узле, никакая платформа не имеет access.
-- **App creator surveillance**: Junona AI на own node (local LLM либо operator-chosen cloud), не на app creator infrastructure.
-- **Cloud sync compromise**: нет cloud sync — backup mnemonic + own node — единственная recovery path.
+- **Hosting third-party metadata**: there is no third party, queries / activity / content sovereignty is complete.
+- **Long-term data retention attacks**: everything is local on the node, no platform has access.
+- **App creator surveillance**: the Juno AI is on the own node (a local LLM or an operator-chosen cloud), not on the app creator's infrastructure.
+- **Cloud sync compromise**: there is no cloud sync — the backup mnemonic + the own node are the only recovery path.
 
-#### Что Light-Node-at-Home **не** закрывает автоматически
+#### What Light-Node-at-Home does **not** close automatically
 
-- **IP visibility**: узел подключается к интернету, peers видят его IP. Backbone-наблюдатель видит «IP X = Montana node». Закрывается через **Tor entry** (Tier 2 расширение).
-- **Government legal request to ISP**: если IP идентифицирован, legal request даёт identity. Закрывается через **physical anonymity** (Tor / residential proxy).
-- **Backbone GPS-precision timing-correlation**: open research problem; Montana ослабляет через canonical aggregation (10⁶-10⁸ message threshold), но не absolute closure.
-- **Quantum store-now-decrypt-later**: до Noise_PQ migration TLS handshake уязвим. Закрывается **Noise_PQ deployment** (mainnet milestone).
-- **Endpoint compromise (RAT)**: out of scope; см. damage containment ниже.
+- **IP visibility**: the node connects to the internet, peers see its IP. A backbone observer sees "IP X = Montana node". Closed through **Tor entry** (a Tier 2 extension).
+- **Government legal request to the ISP**: if the IP is identified, a legal request yields the identity. Closed through **physical anonymity** (Tor / a residential proxy).
+- **Backbone GPS-precision timing correlation**: an open research problem; Montana weakens it through canonical aggregation (a 10⁶–10⁸ message threshold), but not absolute closure.
+- **Quantum store-now-decrypt-later**: until the Noise_PQ migration the TLS handshake is vulnerable. Closed by **Noise_PQ deployment** (a mainnet milestone).
+- **Endpoint compromise (RAT)**: out of scope; see damage containment below.
 
-#### Endpoint compromise damage containment (unique Montana property)
+#### Endpoint compromise damage containment (a unique Montana property)
 
-Network protocol не может prevent endpoint compromise. Но Light-Node-at-Home **архитектурно ограничивает damage**:
+A network protocol cannot prevent endpoint compromise. But Light-Node-at-Home **architecturally limits the damage**:
 
-- **Trust domain split**: master_seed на home node, phone имеет только ephemeral session keys. Compromise phone ≠ compromise master.
-- **SSHA-anchored ephemeral session rotation per τ₁** (= 60 сек): session_key_W = `HKDF(master_seed, current_window || "session-W")`. Maximum exposure window = 60 секунд.
-- **Junona local pre-processing**: AI на home node делает decryption + summarization, phone receives только filtered summaries. Phone никогда не имеет full content в memory.
-- **Sub-account hierarchy через Block Lattice**: phone использует daily-spend sub-account ($X/day limit) выведенный из master. Savings / high-value операции — только через home node.
-- **Hardware-backed enclave**: master_seed в iOS Secure Enclave / Android StrongBox при наличии (не в normal memory).
+- **Trust domain split**: the master_seed is on the home node, the phone has only ephemeral session keys. Compromising the phone ≠ compromising the master.
+- **SSHA-anchored ephemeral session rotation per τ₁** (= 60 sec): session_key_W = `HKDF(master_seed, current_window || "session-W")`. Maximum exposure window = 60 seconds.
+- **Juno local pre-processing**: the AI on the home node does decryption + summarization, the phone receives only filtered summaries. The phone never has full content in memory.
+- **Sub-account hierarchy through a Block Lattice**: the phone uses a daily-spend sub-account ($X/day limit) derived from the master. Savings / high-value operations — only through the home node.
+- **Hardware-backed enclave**: the master_seed in the iOS Secure Enclave / Android StrongBox if available (not in normal memory).
 
-**Сравнение endpoint compromise impact:**
+**Comparison of endpoint compromise impact:**
 
 | System | Endpoint compromise loss |
 |--------|--------------------------|
 | Signal | Full chat history forever (single trust domain) |
 | WhatsApp | Full history + cloud sync |
 | Telegram | Full history + cloud + saved messages |
-| **Montana с Light-Node-at-Home** | `sub_account_limit × 60_sec_window_content` (multi-domain trust + rotation) |
+| **Montana with Light-Node-at-Home** | `sub_account_limit × 60_sec_window_content` (multi-domain trust + rotation) |
 
-#### Maximum practical privacy stack — четыре слоя одновременно
+#### Maximum practical privacy stack — four layers at once
 
-Для security-conscious пользователей (журналисты, активисты, исследователи) рекомендуется четырёхуровневый stack:
+For security-conscious users (journalists, activists, researchers) a four-layer stack is recommended:
 
 ```
-1. Own node (Light-Node-at-Home) — нет hosting third-party
-2. Tor entry для узла — ISP не видит «Montana traffic», bypass legal request to ISP
+1. Own node (Light-Node-at-Home) — no hosting third-party
+2. Tor entry for the node — the ISP does not see "Montana traffic", bypasses a legal request to the ISP
 3. Noise_PQ handshake — quantum-resistant peer auth + key exchange
 4. Canonical cover traffic + Mempool buffering — temporal unlinkability
 ```
 
-Latency: <2 сек для most operations при tier 2; до 60-120 сек при добавлении canonical Mempool buffering (tier 3). Bandwidth: ~50-100 KB/sec sustained — приемлемо для phone clients подключённых к home node.
+Latency: <2 sec for most operations at tier 2; up to 60–120 sec when adding canonical Mempool buffering (tier 3). Bandwidth: ~50–100 KB/sec sustained — acceptable for phone clients connected to a home node.
 
-#### Honest scope statement в onboarding
+#### Honest scope statement in onboarding
 
-Перед первым запуском пользователь видит:
+Before the first launch the user sees:
 
 ```
-Montana защита приватности:
+Montana privacy protection:
 
-✓ Содержание всех сообщений и данных (encrypted)
-✓ Защита от провайдера и слежки сетевого трафика
-✓ Защита от хостящих сервисов (если используется свой узел)
-✓ Защита от мелких атак на сеть и квантовых компьютеров
+✓ The content of all messages and data (encrypted)
+✓ Protection against the provider and network-traffic surveillance
+✓ Protection against hosting services (if your own node is used)
+✓ Protection against small-scale network attacks and quantum computers
 
-✗ Балансы и переводы публичны — это намеренное свойство Montana
-   для совместимости с регуляторами и аудитом
-✗ Глобальный наблюдатель магистральных кабелей интернета — open
-   research problem всей области; Montana ослабляет на порядки
-   сильнее существующих анон-сетей, но не absolute closure
-✗ Взлом самого устройства (RAT) — out of scope любого протокола;
-   Montana ограничивает ущерб через разделение телефон/домашний-узел
+✗ Balances and transfers are public — this is a deliberate property of Montana
+   for compatibility with regulators and audit
+✗ A global observer of the internet backbone cables — an open
+   research problem of the whole field; Montana weakens it by orders
+   of magnitude more than existing anonymity networks, but not absolute closure
+✗ Compromise of the device itself (RAT) — out of scope of any protocol;
+   Montana limits the damage through the phone/home-node split
 
-Для maximum защиты — Light-Node-at-Home + Tor entry. См. § 26.
+For maximum protection — Light-Node-at-Home + Tor entry. See § 26.
 ```
-
 
 ## 27. Категории клиентов и реализация [I-17]
 
