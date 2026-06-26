@@ -1,7 +1,7 @@
 # The Montana Manifesto
 
-**Version:** 2.0.3
-**Date:** 2026-05-29
+**Version:** 2.0.4
+**Date:** 2026-06-25
 **Author:** Alejandro Montana
 **Repository:** [github.com/efir369999/Montana](https://github.com/efir369999/Montana)
 
@@ -81,7 +81,7 @@ Every layer is impossible without the one below.
 
 1. **Canonical order** (`TimeChain`) — irreversible sequential computation. The base layer.
 2. **Presence** (`NodeChain`) — a node's chain length, accumulated one window at a time as the node is canonically cemented into the order. Weight in consensus is presence, not capital. Capital cannot retroactively purchase past participation.
-3. **The rail's reward unit** (`Account`, `Ɉ`) — the protocol-level emission paid to the operator that seals a window: `EMISSION_moneta = 13 × 10⁹ moneta = 13 Ɉ`. Supply is closed-form: `supply_moneta(W) = EMISSION_moneta × (W + 1)`. `Ɉ` is the rail's bookkeeping; it is not a promise of stable purchasing power, and not the unit of account a stable currency would use.
+3. **The rail's reward unit** (`Account`, `Ɉ`) — the protocol-level emission paid to the operator that seals a window: `EMISSION_moneta = 13 × 10⁹ moneta = 13 Ɉ`. Supply is closed-form and grows linearly with the window count; the exact formula is defined in the protocol specification. `Ɉ` is the rail's bookkeeping; it is not a promise of stable purchasing power, and not the unit of account a stable currency would use.
 4. **History** (`Anchor`) — a 32-byte hash bound to a window for the lifetime of the network. Rewriting it requires recomputing every iteration of the chain from the Genesis Decree. Mathematically impossible.
 
 `1 Ɉ = 10⁹ moneta`. The international ticker is `MONT`.
