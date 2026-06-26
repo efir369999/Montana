@@ -954,7 +954,7 @@ state-transition change requiring careful design + tests.
 
 
 **Closed:** `settle_and_bookkeep` now applies the proposal/expiry/selection to **clones** of the account/node/candidate tables, computes `post_root`, and commits (swaps the clones into live state + does timechain/history/current/disk bookkeeping) only when `post_root == expected_root`. On mismatch it returns `Ok(None)` without mutating real state or disk; the acceptor logs and rejects the window (no panic), and the node recovers the authoritative state via fast-sync as its lag grows past the threshold. The proposer path passes `expected_root = None` (it is authoritative) and commits unconditionally. One divergent or malformed envelope can no longer crash a node or halt an all-quorum cohort.
-## DEV-043 (open, mitigated): wall-clock in fallback-proposer election is non-deterministic [I-3]
+## DEV-043 (closed): wall-clock in fallback-proposer election is non-deterministic [I-3]
 
 **Crate:** montana-node · **File:** crates/montana-node/src/commands/start.rs (expected_proposer)
 **Severity:** средний (masked at spec cadence; can diverge proposer choice on node absence)
@@ -970,6 +970,8 @@ fallback path nonetheless violates [I-3] determinism; a deterministic tie-break 
 fallback depth (e.g. derived from cemented state, not wall-clock) is the proper fix.
 Mitigated by DEV-042: a divergence triggered by this race is now rejected and resynced instead of crashing the node. Full deterministic fix (fallback depth derived from cemented state / header-declared depth verification rather than per-node wall-clock) touches consensus leadership and is deferred to a deliberate spec+code change; it does not trigger at spec cadence with homogeneous nodes.
 
+
+**Closure (commit see git log).** The follower acceptance path no longer computes a per-node wall-clock `silence`/`fallback_secs` depth to gate the proposer. Leader legitimacy is decided ONLY by `validate_proposer_is_canonical(header, sorted_W-2)` — i.e. `proposer_node_id == fallback_proposer(W-2, header.fallback_depth)` — a pure function of the signed header and the cemented W-2 candidate set, identical on every honest node. The cascade depth is the depth DECLARED in the signed header, not a local timer. Wall-clock survives ONLY in the proposer-side self-action decision ("do I lead this window"), which never enters consensus state: competing proposals of different depth for the same window carry an identical `state_root` (deterministic from cemented sets), so a depth race cannot diverge state. Residual metadata-only divergence of `prev_proposal_hash` under concurrent fallback is tracked as DEV-026 (not state-affecting: `prev_proposal_hash` is not cross-checked in `validate_header` and is not part of `state_root`). [I-3] restored.
 
 ## DEV-044 (open, acknowledged): devnet ssha_entry_windows / selection_interval = 1 (production = 20160 / 336)
 
