@@ -1,6 +1,6 @@
 # Montana App — Application Specification
 
-**Version:** 3.15.0 (2026-06-25) — account creation kept only in the Montana Protocol spec; section 4.1 reduced to minimal first-entry UX with a single pointer; the mechanism restatement (opcode / payload / binding / cooldown / sponsor nodes) and the operation-set creation detail removed from the app
+**Version:** 3.16.0 (2026-06-27) — account creation realigned to the protocol's `TransferActivation` (opcode 0x0A): section 4.1 first-entry UX references TransferActivation; wallet operation list and the Juno forbidden-op updated; mechanism stays single-sourced in the Protocol spec
 
 
 ---
@@ -63,7 +63,7 @@ Montana App is the **reference implementation**. Other applications may implemen
 
 Montana App is a **client** of the protocol. The application uses the protocol API through a Rust core and has no direct access to consensus logic. All state operations go through the protocol:
 
-- The wallet creates Transfer and ChangeKey operations
+- The wallet creates Transfer, TransferActivation and ChangeKey operations
 - The messenger publishes an Anchor with the `data_hash` of the encrypted message
 - Discovery reads the Account Table through the protocol API
 - The content browser uses the Content Layer (ContentRequest, ChunkRequest)
@@ -301,13 +301,13 @@ A user can run Montana App on several devices at once (phone + desktop). Each de
 
 ### 4.1 First entry
 
-A new user has no account until an existing account sends them a first transfer; the creation mechanism is defined in the Montana Protocol specification. The wallet handles only the first-entry UX:
+A new user has no account until an existing account creates it for them with a `TransferActivation`; the creation mechanism is defined in the Montana Protocol specification. The wallet handles only the first-entry UX:
 
 1. The user completes onboarding and derives the seed (section 3).
 2. The app computes `account_id = SHA-256("mt-account" || suite_id || account_pubkey)`.
 3. The app checks, through the protocol API, whether this account already exists.
 4. If it exists (re-recovery from the mnemonic) — the user gets immediate access.
-5. If it does not — the app shows a "Receive your first transfer from a contact" screen; the user shares their `account_id` and `account_pubkey` (QR code, deep link, or mesh message), and a contact sends the first transfer.
+5. If it does not — the app shows a "Receive your first transfer from a contact" screen; the user shares their `account_id` and `account_pubkey` (QR code, deep link, or mesh message), and a contact sends a `TransferActivation`.
 6. Once the transfer is cemented, the account exists and the user can send and receive Montana.
 
 ### 4.2 Sending Montana
@@ -335,7 +335,7 @@ The transfer-sending process:
 - `sender != receiver` (self-transfer is forbidden by the protocol)
 - `amount > 0`
 - `balance >= amount`
-- The recipient exists in the Account Table (if not, this is a first-entry transfer, see 4.1)
+- The recipient exists in the Account Table (if not, the recipient is not yet activated — use `TransferActivation`, see 4.1)
 
 If something fails, the app shows the error before sending.
 
@@ -1894,7 +1894,7 @@ Juno interacts with Montana through the same protocol API as the user. Three cat
 | Operation | Reason for the ban |
 |---|---|
 | `change_key(new_pubkey)` | Identity-critical, irreversible |
-| account creation (a `Transfer` to a non-existent receiver) | Creating new identities in the network |
+| `TransferActivation` (account creation) | Creating new identities in the network |
 | `node_invitation(invited_pubkey)` | A power object; changes the network composition |
 | `node_registration(...)` | A power object |
 | `access_seed()` | Direct access to the private key |
@@ -3150,7 +3150,7 @@ For users with an elevated threat model for app-usage profiling:
 
 **Timing of cemented operations (temporal profiling).**
 
-Every confirmed operation in the AccountChain (Transfer, Anchor, ChangeKey, CloseAccount) is bound to a canonical `window_index` of the cementing window — visible to the whole network per [I-2]. A chain observer builds a temporal profile of the account:
+Every confirmed operation in the AccountChain (Transfer, TransferActivation, Anchor, ChangeKey, CloseAccount) is bound to a canonical `window_index` of the cementing window — visible to the whole network per [I-2]. A chain observer builds a temporal profile of the account:
 
 - **Time zone** — the distribution of operations over the windows of the day reveals the user's region
 - **Lifestyle** — morning vs evening, weekdays vs weekends, regular patterns

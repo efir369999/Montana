@@ -115,7 +115,7 @@ AccountRecord {
 }
 ```
 
-Total AccountRecord size is 2 059 bytes including all fields. Operations transform state through `apply_proposal(state, proposal) → state'`. The transformation is deterministic, byte-exact reproducible by any node from the same `(state, proposal)` pair. The protocol defines a closed set of operation classes — value transfer, key change, content anchoring, node registration, and account closure — each with a fixed canonical encoding, validation rule, and apply function specified normatively in the protocol specification.
+Total AccountRecord size is 2 059 bytes including all fields. Operations transform state through `apply_proposal(state, proposal) → state'`. The transformation is deterministic, byte-exact reproducible by any node from the same `(state, proposal)` pair. The protocol defines a closed set of operation classes — value transfer, account creation (sponsor activation), key change, content anchoring, node registration, and account closure — each with a fixed canonical encoding, validation rule, and apply function specified normatively in the protocol specification.
 
 Each account chain is restricted to one operation per τ_1 window. Two operations with the same `prev_hash` from the same sender constitute equivocation; both operations are marked equivocated and neither is cemented. The intra-window ordering problem is eliminated by construction at N = 1, removing both subjective ordering surface (violation of [I-3] determinism) and additional consensus seed surface ([I-8]).
 
