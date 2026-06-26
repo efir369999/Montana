@@ -162,7 +162,7 @@ Full mechanism, including BundledConfirmation construction, signature aggregatio
 
 ## 9. Incentive and Bootstrap
 
-The lottery winner of window `W` receives 13 base units of Ɉ (`13 × 10^9 nɈ`), credited to the operator account at the following window's settlement. There are no transaction fees. There is no second-tier inflation. There is no premine, no presale, no founder allocation. The total emission after window `W` is exactly `13 × (W + 1)` base units (windows are 0-indexed; the canonical formula `supply_moneta(W) = EMISSION_moneta × (W + 1)` is defined in the protocol specification), a closed-form function of window count.
+The lottery winner of each window receives 13 base units of Ɉ (`13 × 10^9 nɈ`), credited to the winner's operator account at the following window's settlement. There are no transaction fees, no second-tier inflation, no premine, no presale, no founder allocation. Windows are 0-indexed; the genesis window emits nothing, so the first reward is settled at window 1. The total supply grows linearly with the window count; the exact closed-form is defined normatively in the protocol specification.
 
 Storage of accumulated value is not separately incentivized. The protocol does not pay for holding tokens. The single reward path is operating the chain for a window and winning that window's lottery.
 

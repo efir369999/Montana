@@ -158,7 +158,10 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
     println!("node_id          : {}", hex16(&my_node));
     println!("phase            : {:?}", lifecycle.phase);
     println!("current_window   : {current}");
-    println!("D                : {} SHA-256 iterations / window", effective_d);
+    println!(
+        "D                : {} SHA-256 iterations / window",
+        effective_d
+    );
     println!("T_r              : {}", hex16(&timechain.t_r));
     println!(
         "balance start    : {} nɈ ({} Ɉ)",
@@ -496,11 +499,10 @@ pub fn run(args: StartArgs) -> Result<(), NodeError> {
                 // соло-цепи; admission-as-cemented-proposal для multi-node —
                 // отдельный путь (см. cold-start finding критика).
                 if state.nodes.is_empty()
-                    && state.candidates.len() > 0
+                    && !state.candidates.is_empty()
                     && next_window % params.selection_interval == 0
                 {
-                    let cba_w_minus_2 =
-                        cba_from(&bc_set_history, next_window.saturating_sub(2));
+                    let cba_w_minus_2 = cba_from(&bc_set_history, next_window.saturating_sub(2));
                     let t_r_w = *t_r_history.get(&next_window).unwrap_or(&timechain.t_r);
                     let admitted = apply_selection_event(
                         &mut state.candidates,
@@ -1265,9 +1267,7 @@ fn handle_protocol_message(
             // Сверка канонических часов: одно окно — одно значение цепочки времени.
             if let Some(known) = ctx.t_r_history.get(&w) {
                 if *known != header.timechain_value {
-                    eprintln!(
-                        "[consensus] TIMECHAIN DIVERGENCE w={w}: envelope != local — skip"
-                    );
+                    eprintln!("[consensus] TIMECHAIN DIVERGENCE w={w}: envelope != local — skip");
                     return Ok(());
                 }
             }
@@ -1354,6 +1354,10 @@ fn handle_protocol_message(
                 // sequential apply (line below), so without this it self-blocks.
                 ctx.recent_roots.insert(w, header.state_root);
                 bound_map(ctx.recent_roots);
+                // #2: stash the anchor's canonical t_r(w) so finalize can set
+                // the synced clock instead of re-grinding from a stale window.
+                ctx.t_r_history.insert(w, header.timechain_value);
+                bound_map(ctx.t_r_history);
                 return Ok(());
             }
             if w != *ctx.current + 1 {
@@ -1394,21 +1398,14 @@ fn handle_protocol_message(
                 eprintln!("[consensus] header w={w} rejected: {e:?}");
                 return Ok(());
             }
-            // Законность ведущего (Lookback + каскад). Терпимость ±1 уровень
-            // глубины на расхождение настенных часов между узлами.
-            let silence = ctx.last_cement_at.elapsed().as_secs();
-            let (exp_now, _) = expected_proposer(ctx, w, silence);
-            let (exp_next, _) = expected_proposer(ctx, w, silence + ctx.fallback_secs);
-            let proposer_ok =
-                header.proposer_node_id == exp_now || header.proposer_node_id == exp_next;
-            if !proposer_ok {
-                eprintln!(
-                    "[consensus] w={w}: leader {} not legitimate (expected {}) — skip",
-                    hex16(&header.proposer_node_id),
-                    hex16(&exp_now)
-                );
-                return Ok(());
-            }
+            // Законность ведущего — ИСКЛЮЧИТЕЛЬНО детерминированная проверка
+            // (DEV-043 closure, [I-3]): proposer обязан равняться
+            // fallback_proposer(W-2, header.fallback_depth). Глубина каскада
+            // объявлена в подписанном заголовке, а не вычисляется из локальных
+            // настенных часов — поэтому acceptance есть чистая функция от
+            // (header, cemented W-2) и одинаков на всех честных узлах. Локальные
+            // часы участвуют ТОЛЬКО в решении «вести ли мне самому» (self-action,
+            // liveness) на стороне proposer-а и в consensus state не попадают.
             // Каноничность ведущего (спецификация «Canonical acceptance» (a)):
             // proposer_node_id обязан равняться fallback_proposer(W-2, depth) при
             // объявленной заголовком fallback_depth. При пустом наборе W-2
@@ -1472,7 +1469,9 @@ fn handle_protocol_message(
                         return Ok(());
                     }
                 } else if !bundles_prev.is_empty() {
-                    eprintln!("[consensus] w={w}: endpoint disagreement in included_bundles — skip");
+                    eprintln!(
+                        "[consensus] w={w}: endpoint disagreement in included_bundles — skip"
+                    );
                     return Ok(());
                 }
             }
@@ -1652,6 +1651,13 @@ fn handle_protocol_message(
                                     ctx.state.apply_fast_sync(tables, ctx.data_dir, window)?;
                                     *ctx.current = window;
                                     save_current_window(ctx.data_dir, window)?;
+                                    // #2: align the local clock to the synced window's
+                                    // canonical t_r so forward grinding matches the chain.
+                                    if let Some(tr) = ctx.t_r_history.get(&window).copied() {
+                                        ctx.timechain.t_r = tr;
+                                        ctx.timechain.last_window = window;
+                                        save_timechain(ctx.data_dir, ctx.timechain)?;
+                                    }
                                     *ctx.fast_sync_deadline = None;
                                     eprintln!(
                                     "[m7] fast-sync complete → state replaced, current_window={window}"
@@ -1700,7 +1706,10 @@ fn handle_protocol_message(
                         .or_default()
                         .insert(nid, rec_reveal);
                     bound_map(ctx.reveal_pool);
-                    eprintln!("[lottery] accepted ticket from {} for window {rw}", hex16(&nid));
+                    eprintln!(
+                        "[lottery] accepted ticket from {} for window {rw}",
+                        hex16(&nid)
+                    );
                     // Дозревание подтверждения: наше BC окна rw+1 несёт хэши
                     // билетов окна rw. Опоздавший билет дополняет набор —
                     // переиздаём BC, чтобы у всех confirmer-ов сошёлся
