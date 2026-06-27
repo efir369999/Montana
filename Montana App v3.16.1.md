@@ -1,6 +1,6 @@
 # Montana App — Application Specification
 
-**Version:** 3.16.0 (2026-06-27) — account creation realigned to the protocol's `TransferActivation` (opcode 0x0A): section 4.1 first-entry UX references TransferActivation; wallet operation list and the Juno forbidden-op updated; mechanism stays single-sourced in the Protocol spec
+**Version:** 3.16.1 (2026-06-27) — account-creation terminology: «sender» (not «sponsor»); the first `TransferActivation` from an existing sender creates the new account. Mechanism single-sourced in the Protocol spec.
 
 
 ---
@@ -1695,7 +1695,7 @@ Clear visual indicators:
 - Session recovery after offline
 
 **Wallet scenarios:**
-- The first `Transfer` from a sponsor → a new account is created, `balance = amount`
+- The first `TransferActivation` from a sender → a new account is created, `balance = amount`
 - Receive a `Transfer` → the balance updates
 - Send a `Transfer` → the balance decreases, the history shows it
 - `ChangeKey` → the old signature is rejected, the new one is accepted
