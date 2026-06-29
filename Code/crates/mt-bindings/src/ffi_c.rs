@@ -147,6 +147,57 @@ pub unsafe extern "C" fn mt_account_from_mnemonic(
     })
 }
 
+/// account_id (32 байта) → текстовый адрес "mt…" (Base58Check), записывает в out + NUL.
+#[no_mangle]
+pub unsafe extern "C" fn mt_account_id_to_address(
+    account_id: *const u8,
+    out: *mut u8,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> c_int {
+    guard(|| {
+        if account_id.is_null() || out.is_null() || out_len.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let mut id = [0u8; MT_ACCOUNT_ID_LEN];
+        id.copy_from_slice(slice::from_raw_parts(account_id, MT_ACCOUNT_ID_LEN));
+        let addr = account_id_to_address(&id);
+        let bytes = addr.as_bytes();
+        if bytes.len() + 1 > out_capacity {
+            return MT_ERR_BUFFER_TOO_SMALL;
+        }
+        let dst = slice::from_raw_parts_mut(out, out_capacity);
+        dst[..bytes.len()].copy_from_slice(bytes);
+        dst[bytes.len()] = 0;
+        *out_len = bytes.len();
+        MT_OK
+    })
+}
+
+/// Текстовый адрес "mt…" → account_id (32 байта). Проверяет контрольную сумму.
+#[no_mangle]
+pub unsafe extern "C" fn mt_address_to_account_id(
+    address_utf8: *const c_char,
+    out_account_id: *mut u8,
+) -> c_int {
+    guard(|| {
+        if address_utf8.is_null() || out_account_id.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let s = match CStr::from_ptr(address_utf8).to_str() {
+            Ok(s) => s,
+            Err(_) => return MT_ERR_INVALID_UTF8,
+        };
+        match address_to_account_id(s) {
+            Some(id) => {
+                slice::from_raw_parts_mut(out_account_id, MT_ACCOUNT_ID_LEN).copy_from_slice(&id);
+                MT_OK
+            }
+            None => MT_ERR_ADDRESS_INVALID,
+        }
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn mt_sign(
     seckey: *const u8,

@@ -38,6 +38,7 @@ pub const MT_ERR_KEYGEN_FAILED: i32 = -6;
 pub const MT_ERR_SIGN_FAILED: i32 = -7;
 pub const MT_ERR_VERIFY_FAILED: i32 = -8;
 pub const MT_ERR_BUFFER_TOO_SMALL: i32 = -9;
+pub const MT_ERR_ADDRESS_INVALID: i32 = -10;
 pub const MT_ERR_PANIC: i32 = -100;
 
 #[inline]
@@ -48,6 +49,80 @@ fn guard<F: FnOnce() -> i32>(f: F) -> i32 {
     }
 }
 
+// ── Текстовый адрес Base58Check (App spec §4.3) — SSOT для всех клиентов.
+// address = "mt" + Base58(account_id ‖ checksum), checksum = SHA-256(SHA-256(account_id))[0..4].
+const B58_ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+fn base58_encode(input: &[u8]) -> String {
+    let zeros = input.iter().take_while(|&&b| b == 0).count();
+    let mut digits: Vec<u8> = Vec::new();
+    for &byte in input {
+        let mut carry = byte as u32;
+        for d in digits.iter_mut() {
+            carry += (*d as u32) << 8;
+            *d = (carry % 58) as u8;
+            carry /= 58;
+        }
+        while carry > 0 {
+            digits.push((carry % 58) as u8);
+            carry /= 58;
+        }
+    }
+    let mut out = String::with_capacity(zeros + digits.len());
+    for _ in 0..zeros {
+        out.push('1');
+    }
+    for &d in digits.iter().rev() {
+        out.push(B58_ALPHABET[d as usize] as char);
+    }
+    out
+}
+
+fn base58_decode(s: &str) -> Option<Vec<u8>> {
+    let mut bytes: Vec<u8> = Vec::new();
+    for ch in s.bytes() {
+        let val = B58_ALPHABET.iter().position(|&a| a == ch)? as u32;
+        let mut carry = val;
+        for b in bytes.iter_mut() {
+            carry += (*b as u32) * 58;
+            *b = (carry & 0xff) as u8;
+            carry >>= 8;
+        }
+        while carry > 0 {
+            bytes.push((carry & 0xff) as u8);
+            carry >>= 8;
+        }
+    }
+    let zeros = s.bytes().take_while(|&c| c == b'1').count();
+    let mut out = vec![0u8; zeros];
+    out.extend(bytes.iter().rev());
+    Some(out)
+}
+
+pub fn account_id_to_address(account_id: &[u8; MT_ACCOUNT_ID_LEN]) -> String {
+    let cs = mt_crypto::sha256_raw(&mt_crypto::sha256_raw(account_id));
+    let mut payload = Vec::with_capacity(MT_ACCOUNT_ID_LEN + 4);
+    payload.extend_from_slice(account_id);
+    payload.extend_from_slice(&cs[0..4]);
+    format!("mt{}", base58_encode(&payload))
+}
+
+pub fn address_to_account_id(address: &str) -> Option<[u8; MT_ACCOUNT_ID_LEN]> {
+    let body = address.strip_prefix("mt")?;
+    let decoded = base58_decode(body)?;
+    if decoded.len() != MT_ACCOUNT_ID_LEN + 4 {
+        return None;
+    }
+    let (id, cs) = decoded.split_at(MT_ACCOUNT_ID_LEN);
+    let expect = mt_crypto::sha256_raw(&mt_crypto::sha256_raw(id));
+    if cs != &expect[0..4] {
+        return None;
+    }
+    let mut out = [0u8; MT_ACCOUNT_ID_LEN];
+    out.copy_from_slice(id);
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -55,6 +130,28 @@ mod tests {
     #[test]
     fn abi_version_set() {
         assert_eq!(ABI_VERSION, 1);
+    }
+
+    #[test]
+    fn base58_known_and_roundtrip() {
+        assert_eq!(base58_encode(&[0, 0, 0]), "111");
+        assert_eq!(base58_encode(&[1]), "2");
+        for input in [vec![0u8; 36], vec![1, 2, 3, 4, 5], (0u8..36).collect::<Vec<_>>()] {
+            assert_eq!(base58_decode(&base58_encode(&input)).unwrap(), input);
+        }
+    }
+
+    #[test]
+    fn address_roundtrip_and_checksum() {
+        let id = [0xABu8; 32];
+        let addr = account_id_to_address(&id);
+        assert!(addr.starts_with("mt"));
+        assert_eq!(address_to_account_id(&addr), Some(id));
+        let mut chars: Vec<char> = addr.chars().collect();
+        let last = chars.len() - 1;
+        chars[last] = if chars[last] == 'z' { 'y' } else { 'z' };
+        let tampered: String = chars.into_iter().collect();
+        assert_eq!(address_to_account_id(&tampered), None);
     }
 
     #[test]
