@@ -12,14 +12,6 @@
 
 #ifdef __cplusplus
 extern "C" {
-
-/* account_id (32 bytes) -> textual address "mt..." (Base58Check). out holds the
-   NUL-terminated string; out_capacity >= 64 recommended; *out_len excludes NUL. */
-int mt_account_id_to_address(const uint8_t *account_id, uint8_t *out, size_t out_capacity, size_t *out_len);
-
-/* textual address "mt..." -> account_id (32 bytes). Verifies the checksum. */
-int mt_address_to_account_id(const char *address_utf8, uint8_t *out_account_id);
-
 #endif
 
 #define MT_OK                              0
@@ -54,6 +46,12 @@ int mt_verify(const uint8_t *pubkey, const uint8_t *msg, size_t msg_len, const u
 
 /* 32 байта энтропии → 24-словная UTF-8 строка в out_mnemonic_utf8 (нуль-терминированная). */
 int mt_entropy_to_mnemonic(const uint8_t *entropy, uint8_t *out_mnemonic_utf8, size_t out_capacity, size_t *out_len);
+
+/* account_id (32 bytes) -> textual address "mt..." (Base58Check), NUL-terminated; out_capacity >= 64. */
+int mt_account_id_to_address(const uint8_t *account_id, uint8_t *out, size_t out_capacity, size_t *out_len);
+
+/* textual address "mt..." -> account_id (32 bytes). Verifies the checksum. */
+int mt_address_to_account_id(const char *address_utf8, uint8_t *out_account_id);
 
 #ifdef __cplusplus
 }

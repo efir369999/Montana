@@ -163,3 +163,28 @@ mod tests {
         assert_eq!(MT_MLDSA_SIG_SIZE, mt_crypto::SIGNATURE_SIZE);
     }
 }
+
+#[cfg(test)]
+mod kat_address {
+    #[test]
+    fn zero_entropy_address_kat() {
+        // Эталонный вектор: 32 нулевых байта энтропии -> мнемоника -> account -> адрес.
+        let m = mt_mnemonic::entropy_to_mnemonic(&[0u8; 32]);
+        assert!(m.ends_with(" art"));
+        let mc = std::ffi::CString::new(m).unwrap();
+        let mut pk = vec![0u8; 1952];
+        let mut sk = vec![0u8; 4032];
+        let mut id = [0u8; 32];
+        let rc = unsafe {
+            crate::ffi_c::mt_account_from_mnemonic(mc.as_ptr(), pk.as_mut_ptr(), sk.as_mut_ptr(), id.as_mut_ptr())
+        };
+        assert_eq!(rc, 0);
+        assert_eq!(
+            id.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21"
+        );
+        let addr = crate::account_id_to_address(&id);
+        assert_eq!(addr, "mt2D4zg5S4qjjNLmuqLZsuS9rwMUoa47SgmQ7RQvkW7hfVmaRgfb");
+        assert_eq!(crate::address_to_account_id(&addr), Some(id));
+    }
+}
