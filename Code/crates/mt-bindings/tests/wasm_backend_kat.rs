@@ -685,3 +685,45 @@ fn frame_codec_kat() {
         "1b00000005010033333333333333333333333333333333e803000000000000"
     );
 }
+
+fn party_code(account_id: &[u8; 32]) -> String {
+    let mut init = b"mt-safety".to_vec();
+    init.push(0u8);
+    init.extend_from_slice(account_id);
+    let mut d: [u8; 32] = Sha256::digest(&init).into();
+    for _ in 1..5200 {
+        d = Sha256::digest(d).into();
+    }
+    let mut out = String::new();
+    for k in 0..6 {
+        let mut v: u64 = 0;
+        for &b in &d[5 * k..5 * k + 5] {
+            v = (v << 8) | b as u64;
+        }
+        v %= 100000;
+        out.push_str(&format!("{v:05}"));
+    }
+    out
+}
+
+fn safety_number(a: &[u8; 32], b: &[u8; 32]) -> String {
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    party_code(lo) + &party_code(hi)
+}
+
+/// Этап 7: пер-личностный код и парный отпечаток (итер. SHA-256, ITER=5200).
+#[test]
+fn safety_number_kat() {
+    let a: [u8; 32] =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    let b = [0x11u8; 32];
+    assert_eq!(party_code(&a), "157809020367483198118535796002");
+    assert_eq!(party_code(&b), "534333257869110355393448740858");
+    assert_eq!(
+        safety_number(&a, &b),
+        "534333257869110355393448740858157809020367483198118535796002"
+    );
+}
