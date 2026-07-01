@@ -727,3 +727,46 @@ fn safety_number_kat() {
         "534333257869110355393448740858157809020367483198118535796002"
     );
 }
+
+fn content_text(msg_id: &[u8; 16], sent_at: u64, reply_to: &[u8; 16], text: &[u8]) -> Vec<u8> {
+    let mut v = vec![0x01u8];
+    v.extend_from_slice(msg_id);
+    v.extend_from_slice(&sent_at.to_le_bytes());
+    v.extend_from_slice(reply_to);
+    v.extend_from_slice(&(text.len() as u32).to_le_bytes());
+    v.extend_from_slice(text);
+    v
+}
+
+fn content_receipt(ctype: u8, msg_id: &[u8; 16], sent_at: u64, target: &[u8; 16]) -> Vec<u8> {
+    let mut v = vec![ctype];
+    v.extend_from_slice(msg_id);
+    v.extend_from_slice(&sent_at.to_le_bytes());
+    v.extend_from_slice(target);
+    v
+}
+
+fn content_typing(msg_id: &[u8; 16], sent_at: u64, state: u8) -> Vec<u8> {
+    let mut v = vec![0x04u8];
+    v.extend_from_slice(msg_id);
+    v.extend_from_slice(&sent_at.to_le_bytes());
+    v.push(state);
+    v
+}
+
+/// Этап 8: кодек контента (plaintext храповика) — text / delivery_receipt / typing.
+#[test]
+fn content_codec_kat() {
+    assert_eq!(
+        hex::encode(content_text(&[0x11; 16], 1000, &[0u8; 16], b"hi")),
+        "0111111111111111111111111111111111e80300000000000000000000000000000000000000000000020000006869"
+    );
+    assert_eq!(
+        hex::encode(content_receipt(0x02, &[0x22; 16], 2000, &[0x11; 16])),
+        "0222222222222222222222222222222222d00700000000000011111111111111111111111111111111"
+    );
+    assert_eq!(
+        hex::encode(content_typing(&[0x33; 16], 3000, 0x01)),
+        "0433333333333333333333333333333333b80b00000000000001"
+    );
+}
