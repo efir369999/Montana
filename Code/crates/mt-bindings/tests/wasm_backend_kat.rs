@@ -770,3 +770,29 @@ fn content_codec_kat() {
         "0433333333333333333333333333333333b80b00000000000001"
     );
 }
+
+#[test]
+fn vault_kat() {
+    let vault_key = [0x55u8; 32];
+    let okm = hkdf_sha256(&[0u8; 32], &vault_key, b"mt-vault-safe", 32);
+    let mut safe_key = [0u8; 32];
+    safe_key.copy_from_slice(&okm);
+    assert_eq!(
+        hex::encode(safe_key),
+        "760b5cd948fe3daf6b9107d101ee97f360ed5ff28bf26e5a780718d24b45b6c9"
+    );
+    let nonce = [0u8; 12];
+    let mut content = vec![0x01u8];
+    content.extend_from_slice(&[0u8; 32]);
+    let acc =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
+    let mut ad = b"mt-vault".to_vec();
+    ad.push(0u8);
+    ad.extend_from_slice(&acc);
+    let body = seal(&safe_key, &nonce, &content, &ad);
+    assert_eq!(
+        hex::encode(&body),
+        "0ceeaf3bef191b597c0d39a170d394992aae56fdbefef6fb986c639ac6326ce81fc8267bccc4f5c74616f15fbb78144a53"
+    );
+    assert_eq!(open(&safe_key, &nonce, &body, &ad).unwrap(), content);
+}
