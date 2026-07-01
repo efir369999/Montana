@@ -176,28 +176,47 @@ fn pqxdh_key_schedule_kat() {
     ikm.extend_from_slice(&ss_id);
     ikm.extend_from_slice(&ss_spk);
     ikm.extend_from_slice(&ss_opk);
-    let okm = hkdf_sha256(&salt, &ikm, &info, 64);
+    let okm = hkdf_sha256(&salt, &ikm, &info, 96);
     assert_eq!(
         hex::encode(&okm[..32]),
         "d1d0a8699658a49099eddf5eafa58cf9da1d8ff02ce00f7218245b3bee0efcd1"
     );
     assert_eq!(
-        hex::encode(&okm[32..]),
+        hex::encode(&okm[32..64]),
         "082046319cc79abbfa129a7699607dd55fe989ca9f1822ab5af53692788a27b2"
+    );
+    assert_eq!(
+        hex::encode(&okm[64..96]),
+        "872152f9fcef01639bda5890534901b1ed2c206334b64eeb46c62532ffeed5b9"
+    );
+    let mut ci = b"mt-pqxdh-confirm".to_vec();
+    ci.push(0u8);
+    ci.extend_from_slice(&transcript_hash);
+    assert_eq!(
+        hex::encode(hmac_sha256(&okm[64..96], &ci)),
+        "6f5d00d0a49c7a231819863706eb93bc859071ee2b7919e9e0db5c58af538dbf"
     );
 
     // без одноразового: IKM = ss_id || ss_spk
     let mut ikm2 = Vec::new();
     ikm2.extend_from_slice(&ss_id);
     ikm2.extend_from_slice(&ss_spk);
-    let okm2 = hkdf_sha256(&salt, &ikm2, &info, 64);
+    let okm2 = hkdf_sha256(&salt, &ikm2, &info, 96);
     assert_eq!(
         hex::encode(&okm2[..32]),
         "38fa29cc640c4a87e554ece7cb1168bf3d18bd0e4b6ee5683336091c433ca4ca"
     );
     assert_eq!(
-        hex::encode(&okm2[32..]),
+        hex::encode(&okm2[32..64]),
         "6697d2bb86b5306ff82a86e9213655328bde8b3056226f5d3b1c89b769a76098"
+    );
+    assert_eq!(
+        hex::encode(&okm2[64..96]),
+        "19defc490566c6523a96b36610ade231fb73ca9418eeaba9d6fa724bf7ff375b"
+    );
+    assert_eq!(
+        hex::encode(hmac_sha256(&okm2[64..96], &ci)),
+        "441e93d5283d8af4d053a16a4a3601342fbae0550c501e700d9062ce5d98bf56"
     );
 }
 
