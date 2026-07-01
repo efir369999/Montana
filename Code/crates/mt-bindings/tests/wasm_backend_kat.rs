@@ -652,3 +652,36 @@ fn prf_salt_kat() {
         "67680733b5744197d7bf18c2ef6f6c3f0ed3be25048f8ae7780db558d588e885"
     );
 }
+
+fn frame(t: u8, body: &[u8]) -> Vec<u8> {
+    let mut fb = vec![t];
+    fb.extend_from_slice(body);
+    let mut out = (fb.len() as u32).to_le_bytes().to_vec();
+    out.extend_from_slice(&fb);
+    out
+}
+
+/// Этап 6: кодек WebSocket-кадров слепой доставки (frame_len u32 LE + type + body).
+#[test]
+fn frame_codec_kat() {
+    let mut sub = 1u16.to_le_bytes().to_vec();
+    sub.extend_from_slice(&[0x11u8; 16]);
+    assert_eq!(
+        hex::encode(frame(0x01, &sub)),
+        "1300000001010011111111111111111111111111111111"
+    );
+    let mut del = [0x22u8; 16].to_vec();
+    del.extend_from_slice(&1000u64.to_le_bytes());
+    del.extend_from_slice(b"hi");
+    assert_eq!(
+        hex::encode(frame(0x04, &del)),
+        "1b0000000422222222222222222222222222222222e8030000000000006869"
+    );
+    let mut ack = 1u16.to_le_bytes().to_vec();
+    ack.extend_from_slice(&[0x33u8; 16]);
+    ack.extend_from_slice(&1000u64.to_le_bytes());
+    assert_eq!(
+        hex::encode(frame(0x05, &ack)),
+        "1b00000005010033333333333333333333333333333333e803000000000000"
+    );
+}
