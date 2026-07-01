@@ -9,6 +9,8 @@
 
 use core::panic::AssertUnwindSafe;
 
+use sha2::{Digest as _, Sha256};
+
 #[cfg(not(target_arch = "wasm32"))]
 mod ffi_c;
 
@@ -42,6 +44,7 @@ pub const MT_ERR_ADDRESS_INVALID: i32 = -10;
 pub const MT_ERR_PANIC: i32 = -100;
 
 #[inline]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 fn guard<F: FnOnce() -> i32>(f: F) -> i32 {
     match std::panic::catch_unwind(AssertUnwindSafe(f)) {
         Ok(code) => code,
@@ -51,6 +54,11 @@ fn guard<F: FnOnce() -> i32>(f: F) -> i32 {
 
 // ── Текстовый адрес Base58Check (App spec §4.3) — SSOT для всех клиентов.
 // address = "mt" + Base58(account_id ‖ checksum), checksum = SHA-256(SHA-256(account_id))[0..4].
+fn sha256d(b: &[u8]) -> [u8; 32] {
+    let h1 = Sha256::digest(b);
+    Sha256::digest(h1).into()
+}
+
 const B58_ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 fn base58_encode(input: &[u8]) -> String {
@@ -100,7 +108,7 @@ fn base58_decode(s: &str) -> Option<Vec<u8>> {
 }
 
 pub fn account_id_to_address(account_id: &[u8; MT_ACCOUNT_ID_LEN]) -> String {
-    let cs = mt_crypto::sha256_raw(&mt_crypto::sha256_raw(account_id));
+    let cs = sha256d(account_id);
     let mut payload = Vec::with_capacity(MT_ACCOUNT_ID_LEN + 4);
     payload.extend_from_slice(account_id);
     payload.extend_from_slice(&cs[0..4]);
@@ -114,7 +122,7 @@ pub fn address_to_account_id(address: &str) -> Option<[u8; MT_ACCOUNT_ID_LEN]> {
         return None;
     }
     let (id, cs) = decoded.split_at(MT_ACCOUNT_ID_LEN);
-    let expect = mt_crypto::sha256_raw(&mt_crypto::sha256_raw(id));
+    let expect = sha256d(id);
     if cs != &expect[0..4] {
         return None;
     }

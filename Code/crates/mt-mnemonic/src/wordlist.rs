@@ -2,7 +2,7 @@
 
 use std::sync::OnceLock;
 
-use mt_crypto::{sha256_raw, Hash32};
+use crate::{sha256_raw, Hash32};
 
 const WORDLIST_RAW: &str = include_str!("../../../../Montana wordlist.txt");
 

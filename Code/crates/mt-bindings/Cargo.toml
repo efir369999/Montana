@@ -5,22 +5,27 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-description = "Единственный источник истины Montana для iOS / Android / Web. Re-exports mt-mnemonic, mt-crypto, mt-state, mt-account через C ABI (cdylib + staticlib) и WASM."
+description = "Единственный источник истины Montana для iOS / Android / Web. Native (iOS/Android/desktop) — re-exports mt-mnemonic/mt-crypto/mt-state/mt-account через C ABI (cdylib+staticlib); Web (wasm32) — деривация на mt-mnemonic + pure-Rust ml-dsa/ml-kem."
 
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
 mt-mnemonic   = { path = "../mt-mnemonic" }
+mt-codec      = { path = "../mt-codec" }
+zeroize       = { workspace = true }
+sha2          = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 mt-crypto     = { path = "../mt-crypto" }
 mt-state      = { path = "../mt-state" }
 mt-account    = { path = "../mt-account" }
-mt-codec      = { path = "../mt-codec" }
-zeroize       = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }
-getrandom    = { version = "0.2", features = ["js"] }
+getrandom    = { version = "0.4", features = ["wasm_js"] }
+ml-dsa       = "0.1"
+ml-kem       = { version = "0.2", features = ["deterministic"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = { version = "0.21", default-features = false }
@@ -28,5 +33,8 @@ jni = { version = "0.21", default-features = false }
 [features]
 default = []
 wasm = ["dep:wasm-bindgen"]
+
 [dev-dependencies]
 hex = "0.4"
+ml-dsa = "0.1"
+sha2 = { workspace = true }

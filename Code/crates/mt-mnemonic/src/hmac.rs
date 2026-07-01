@@ -1,6 +1,6 @@
 // spec, раздел "Криптографическая реализация → Primitive layer → HMAC-SHA-256 integer спецификация"
 
-use mt_crypto::{sha256_raw, Hash32};
+use crate::{sha256_raw, Hash32};
 use zeroize::Zeroize;
 
 const BLOCK_SIZE: usize = 64;

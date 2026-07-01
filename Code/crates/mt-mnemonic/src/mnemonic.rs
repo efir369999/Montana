@@ -1,7 +1,7 @@
 // spec, раздел "Ключи → Мнемоника и seed"
 
+use crate::sha256_raw;
 use mt_codec::domain;
-use mt_crypto::sha256_raw;
 
 use crate::bit_packing::{pack_indices_to_bytes, unpack_bytes_to_indices, PACKED_BYTES};
 use crate::hkdf::hkdf_expand;

@@ -8,5 +8,8 @@ repository.workspace = true
 
 [dependencies]
 mt-codec = { path = "../mt-codec" }
-mt-crypto = { path = "../mt-crypto" }
+sha2 = { workspace = true }
 zeroize = { workspace = true }
+
+[dev-dependencies]
+mt-crypto = { path = "../mt-crypto" }

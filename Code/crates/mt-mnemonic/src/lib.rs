@@ -1,5 +1,13 @@
 // spec, раздел "Ключи → Мнемоника и seed" + "Криптографическая реализация → Primitive layer"
 
+pub type Hash32 = [u8; 32];
+
+#[inline]
+pub fn sha256_raw(bytes: &[u8]) -> Hash32 {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).into()
+}
+
 mod bit_packing;
 mod hkdf;
 mod hmac;
