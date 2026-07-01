@@ -796,3 +796,24 @@ fn vault_kat() {
     );
     assert_eq!(open(&safe_key, &nonce, &body, &ad).unwrap(), content);
 }
+
+/// Этап 10: канонический байт-layout подписываемого DeviceRegistry (rollback-защита registry_seq).
+#[test]
+fn device_registry_kat() {
+    let mut entry = [0x11u8; 16].to_vec();
+    entry.extend_from_slice(&[0x77u8; 1184]);
+    entry.extend_from_slice(&1000u64.to_le_bytes());
+    entry.push(0x00);
+    assert_eq!(entry.len(), 1209);
+    let mut msg = b"mt-device-registry".to_vec();
+    msg.push(0x00);
+    msg.push(0x02);
+    msg.extend_from_slice(&5u64.to_le_bytes());
+    msg.extend_from_slice(&1u16.to_le_bytes());
+    msg.extend_from_slice(&entry);
+    assert_eq!(msg.len(), 1239);
+    assert_eq!(
+        hex::encode(Sha256::digest(&msg)),
+        "0ef5a2e46a7f48d805a86e7ed58bb1f455d8461502c0781563b43dd13de71a9f"
+    );
+}
