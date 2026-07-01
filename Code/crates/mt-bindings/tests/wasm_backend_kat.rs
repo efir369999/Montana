@@ -114,3 +114,145 @@ fn cross_backend_app_kem_and_idkem_sig() {
         "316e908176df3d7e17b5a4cec8d0292ab2f0bdeefa3f51da3eb2bf57df80d595"
     );
 }
+
+// ---- Этап 4: PQXDH (чистый ML-KEM-768) ----
+
+fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
+    let mut k = [0u8; 64];
+    if key.len() > 64 {
+        k[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        k[..key.len()].copy_from_slice(key);
+    }
+    let mut ipad = [0x36u8; 64];
+    let mut opad = [0x5cu8; 64];
+    for i in 0..64 {
+        ipad[i] ^= k[i];
+        opad[i] ^= k[i];
+    }
+    let mut hi = Sha256::new();
+    hi.update(ipad);
+    hi.update(msg);
+    let inner = hi.finalize();
+    let mut ho = Sha256::new();
+    ho.update(opad);
+    ho.update(inner);
+    ho.finalize().into()
+}
+
+fn hkdf_sha256(salt: &[u8], ikm: &[u8], info: &[u8], l: usize) -> Vec<u8> {
+    let prk = hmac_sha256(salt, ikm);
+    let mut okm = Vec::new();
+    let mut t: Vec<u8> = Vec::new();
+    let mut i = 1u8;
+    while okm.len() < l {
+        let mut m = t.clone();
+        m.extend_from_slice(info);
+        m.push(i);
+        t = hmac_sha256(&prk, &m).to_vec();
+        okm.extend_from_slice(&t);
+        i += 1;
+    }
+    okm.truncate(l);
+    okm
+}
+
+/// Детерминированное ключевое расписание PQXDH (Этап 4, Шаг 3). Фиксированные
+/// секреты + transcript_hash → запечённые initial_root_key / chain (с одноразовым
+/// и без). Чистый HKDF-SHA-256 → кросс-платформенно идентично.
+#[test]
+fn pqxdh_key_schedule_kat() {
+    let ss_id = [0x11u8; 32];
+    let ss_spk = [0x22u8; 32];
+    let ss_opk = [0x33u8; 32];
+    let transcript_hash = [0xAAu8; 32];
+    let salt = [0u8; 32];
+    let mut info = b"mt-pqxdh-root".to_vec();
+    info.push(0u8);
+    info.extend_from_slice(&transcript_hash);
+
+    // с одноразовым: IKM = ss_id || ss_spk || ss_opk
+    let mut ikm = Vec::new();
+    ikm.extend_from_slice(&ss_id);
+    ikm.extend_from_slice(&ss_spk);
+    ikm.extend_from_slice(&ss_opk);
+    let okm = hkdf_sha256(&salt, &ikm, &info, 64);
+    assert_eq!(
+        hex::encode(&okm[..32]),
+        "d1d0a8699658a49099eddf5eafa58cf9da1d8ff02ce00f7218245b3bee0efcd1"
+    );
+    assert_eq!(
+        hex::encode(&okm[32..]),
+        "082046319cc79abbfa129a7699607dd55fe989ca9f1822ab5af53692788a27b2"
+    );
+
+    // без одноразового: IKM = ss_id || ss_spk
+    let mut ikm2 = Vec::new();
+    ikm2.extend_from_slice(&ss_id);
+    ikm2.extend_from_slice(&ss_spk);
+    let okm2 = hkdf_sha256(&salt, &ikm2, &info, 64);
+    assert_eq!(
+        hex::encode(&okm2[..32]),
+        "38fa29cc640c4a87e554ece7cb1168bf3d18bd0e4b6ee5683336091c433ca4ca"
+    );
+    assert_eq!(
+        hex::encode(&okm2[32..]),
+        "6697d2bb86b5306ff82a86e9213655328bde8b3056226f5d3b1c89b769a76098"
+    );
+}
+
+/// Согласие сторон PQXDH (Этап 4). Алиса инкапсулирует к трём реальным ML-KEM
+/// ключам Боба (OpenSSL), Боб декапсулирует — общие секреты и выведенный корень
+/// совпадают байт-в-байт. Проверяет весь поток установления сессии.
+#[test]
+fn pqxdh_agreement() {
+    // ключи Боба
+    let mnemonic = entropy_to_mnemonic(&[0u8; 32]);
+    let master = mnemonic_to_master_seed(&mnemonic).unwrap();
+    let app_seed = mt_mnemonic::mlkem_seed_for_role(&master, mt_codec::domain::APP_ENCRYPTION_KEY);
+    let (app_pk, app_sk) = mt_crypto::keypair_from_seed_mlkem(&app_seed).unwrap();
+    let (spk_pk, spk_sk) = mt_crypto::keypair_from_seed_mlkem(&[0x55u8; 64]).unwrap();
+    let (opk_pk, opk_sk) = mt_crypto::keypair_from_seed_mlkem(&[0x66u8; 64]).unwrap();
+
+    // Алиса инкапсулирует
+    let (ct_id, ss_id_a) = mt_crypto::mlkem_encapsulate(&app_pk).unwrap();
+    let (ct_spk, ss_spk_a) = mt_crypto::mlkem_encapsulate(&spk_pk).unwrap();
+    let (ct_opk, ss_opk_a) = mt_crypto::mlkem_encapsulate(&opk_pk).unwrap();
+
+    // Боб декапсулирует
+    let ss_id_b = mt_crypto::mlkem_decapsulate(&app_sk, &ct_id).unwrap();
+    let ss_spk_b = mt_crypto::mlkem_decapsulate(&spk_sk, &ct_spk).unwrap();
+    let ss_opk_b = mt_crypto::mlkem_decapsulate(&opk_sk, &ct_opk).unwrap();
+
+    assert_eq!(ss_id_a.as_bytes(), ss_id_b.as_bytes());
+    assert_eq!(ss_spk_a.as_bytes(), ss_spk_b.as_bytes());
+    assert_eq!(ss_opk_a.as_bytes(), ss_opk_b.as_bytes());
+
+    // обе стороны: одно и то же ключевое расписание → равный корень
+    let salt = [0u8; 32];
+    let mut info = b"mt-pqxdh-root".to_vec();
+    info.push(0u8);
+    info.extend_from_slice(&[0xCCu8; 32]); // фиксированный transcript_hash (одинаков у обеих сторон)
+
+    let ikm = |a: &[u8; 32], b: &[u8; 32], c: &[u8; 32]| {
+        let mut v = Vec::new();
+        v.extend_from_slice(a);
+        v.extend_from_slice(b);
+        v.extend_from_slice(c);
+        v
+    };
+    let root_a = hkdf_sha256(
+        &salt,
+        &ikm(ss_id_a.as_bytes(), ss_spk_a.as_bytes(), ss_opk_a.as_bytes()),
+        &info,
+        64,
+    );
+    let root_b = hkdf_sha256(
+        &salt,
+        &ikm(ss_id_b.as_bytes(), ss_spk_b.as_bytes(), ss_opk_b.as_bytes()),
+        &info,
+        64,
+    );
+    assert_eq!(root_a, root_b);
+    assert_eq!(root_a.len(), 64);
+}
