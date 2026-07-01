@@ -807,13 +807,14 @@ fn device_registry_kat() {
     assert_eq!(entry.len(), 1209);
     let mut msg = b"mt-device-registry".to_vec();
     msg.push(0x00);
-    msg.push(0x02);
-    msg.extend_from_slice(&5u64.to_le_bytes());
-    msg.extend_from_slice(&1u16.to_le_bytes());
+    msg.push(0x02); // format
+    msg.extend_from_slice(&5u64.to_le_bytes()); // registry_seq
+    msg.extend_from_slice(&2000u64.to_le_bytes()); // registry_time
+    msg.extend_from_slice(&1u16.to_le_bytes()); // entry_count
     msg.extend_from_slice(&entry);
-    assert_eq!(msg.len(), 1239);
+    assert_eq!(msg.len(), 1247);
     assert_eq!(
         hex::encode(Sha256::digest(&msg)),
-        "0ef5a2e46a7f48d805a86e7ed58bb1f455d8461502c0781563b43dd13de71a9f"
+        "d32761561a28a29b68125de252c05c9f529185fd7d5182863b4bbc0720a3e863"
     );
 }
