@@ -643,3 +643,12 @@ fn seal_roundtrip() {
     let sealed = seal(&ka, &na, b"InitialHandshake", ad);
     assert_eq!(open(&kb, &nb, &sealed, ad).unwrap(), b"InitialHandshake");
 }
+
+/// Этап 1: passkey-PRF salt — плоский SHA-256 ASCII-строки (без конвенции domain||0x00).
+#[test]
+fn prf_salt_kat() {
+    assert_eq!(
+        hex::encode(Sha256::digest(b"mt-msgr-vault-prf")),
+        "67680733b5744197d7bf18c2ef6f6c3f0ed3be25048f8ae7780db558d588e885"
+    );
+}
