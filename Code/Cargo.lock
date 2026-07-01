@@ -1779,6 +1779,7 @@ dependencies = [
 name = "mt-bindings"
 version = "1.2.0"
 dependencies = [
+ "chacha20poly1305",
  "getrandom 0.4.3",
  "hex",
  "jni",
