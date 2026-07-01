@@ -192,7 +192,7 @@ pub unsafe extern "C" fn mt_address_to_account_id(
             Some(id) => {
                 slice::from_raw_parts_mut(out_account_id, MT_ACCOUNT_ID_LEN).copy_from_slice(&id);
                 MT_OK
-            }
+            },
             None => MT_ERR_ADDRESS_INVALID,
         }
     })

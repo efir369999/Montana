@@ -136,7 +136,11 @@ mod tests {
     fn base58_known_and_roundtrip() {
         assert_eq!(base58_encode(&[0, 0, 0]), "111");
         assert_eq!(base58_encode(&[1]), "2");
-        for input in [vec![0u8; 36], vec![1, 2, 3, 4, 5], (0u8..36).collect::<Vec<_>>()] {
+        for input in [
+            vec![0u8; 36],
+            vec![1, 2, 3, 4, 5],
+            (0u8..36).collect::<Vec<_>>(),
+        ] {
             assert_eq!(base58_decode(&base58_encode(&input)).unwrap(), input);
         }
     }
@@ -176,7 +180,12 @@ mod kat_address {
         let mut sk = vec![0u8; 4032];
         let mut id = [0u8; 32];
         let rc = unsafe {
-            crate::ffi_c::mt_account_from_mnemonic(mc.as_ptr(), pk.as_mut_ptr(), sk.as_mut_ptr(), id.as_mut_ptr())
+            crate::ffi_c::mt_account_from_mnemonic(
+                mc.as_ptr(),
+                pk.as_mut_ptr(),
+                sk.as_mut_ptr(),
+                id.as_mut_ptr(),
+            )
         };
         assert_eq!(rc, 0);
         assert_eq!(
