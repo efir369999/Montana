@@ -564,3 +564,82 @@ fn ratchet_session_roundtrip() {
     assert_eq!(decrypt(&mut bob, &m4).unwrap(), b"m4");
     assert_eq!(decrypt(&mut bob, &m3).unwrap(), b"m3"); // из MKSKIPPED
 }
+
+#[test]
+fn seal_kat() {
+    let ss_seal = [0x44u8; 32];
+    let okm = hkdf_sha256(&[0u8; 32], &ss_seal, b"mt-seal", 44);
+    let (mut k, mut n) = ([0u8; 32], [0u8; 12]);
+    k.copy_from_slice(&okm[..32]);
+    n.copy_from_slice(&okm[32..44]);
+    assert_eq!(
+        hex::encode(k),
+        "5f9f4ccf25e7ba4921c0bc004406af5b743c49783a5989bf185c58844c8d6e5b"
+    );
+    assert_eq!(hex::encode(n), "02b49c7b9e94ca37b1aed2ac");
+    let acc =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
+    let mut ad = b"mt-seal".to_vec();
+    ad.push(0u8);
+    ad.extend_from_slice(&acc);
+    let body = seal(&k, &n, b"handshake", &ad);
+    assert_eq!(
+        hex::encode(&body),
+        "488b64548e48d192e145fc04ae32ceb07c991c959a05c6b594"
+    );
+    assert_eq!(open(&k, &n, &body, &ad).unwrap(), b"handshake");
+}
+
+/// Метки маршрутизации Этапа 6: routing_secret, направленные сессионные метки, инбокс-метка.
+#[test]
+fn route_label_kat() {
+    let session_id = [0xABu8; 32];
+    let rs = hkdf_sha256(&[0u8; 32], &session_id, b"mt-routing", 32);
+    assert_eq!(
+        hex::encode(&rs),
+        "5dde1ca30d45f658626b6acfac59f25b39bfc8cbbf9db4250fd60ceb4f6624d1"
+    );
+    let w: u64 = 1000;
+    let label = |dir: u8| {
+        let mut m = b"mt-label".to_vec();
+        m.push(0u8);
+        m.push(dir);
+        m.extend_from_slice(&w.to_le_bytes());
+        hex::encode(&hmac_sha256(&rs, &m)[..16])
+    };
+    assert_eq!(label(0x00), "bb4ca49fe117ff008b3f959f19ec186b");
+    assert_eq!(label(0x01), "1b4bc34a8901e9cef430c077f9b19d54");
+    let acc =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
+    let mut ib = b"mt-inbox".to_vec();
+    ib.push(0u8);
+    ib.extend_from_slice(&acc);
+    ib.extend_from_slice(&w.to_le_bytes());
+    assert_eq!(
+        hex::encode(&Sha256::digest(&ib)[..16]),
+        "92b557facd76d16be3aee0979ea8b1d7"
+    );
+}
+
+/// Запечатывание первого контакта end-to-end: реальный ML-KEM Encaps/Decaps → общий ss_seal
+/// → общий seal_key; Seal затем Open восстанавливает открытый текст.
+#[test]
+fn seal_roundtrip() {
+    let (pk, sk) = mt_crypto::keypair_from_seed_mlkem(&[0x77u8; 64]).unwrap();
+    let (ct, ss_a) = mt_crypto::mlkem_encapsulate(&pk).unwrap();
+    let ss_b = mt_crypto::mlkem_decapsulate(&sk, &ct).unwrap();
+    assert_eq!(ss_a.as_bytes(), ss_b.as_bytes());
+
+    let derive = |ss: &[u8; 32]| {
+        let okm = hkdf_sha256(&[0u8; 32], ss, b"mt-seal", 44);
+        let (mut k, mut n) = ([0u8; 32], [0u8; 12]);
+        k.copy_from_slice(&okm[..32]);
+        n.copy_from_slice(&okm[32..44]);
+        (k, n)
+    };
+    let (ka, na) = derive(ss_a.as_bytes());
+    let (kb, nb) = derive(ss_b.as_bytes());
+    let ad = b"mt-seal\x00route-e2e";
+    let sealed = seal(&ka, &na, b"InitialHandshake", ad);
+    assert_eq!(open(&kb, &nb, &sealed, ad).unwrap(), b"InitialHandshake");
+}
