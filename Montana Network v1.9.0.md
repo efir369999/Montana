@@ -1,6 +1,6 @@
 # Montana — Network Layer Specification
 
-**Version:** 1.8.0 (2026-07-01)
+**Version:** 1.9.0 (2026-07-01)
 
 **Layer:** Network — sits between Protocol (low) and App (high).
 
@@ -202,6 +202,8 @@ sk_r_to_i = SHA-256("mt-noise-pq-xx-v1-r2i"    ‖ master)
 ```
 
 `sk_i_to_r` and `sk_r_to_i` are 32-byte keys for ChaCha20-Poly1305 AEAD; the AEAD-wrapped byte stream is exposed as `mt_noise_pq::stream::NoisePqStream`.
+
+**Handshake length obfuscation (normative).** The three handshake messages are padded to a per-connection length drawn from a distribution rather than emitted at their bare sizes, and the first bytes carry no fixed magic; the sizes in the table above are the floor (padding only adds), so a passive observer sees no fixed distinctive length triple. This removes the fixed-size fingerprint. The remaining property that any post-quantum handshake is large and high-entropy is not exposed to a DPI adversary by construction: in a DPI-censoring vantage the baseline profile is T1 or higher (see «Auto-steering»), where the handshake rides inside a genuine TLS/QUIC carrier to a real cover host and its size and entropy are indistinguishable from ordinary TLS application data; the bare T0 stream is used only in vantages where no DPI-fingerprinting adversary is present.
 
 **PeerId derivation (non-libp2p-standard).** PeerId is derived as the SHA-256 multihash (libp2p / IPFS sha2-256 multihash code 0x12) over the raw byte representation of each peer's ML-DSA-65 identity public key. This is **not** the libp2p-standard PeerId derivation, which is a multihash of the protobuf-encoded `PublicKey` message with one of the libp2p built-in key types (`RSA`, `Ed25519`, `Secp256k1`, `ECDSA`). The non-standard derivation is intentional — Montana uses ML-DSA-65 as the cross-network identity per [I-1], which is not one of libp2p's built-in key types, and the protobuf wrapper would add about fifty bytes of overhead without carrying additional security. Two implications follow: (a) a vanilla libp2p node cannot recover the public key from a Montana PeerId, and (b) Montana nodes do not accept libp2p-standard PeerIds because they have no ML-DSA-65 key to verify them with.
 
@@ -444,6 +446,8 @@ ReachabilityAdvert:
 #### Auto-steering
 
 When selecting an entry point a node consults the map for its own `vantage_class`, prefers candidates with the highest `reachable_fraction` on a supported transport profile, and breaks ties by the round-trip latency of a feeler probe. The node then confirms the chosen candidate by its own connection attempt and IBT handshake; the map informs the choice and the local probe is authoritative, mirroring the feeler discipline of peer selection. On loss of a working entry mid-session the node re-steers to the next corroborated candidate; one active entry carries a hot reserve. To keep alternatives warm ahead of a block rather than only after one, a node continuously directs a minimum `REACHABILITY_EXPLORE_FRACTION` (default 0.1) of its feeler probes to profiles below the current best. Exploration on externally-observable profiles (T2, T3) is triggered only by observed degradation of the current entry and never enumerates the reserve bridge set, so it neither burns scarce bridge addresses nor signals tool usage while the base profile works.
+
+The baseline profile is vantage-dependent. In a vantage whose access network is known to fingerprint or filter Montana traffic — identified by the node's own `(country_code, asn)` against a shipped hostile-vantage set, or by the reachability map showing T0 fingerprinted or throttled — the node selects a genuine-carrier profile (T1 or higher) as its baseline rather than T0, so the bare Noise_PQ handshake is never exposed to a DPI adversary. In a benign vantage T0 remains the default for lowest latency.
 
 #### Quorum and diversity
 
@@ -2849,8 +2853,8 @@ Each cell contains a protection mechanism + status. Status: **C** = closed by co
 
 |                          | Passive observer | Active MITM | Eclipse | Sybil | DoS | Censor | Sabotage |
 |--------------------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Confidentiality (data)** | Noise_PQ XX + IBT (C) | Noise_PQ XX identity pinning via node_id binding (C) | Noise_PQ XX + IBT survive eclipse (C) | Noise_PQ XX + IBT survive Sybil (C) | n/a | Noise_PQ AEAD hides content (P — the censor sees handshake metadata) | n/a |
-| **Confidentiality (metadata)** | Uniform Framing 1024B + ≥20% padding ratio + bounded jitter (P — the observer sees aggregate volume, not individual messages) | n/a | n/a | n/a | n/a | DPI sees the Noise_PQ XX handshake byte counts; no Montana-identifying SNI (T0: libp2p multistream-select; T1: deliberate cover SNI + ClientHello fragmentation) (P) | n/a |
+| **Confidentiality (data)** | Noise_PQ XX + IBT (C) | Noise_PQ XX identity pinning via node_id binding (C) | Noise_PQ XX + IBT survive eclipse (C) | Noise_PQ XX + IBT survive Sybil (C) | n/a | Noise_PQ AEAD hides content; handshake metadata closed by length obfuscation + a T1+ baseline in hostile vantages (C) | n/a |
+| **Confidentiality (metadata)** | Uniform Framing 1024B + ≥20% padding ratio + bounded jitter (P — the observer sees aggregate volume, not individual messages) | n/a | n/a | n/a | n/a | handshake length obfuscated (no fixed-size fingerprint); in a DPI-censoring vantage the baseline is T1+, a genuine TLS/QUIC carrier to a real cover host, so the bare handshake is not exposed; no Montana-identifying SNI (C) | n/a |
 | **Integrity (data)** | n/a | Noise_PQ XX AEAD + IBT signature (C) | Noise_PQ XX + IBT (C) | Noise_PQ XX + IBT (C) | malformed payload rejected early via Gate 13a invariants (C) | n/a | malformed input bounded by Storage Cards (C) |
 | **Integrity (consensus)** | n/a | signed objects (Transfer/Anchor/Proposal) verifiable by ML-DSA-65 (C) | n/a | n/a | n/a | n/a | n/a |
 | **Availability (node)** | n/a | UPnP/PCP + AutoNAT + circuit relay alternatives (C) | 4-level diversity makes eclipse expensive (C) | sequential-chain entry barrier of τ₂ windows + diversity (C) | rate-limits per peer + per type + total quotas + handshake rate-limit per source (P — DDoS ≥10 Gbps requires a sysadmin response beyond the protocol) | mesh transport BLE/Wi-Fi Aware survives a complete internet block (C — but range-limited) | per-sender quotas + Storage Cards hard caps + LRU eviction (C) |
@@ -2858,8 +2862,8 @@ Each cell contains a protection mechanism + status. Status: **C** = closed by co
 | **Unlinkability** | Dandelion++ hides the sender's first hop (P — recipient + amount are public per [I-2]) | Dandelion++ + Tor bridge (Tier 2) (P) | n/a | n/a | n/a | Dandelion++ + censorship-resistant discovery + Tor (P) | n/a |
 | **Identifier unlinkability (transport)** | ephemeral ML-KEM-768 on both sides + the static identity is sent post-decapsulation, encrypted; no plaintext equivalent of MTProto `auth_key_id` (C) | n/a (an active MITM sees timing, not identity) | n/a | n/a | n/a | DPI sees the protocol label `/montana/noise-pq-xx/1.0.0` in multistream-select (a network-wide marker, not per-client) (P) | n/a |
 
-**Closed C:** 14 cells.
-**Partial P:** 8 cells (acknowledged residuals — see the explicit list below).
+**Closed C:** 16 cells.
+**Partial P:** 6 cells (acknowledged residuals — see the explicit list below).
 **Out of scope O:** 0 cells (all adversary × property intersections are real).
 
 
@@ -2892,13 +2896,12 @@ These threats are **not closed** by Montana's network layer, by design or by arc
 
 | # | Cell | Residual | Severity | Mitigation roadmap |
 |---|------|----------|----------|--------------------|
-| 1 | Censor → Confidentiality (data) | DPI sees the Noise_PQ XX handshake byte counts (msg1=1184B / msg2=7533B / msg3=6349B distinct sizes) | Medium | Handshake padding to a size drawn from a cover distribution of large-handshake profiles (long certificate chains / QUIC-initial), never below the PQ floor; the T1 profile fragments the ClientHello across TCP segments — see the Transport profile ladder and Uniform Framing |
-| 2 | Passive observer → Confidentiality (metadata) | Uniform Framing hides per-message volume, but aggregate KB/s is viewable | Low | Bounded frame-schedule jitter removes the constant-rate signature; full traffic shaping to a fixed bitrate is out of scope |
-| 3 | DoS → Availability (node) | DDoS ≥10 Gbps requires a sysadmin response | Medium | Standard practice (Cloudflare-like upstream filtering); not a protocol concern |
-| 4 | Censor → Availability (node) | Mesh range ≤200m is insufficient for intercity connectivity without internet | Medium | Multi-hop mesh routing is a mobile-work item |
-| 5 | Censor → Availability (consensus) | Mesh propagation timing of hours/days adds latency | Acceptable | Eventual consistency through mesh — a protocol design choice |
-| 6 | Passive observer → Unlinkability | Recipient + amount are public after fluff per [I-2] | By design | [I-2] openness of the financial layer — non-negotiable per the global invariant |
-| 7 | Censor → Unlinkability | Without a Tor bridge, deanonymization is possible at a censor-controlled exit | Medium | Censorship-resistant discovery + Tor entry (Tier 2) |
+| 1 | Passive observer → Confidentiality (metadata) | Uniform Framing hides per-message volume, but aggregate KB/s is viewable | Low | Bounded frame-schedule jitter removes the constant-rate signature; full traffic shaping to a fixed bitrate is out of scope |
+| 2 | DoS → Availability (node) | DDoS ≥10 Gbps requires a sysadmin response | Medium | Standard practice (Cloudflare-like upstream filtering); not a protocol concern |
+| 3 | Censor → Availability (node) | Mesh range ≤200m is insufficient for intercity connectivity without internet | Medium | Multi-hop mesh routing is a mobile-work item |
+| 4 | Censor → Availability (consensus) | Mesh propagation timing of hours/days adds latency | Acceptable | Eventual consistency through mesh — a protocol design choice |
+| 5 | Passive observer → Unlinkability | Recipient + amount are public after fluff per [I-2] | By design | [I-2] openness of the financial layer — non-negotiable per the global invariant |
+| 6 | Censor → Unlinkability | Without a Tor bridge, deanonymization is possible at a censor-controlled exit | Medium | Censorship-resistant discovery + Tor entry (Tier 2) |
 
 #### Compliance with the global invariants
 
