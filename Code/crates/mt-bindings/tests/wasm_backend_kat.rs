@@ -855,3 +855,14 @@ fn contact_record_kat() {
         "9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a210105616c69636505416c696365e803000000000000"
     );
 }
+
+/// Этап 11: отдельный ключ шифрования контактов (разделение с safe_key Этапа 9).
+#[test]
+fn contacts_key_kat() {
+    let vault_key = [0x55u8; 32];
+    let ck = hkdf_sha256(&[0u8; 32], &vault_key, b"mt-contacts-key", 32);
+    assert_eq!(
+        hex::encode(&ck),
+        "8a341c252f20b83f33ba2471fd915b11bed788c0b23f205cf8ce3a4de2c65301"
+    );
+}
