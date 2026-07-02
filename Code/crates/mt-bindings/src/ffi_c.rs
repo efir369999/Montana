@@ -294,3 +294,34 @@ pub unsafe extern "C" fn mt_entropy_to_mnemonic(
         MT_OK
     })
 }
+
+
+/// Argon2id(пароль, соль) -> 32 байта. Параметры спеки: m=65536 KiB, t=3, p=1, out=32.
+/// Для облачного сейфа (Этап 9): kek = Argon2id(Облачный пароль, соль).
+#[no_mangle]
+pub unsafe extern "C" fn mt_argon2id(
+    password: *const u8,
+    password_len: usize,
+    salt: *const u8,
+    salt_len: usize,
+    out: *mut u8,
+) -> c_int {
+    guard(|| {
+        if password.is_null() || salt.is_null() || out.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let pw = slice::from_raw_parts(password, password_len);
+        let salt_s = slice::from_raw_parts(salt, salt_len);
+        let params = match argon2::Params::new(65536, 3, 1, Some(32)) {
+            Ok(p) => p,
+            Err(_) => return MT_ERR_KDF_FAILED,
+        };
+        let a = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
+        let mut buf = Zeroizing::new([0u8; 32]);
+        if a.hash_password_into(pw, salt_s, &mut buf[..]).is_err() {
+            return MT_ERR_KDF_FAILED;
+        }
+        slice::from_raw_parts_mut(out, 32).copy_from_slice(&buf[..]);
+        MT_OK
+    })
+}

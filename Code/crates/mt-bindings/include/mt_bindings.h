@@ -52,6 +52,7 @@ int mt_account_id_to_address(const uint8_t *account_id, uint8_t *out, size_t out
 
 /* textual address "mt..." -> account_id (32 bytes). Verifies the checksum. */
 int mt_address_to_account_id(const char *address_utf8, uint8_t *out_account_id);
+int mt_argon2id(const uint8_t *password, size_t password_len, const uint8_t *salt, size_t salt_len, uint8_t *out);
 
 #ifdef __cplusplus
 }

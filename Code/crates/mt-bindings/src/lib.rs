@@ -40,6 +40,7 @@ pub const MT_ERR_KEYGEN_FAILED: i32 = -6;
 pub const MT_ERR_SIGN_FAILED: i32 = -7;
 pub const MT_ERR_VERIFY_FAILED: i32 = -8;
 pub const MT_ERR_BUFFER_TOO_SMALL: i32 = -9;
+pub const MT_ERR_KDF_FAILED: i32 = -10;
 pub const MT_ERR_ADDRESS_INVALID: i32 = -10;
 pub const MT_ERR_PANIC: i32 = -100;
 
