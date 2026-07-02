@@ -682,14 +682,6 @@ fn seal_roundtrip() {
     assert_eq!(open(&kb, &nb, &sealed, ad).unwrap(), b"InitialHandshake");
 }
 
-/// Этап 2: passkey-PRF salt — плоский SHA-256 ASCII-строки (без конвенции domain||0x00).
-#[test]
-fn prf_salt_kat() {
-    assert_eq!(
-        hex::encode(Sha256::digest(b"mt-msgr-vault-prf")),
-        "67680733b5744197d7bf18c2ef6f6c3f0ed3be25048f8ae7780db558d588e885"
-    );
-}
 
 fn frame(t: u8, body: &[u8]) -> Vec<u8> {
     let mut fb = vec![t];
@@ -951,7 +943,7 @@ fn media_content_kat() {
     );
 }
 
-/// Этап 3 (E5): случайный vault_key, passkey-wrapper, safe_key.
+/// Этап 3 (E5): случайный vault_key, wrapper Облачного пароля (method 0x02), safe_key.
 #[test]
 fn vault_wrapper_kat() {
     let vault_key = [0x33u8; 32];
@@ -960,11 +952,11 @@ fn vault_wrapper_kat() {
         hex::encode(&safe_key),
         "f6969b50e058119eb092180f92eabfe077c289f848c3c033fc58788ed0536fb8"
     );
-    let kek = [0x55u8; 32]; // passkey PRF output sample
-    let wrapped = seal(&kek, &[0u8; 12], &vault_key, b"mt-vault-wrap\x00\x01");
+    let kek = [0x55u8; 32]; // Argon2id output sample (Облачный пароль)
+    let wrapped = seal(&kek, &[0u8; 12], &vault_key, b"mt-vault-wrap\x00\x02");
     assert_eq!(
         hex::encode(&wrapped),
-        "2c92269dd3026bced8f42164b306b05995720c3cb316fbe7412b14bfaa88e1eb226205ae549127c497e55092b978ef11"
+        "2c92269dd3026bced8f42164b306b05995720c3cb316fbe7412b14bfaa88e1eb85c6cf02d48b3537a51af22a58898f24"
     );
 }
 
