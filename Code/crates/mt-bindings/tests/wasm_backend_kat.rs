@@ -866,3 +866,44 @@ fn contacts_key_kat() {
         "8a341c252f20b83f33ba2471fd915b11bed788c0b23f205cf8ce3a4de2c65301"
     );
 }
+
+#[test]
+fn media_blob_kat() {
+    let blob_key = [0x66u8; 32];
+    let nonce = [0u8; 12];
+    let sealed_body = seal(&blob_key, &nonce, b"montana-media", b"mt-media\x00");
+    assert_eq!(
+        hex::encode(&sealed_body),
+        "e26a877f209a12646c4e630e0a6705598d68389e621357aee335b7d636"
+    );
+    let mut sealed_blob = nonce.to_vec();
+    sealed_blob.extend_from_slice(&sealed_body);
+    assert_eq!(
+        hex::encode(Sha256::digest(&sealed_blob)),
+        "6c385ae2ef1c472b373a77e582c889d7ed2585c5a036c246b580f05f94c7efd3"
+    );
+}
+
+/// Этап 12: канонический layout медиа-Content (тип 0x05, ссылка на блоб).
+#[test]
+fn media_content_kat() {
+    let blob_id =
+        hex::decode("6c385ae2ef1c472b373a77e582c889d7ed2585c5a036c246b580f05f94c7efd3").unwrap();
+    let mut c = vec![0x05u8];
+    c.extend_from_slice(&[0x11u8; 16]); // msg_id
+    c.extend_from_slice(&1000u64.to_le_bytes()); // sent_at
+    c.push(0x01); // media_kind image
+    c.extend_from_slice(&blob_id);
+    c.extend_from_slice(&[0x66u8; 32]); // blob_key
+    c.extend_from_slice(&13u64.to_le_bytes()); // size
+    c.push(9);
+    c.extend_from_slice(b"image/png");
+    c.push(5);
+    c.extend_from_slice(b"a.png");
+    c.extend_from_slice(&0u16.to_le_bytes()); // thumb_len
+    assert_eq!(c.len(), 116);
+    assert_eq!(
+        hex::encode(&c),
+        "0511111111111111111111111111111111e803000000000000016c385ae2ef1c472b373a77e582c889d7ed2585c5a036c246b580f05f94c7efd366666666666666666666666666666666666666666666666666666666666666660d0000000000000009696d6167652f706e6705612e706e670000"
+    );
+}
