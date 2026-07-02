@@ -18,6 +18,63 @@ use std::sync::Arc;
 
 pub const XX_PROTOCOL_NAME: &str = "/montana/noise-pq-xx/1.0.0";
 
+/// Maximum random padding appended to each Noise_PQ XX handshake message.
+/// The `XX_MSG*_SIZE` values are the floor; padding only adds, so a passive
+/// observer sees no fixed distinctive length triple. Montana Network spec,
+/// "Post-quantum transport" -> "Handshake length obfuscation".
+pub const XX_MAX_HANDSHAKE_PAD: usize = 1024;
+
+/// Write one handshake message with length obfuscation:
+///   `[total_len: u16 LE][core bytes][random pad]`
+/// where `total_len = core.len() + pad_len` and `pad_len` is drawn uniformly
+/// from `[0, XX_MAX_HANDSHAKE_PAD]` via the OS CSPRNG. The first bytes carry no
+/// fixed magic (the length varies per connection). Padding is random and is
+/// not covered by the transcript or the identity signatures (they sign the
+/// core message only), so length obfuscation never changes the derived
+/// session keys.
+async fn write_obfuscated<C>(socket: &mut C, core: &[u8]) -> Result<(), XxUpgradeError>
+where
+    C: AsyncWrite + Unpin,
+{
+    let mut r = [0u8; 2];
+    getrandom::getrandom(&mut r).map_err(|_| NoisePqError::EncapFailed)?;
+    let pad_len = (u16::from_le_bytes(r) as usize) % (XX_MAX_HANDSHAKE_PAD + 1);
+    let total_len = core.len() + pad_len;
+    let mut frame = Vec::with_capacity(2 + total_len);
+    frame.extend_from_slice(&(total_len as u16).to_le_bytes());
+    frame.extend_from_slice(core);
+    if pad_len > 0 {
+        let start = frame.len();
+        frame.resize(start + pad_len, 0);
+        getrandom::getrandom(&mut frame[start..]).map_err(|_| NoisePqError::EncapFailed)?;
+    }
+    socket.write_all(&frame).await?;
+    socket.flush().await?;
+    Ok(())
+}
+
+/// Read one length-obfuscated handshake message and return the core bytes.
+/// Validates `core_size <= total_len <= core_size + XX_MAX_HANDSHAKE_PAD`
+/// before allocating, then reads `total_len` bytes and strips the padding.
+async fn read_obfuscated<C>(socket: &mut C, core_size: usize) -> Result<Vec<u8>, XxUpgradeError>
+where
+    C: AsyncRead + Unpin,
+{
+    let mut len_b = [0u8; 2];
+    socket.read_exact(&mut len_b).await?;
+    let total_len = u16::from_le_bytes(len_b) as usize;
+    if total_len < core_size || total_len > core_size + XX_MAX_HANDSHAKE_PAD {
+        return Err(XxUpgradeError::Handshake(NoisePqError::BadMsgSize {
+            expected: core_size,
+            actual: total_len,
+        }));
+    }
+    let mut buf = vec![0u8; total_len];
+    socket.read_exact(&mut buf).await?;
+    buf.truncate(core_size);
+    Ok(buf)
+}
+
 #[derive(Debug)]
 pub enum XxUpgradeError {
     Io(std::io::Error),
@@ -58,16 +115,13 @@ where
     C: AsyncRead + AsyncWrite + Unpin,
 {
     let (msg1, init_after_msg1) = initiator_send_msg1(id_sk, id_pk)?;
-    socket.write_all(&msg1).await?;
-    socket.flush().await?;
+    write_obfuscated(&mut socket, &msg1).await?;
 
-    let mut msg2 = vec![0u8; XX_MSG2_SIZE];
-    socket.read_exact(&mut msg2).await?;
+    let msg2 = read_obfuscated(&mut socket, XX_MSG2_SIZE).await?;
     let init_after_msg2 = initiator_receive_msg2(&msg2, init_after_msg1)?;
 
     let (msg3, session) = initiator_send_msg3(init_after_msg2)?;
-    socket.write_all(&msg3).await?;
-    socket.flush().await?;
+    write_obfuscated(&mut socket, &msg3).await?;
 
     let sk_tx = session.sk_i_to_r;
     let sk_rx = session.sk_r_to_i;
@@ -85,16 +139,13 @@ pub async fn xx_responder_drive<C>(
 where
     C: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut msg1 = vec![0u8; XX_MSG1_SIZE];
-    socket.read_exact(&mut msg1).await?;
+    let msg1 = read_obfuscated(&mut socket, XX_MSG1_SIZE).await?;
     let resp_after_msg1 = responder_receive_msg1(&msg1, id_sk, id_pk)?;
 
     let (msg2, resp_after_msg2) = responder_send_msg2(resp_after_msg1)?;
-    socket.write_all(&msg2).await?;
-    socket.flush().await?;
+    write_obfuscated(&mut socket, &msg2).await?;
 
-    let mut msg3 = vec![0u8; XX_MSG3_SIZE];
-    socket.read_exact(&mut msg3).await?;
+    let msg3 = read_obfuscated(&mut socket, XX_MSG3_SIZE).await?;
     let session = responder_receive_msg3(&msg3, resp_after_msg2)?;
 
     let sk_tx = session.sk_r_to_i;
