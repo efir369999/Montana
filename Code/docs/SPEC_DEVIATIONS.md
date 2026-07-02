@@ -985,3 +985,34 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Closure cost:**    минуты (две константы); re-bake Genesis State Hash не требуется.
 **Status:**          открыто (devnet override, author-acknowledged для локального тестирования)
 **Acknowledged:**    автор явно выбрал «оставляет 1 для теста» (2026-06-23)
+
+
+---
+
+## DEV-045 (open, acknowledged): Transport profile T1 (TLS carrier + active-probe relay) specified, not implemented
+
+**Crate:**           mt-net-transport / mt-net (target)
+**File:line:**       not yet implemented (the production XX transport is T0 only)
+**Spec section:**    Network spec "Transport profile ladder" (T1 row) + "Active-probe relay (T1)"
+**Spec quote:**      "a connection that does not present the Montana inner handshake is relayed to the real cover host, so an active prober receives a genuine response and observes an ordinary reverse proxy"
+**What the code does:** nothing. T1 is defined normatively in the Network spec; the code implements only T0 (raw Noise_PQ XX over TCP). No TLS carrier, cover-host binding, or active-probe relay exists in any crate (grep across crates/ returns zero hits for cover-host / active-probe / reverse-proxy).
+**Severity:**        medium (spec-ahead-of-code; a feature gap, not a wrong-behaviour bug). A T0 node under active probing is detectable until T1 lands.
+**Closure path:**    implement the T1 TLS-1.3 carrier + cover-host binding + relay-on-probe discriminator in mt-net-transport, wired through reachability profile selection in mt-net.
+**Closure cost:**    > 1 working day — a separate milestone (TLS termination, cover-host reachability, probe discrimination).
+**Status:**          open (spec-defined, code pending)
+**Acknowledged:**    author asked to specify T1 in the spec now and defer the implementation (2026-07-02); recorded per critic finding F-4 (spec-ahead-of-code)
+
+---
+
+## DEV-046 (open, acknowledged): Entry-point distribution (EntryCapsule / pooled distribution / scoped racing) specified, not implemented
+
+**Crate:**           mt-net (target)
+**File:line:**       not yet implemented
+**Spec section:**    Network spec "Entry-point distribution"
+**Spec quote:**      "A capsule is a compact, self-authenticating record of one reachable entry ... signature 3309B ML-DSA-65 over the domain-separated preimage"
+**What the code does:** nothing. The EntryCapsule wire record, its "mt-entry-capsule" signature, pooled requester-varied distribution, and ENTRY_RACE_WIDTH scoped racing are defined in the Network spec; no crate encodes, signs, distributes, or races entry capsules (grep returns zero hits for entry-capsule / ENTRY_RACE_WIDTH). Cold-start discovery in code uses the hard-coded seed list plus peer exchange, not the pooled signed-capsule mechanism.
+**Severity:**        medium (spec-ahead-of-code; feature gap).
+**Closure path:**    add an EntryCapsule type in mt-net with CanonicalEncode + ML-DSA-65 sign/verify over the "mt-entry-capsule" preimage, pooled distribution over the peer-exchange envelope, and scoped racing in the connection manager.
+**Closure cost:**    > 1 working day — a separate milestone.
+**Status:**          open (spec-defined, code pending)
+**Acknowledged:**    author asked to specify entry distribution in the spec now and defer the implementation (2026-07-02); recorded per critic finding F-4 (spec-ahead-of-code)
