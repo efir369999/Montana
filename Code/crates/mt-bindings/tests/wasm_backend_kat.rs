@@ -670,19 +670,24 @@ fn frame_codec_kat() {
         hex::encode(frame(0x01, &sub)),
         "1300000001010011111111111111111111111111111111"
     );
+    // DELIVER: label + window + item_id + delete_commitment(32) + ct (E1)
     let mut del = [0x22u8; 16].to_vec();
     del.extend_from_slice(&1000u64.to_le_bytes());
+    del.extend_from_slice(&[0x44u8; 16]); // item_id
+    del.extend_from_slice(&[0x55u8; 32]); // delete_commitment
     del.extend_from_slice(b"hi");
     assert_eq!(
         hex::encode(frame(0x04, &del)),
-        "1b0000000422222222222222222222222222222222e8030000000000006869"
+        "4b0000000422222222222222222222222222222222e8030000000000004444444444444444444444444444444455555555555555555555555555555555555555555555555555555555555555556869"
     );
+    // ACK: count + (label + item_id + delete_preimage(32)) (E1)
     let mut ack = 1u16.to_le_bytes().to_vec();
-    ack.extend_from_slice(&[0x33u8; 16]);
-    ack.extend_from_slice(&1000u64.to_le_bytes());
+    ack.extend_from_slice(&[0x33u8; 16]); // label
+    ack.extend_from_slice(&[0x44u8; 16]); // item_id
+    ack.extend_from_slice(&[0x66u8; 32]); // delete_preimage
     assert_eq!(
         hex::encode(frame(0x05, &ack)),
-        "1b00000005010033333333333333333333333333333333e803000000000000"
+        "4300000005010033333333333333333333333333333333444444444444444444444444444444446666666666666666666666666666666666666666666666666666666666666666"
     );
 }
 
@@ -905,5 +910,31 @@ fn media_content_kat() {
     assert_eq!(
         hex::encode(&c),
         "0511111111111111111111111111111111e803000000000000016c385ae2ef1c472b373a77e582c889d7ed2585c5a036c246b580f05f94c7efd366666666666666666666666666666666666666666666666666666666666666660d0000000000000009696d6167652f706e6705612e706e670000"
+    );
+}
+
+/// Этап 9 (E5): случайный vault_key, passkey-wrapper, safe_key.
+#[test]
+fn vault_wrapper_kat() {
+    let vault_key = [0x33u8; 32];
+    let safe_key = hkdf_sha256(&[0u8; 32], &vault_key, b"mt-vault-safe", 32);
+    assert_eq!(
+        hex::encode(&safe_key),
+        "f6969b50e058119eb092180f92eabfe077c289f848c3c033fc58788ed0536fb8"
+    );
+    let kek = [0x55u8; 32]; // passkey PRF output sample
+    let wrapped = seal(&kek, &[0u8; 12], &vault_key, b"mt-vault-wrap\x00\x01");
+    assert_eq!(
+        hex::encode(&wrapped),
+        "2c92269dd3026bced8f42164b306b05995720c3cb316fbe7412b14bfaa88e1eb226205ae549127c497e55092b978ef11"
+    );
+}
+
+/// Этап 6 (E1): commitment удаления = SHA-256(delete_preimage).
+#[test]
+fn delete_commitment_kat() {
+    assert_eq!(
+        hex::encode(Sha256::digest([0x77u8; 32])),
+        "e29442e61ad354e5cb0831e2e8359e8fb50cf024ad5a8f407c8f9de63bdf7371"
     );
 }
