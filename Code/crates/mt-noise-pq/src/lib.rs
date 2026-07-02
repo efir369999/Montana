@@ -78,6 +78,7 @@ pub enum NoisePqError {
     BadMsgSize { expected: usize, actual: usize },
     DecapFailed,
     EncapFailed,
+    RngFailed,
     BadResponderSignature,
     BadInitiatorSignature,
     InvalidPublicKey,
@@ -142,7 +143,7 @@ pub fn initiator_send_msg1(
     // directly. getrandom fails only on platforms without an entropy
     // source available, which is not a supported Montana operator
     // environment.
-    getrandom::getrandom(&mut ephemeral_seed).map_err(|_| NoisePqError::EncapFailed)?;
+    getrandom::getrandom(&mut ephemeral_seed).map_err(|_| NoisePqError::RngFailed)?;
     let (ke_pk, ke_sk) = keypair_from_seed_mlkem(&ephemeral_seed)?;
     ephemeral_seed.zeroize();
 

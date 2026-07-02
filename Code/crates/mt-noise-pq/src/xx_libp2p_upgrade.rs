@@ -37,16 +37,20 @@ where
     C: AsyncWrite + Unpin,
 {
     let mut r = [0u8; 2];
-    getrandom::getrandom(&mut r).map_err(|_| NoisePqError::EncapFailed)?;
+    getrandom::getrandom(&mut r).map_err(|_| NoisePqError::RngFailed)?;
     let pad_len = (u16::from_le_bytes(r) as usize) % (XX_MAX_HANDSHAKE_PAD + 1);
     let total_len = core.len() + pad_len;
     let mut frame = Vec::with_capacity(2 + total_len);
+    debug_assert!(
+        total_len <= u16::MAX as usize,
+        "handshake frame length {total_len} exceeds the u16 length prefix"
+    );
     frame.extend_from_slice(&(total_len as u16).to_le_bytes());
     frame.extend_from_slice(core);
     if pad_len > 0 {
         let start = frame.len();
         frame.resize(start + pad_len, 0);
-        getrandom::getrandom(&mut frame[start..]).map_err(|_| NoisePqError::EncapFailed)?;
+        getrandom::getrandom(&mut frame[start..]).map_err(|_| NoisePqError::RngFailed)?;
     }
     socket.write_all(&frame).await?;
     socket.flush().await?;
@@ -152,4 +156,73 @@ where
     let sk_rx = session.sk_i_to_r;
     let stream = NoisePqStream::new(socket, sk_tx, sk_rx);
     Ok((session, stream))
+}
+
+#[cfg(test)]
+mod obfuscation_tests {
+    use super::*;
+    use futures::{AsyncReadExt, AsyncWriteExt};
+    use tokio_util::compat::TokioAsyncReadCompatExt;
+
+    #[tokio::test]
+    async fn obfuscated_roundtrip_strips_padding() {
+        let core = vec![0xABu8; XX_MSG1_SIZE];
+        let (a, b) = tokio::io::duplex(1 << 16);
+        let mut a = a.compat();
+        let mut b = b.compat();
+        write_obfuscated(&mut a, &core).await.unwrap();
+        let got = read_obfuscated(&mut b, XX_MSG1_SIZE).await.unwrap();
+        assert_eq!(got, core, "core is recovered after the padding is stripped");
+    }
+
+    #[tokio::test]
+    async fn obfuscated_length_varies_and_stays_in_range() {
+        let core = vec![0x11u8; XX_MSG1_SIZE];
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..64 {
+            let (a, b) = tokio::io::duplex(1 << 16);
+            let mut a = a.compat();
+            let mut b = b.compat();
+            write_obfuscated(&mut a, &core).await.unwrap();
+            let mut len_b = [0u8; 2];
+            b.read_exact(&mut len_b).await.unwrap();
+            seen.insert(u16::from_le_bytes(len_b) as usize);
+        }
+        assert!(
+            seen.len() > 1,
+            "the framed length must vary with random padding"
+        );
+        assert!(*seen.iter().min().unwrap() >= XX_MSG1_SIZE);
+        assert!(*seen.iter().max().unwrap() <= XX_MSG1_SIZE + XX_MAX_HANDSHAKE_PAD);
+    }
+
+    #[tokio::test]
+    async fn read_obfuscated_rejects_below_floor() {
+        let (a, b) = tokio::io::duplex(1 << 16);
+        let mut a = a.compat();
+        let mut b = b.compat();
+        let bad = ((XX_MSG2_SIZE - 1) as u16).to_le_bytes();
+        a.write_all(&bad).await.unwrap();
+        a.flush().await.unwrap();
+        let r = read_obfuscated(&mut b, XX_MSG2_SIZE).await;
+        assert!(matches!(
+            r,
+            Err(XxUpgradeError::Handshake(NoisePqError::BadMsgSize { .. }))
+        ));
+    }
+
+    #[tokio::test]
+    async fn read_obfuscated_rejects_above_ceiling() {
+        let (a, b) = tokio::io::duplex(1 << 16);
+        let mut a = a.compat();
+        let mut b = b.compat();
+        let bad = ((XX_MSG2_SIZE + XX_MAX_HANDSHAKE_PAD + 1) as u16).to_le_bytes();
+        a.write_all(&bad).await.unwrap();
+        a.flush().await.unwrap();
+        let r = read_obfuscated(&mut b, XX_MSG2_SIZE).await;
+        assert!(matches!(
+            r,
+            Err(XxUpgradeError::Handshake(NoisePqError::BadMsgSize { .. }))
+        ));
+    }
 }

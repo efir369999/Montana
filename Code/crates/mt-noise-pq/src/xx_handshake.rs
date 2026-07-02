@@ -136,7 +136,7 @@ pub fn initiator_send_msg1(
     is_id_pk: PublicKey,
 ) -> Result<(Vec<u8>, InitiatorAfterMsg1), NoisePqError> {
     let mut seed = [0u8; MLKEM_SEED_SIZE];
-    getrandom::getrandom(&mut seed).map_err(|_| NoisePqError::EncapFailed)?;
+    getrandom::getrandom(&mut seed).map_err(|_| NoisePqError::RngFailed)?;
     let (ke_pk_i, ke_sk_i) = keypair_from_seed_mlkem(&seed)?;
     seed.zeroize();
 
@@ -181,7 +181,7 @@ pub fn responder_send_msg2(
     state: ResponderAfterMsg1,
 ) -> Result<(Vec<u8>, ResponderAfterMsg2), NoisePqError> {
     let mut seed = [0u8; MLKEM_SEED_SIZE];
-    getrandom::getrandom(&mut seed).map_err(|_| NoisePqError::EncapFailed)?;
+    getrandom::getrandom(&mut seed).map_err(|_| NoisePqError::RngFailed)?;
     let (ke_pk_r, ke_sk_r) = keypair_from_seed_mlkem(&seed)?;
     seed.zeroize();
 
