@@ -72,7 +72,7 @@ fn cross_backend_sign_verify() {
 
 /// Кросс-бэкенд ML-KEM + подпись identity-KEM: app_kem_pub из сида байт-идентичен
 /// (OpenSSL vs ml-kem), app_kem_sig (ML-DSA над "mt-idkem"||0x00||app_kem_pub)
-/// валидна. Печатает SHA-256-отпечатки для binding-векторов Этапа 3.
+/// валидна. Печатает SHA-256-отпечатки для binding-векторов Этапа 4.
 #[test]
 fn cross_backend_app_kem_and_idkem_sig() {
     use ml_kem::{EncodedSizeUser, KemCore, MlKem768, B32 as KemB32};
@@ -104,7 +104,7 @@ fn cross_backend_app_kem_and_idkem_sig() {
     // (2) app_kem_sig verifies under account_key
     assert!(mt_crypto::verify(&pk_acc, &msg, &sig));
 
-    // baked binding-векторы Этапа 3 (нулевая мнемоника)
+    // baked binding-векторы Этапа 4 (нулевая мнемоника)
     assert_eq!(
         hex::encode(Sha256::digest(app_kem_pub)),
         "b827d37b2b225907c835f25a8652c215af69f8f52bd6a7ef0ae31955d63fd1c4"
@@ -115,7 +115,7 @@ fn cross_backend_app_kem_and_idkem_sig() {
     );
 }
 
-// ---- Этап 4: PQXDH (чистый ML-KEM-768) ----
+// ---- Этап 5: PQXDH (чистый ML-KEM-768) ----
 
 fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     let mut k = [0u8; 64];
@@ -157,7 +157,7 @@ fn hkdf_sha256(salt: &[u8], ikm: &[u8], info: &[u8], l: usize) -> Vec<u8> {
     okm
 }
 
-/// Детерминированное ключевое расписание PQXDH (Этап 4, Шаг 3). Фиксированные
+/// Детерминированное ключевое расписание PQXDH (Этап 5, Шаг 3). Фиксированные
 /// секреты + transcript_hash → запечённые initial_root_key / chain (с одноразовым
 /// и без). Чистый HKDF-SHA-256 → кросс-платформенно идентично.
 #[test]
@@ -220,7 +220,7 @@ fn pqxdh_key_schedule_kat() {
     );
 }
 
-/// Согласие сторон PQXDH (Этап 4). Алиса инкапсулирует к трём реальным ML-KEM
+/// Согласие сторон PQXDH (Этап 5). Алиса инкапсулирует к трём реальным ML-KEM
 /// ключам Боба (OpenSSL), Боб декапсулирует — общие секреты и выведенный корень
 /// совпадают байт-в-байт. Проверяет весь поток установления сессии.
 #[test]
@@ -276,7 +276,7 @@ fn pqxdh_agreement() {
     assert_eq!(root_a.len(), 64);
 }
 
-// ---- Этап 5: двойной храповик ----
+// ---- Этап 6: двойной храповик ----
 
 fn kdf_ck(ck: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     (hmac_sha256(ck, &[0x01]), hmac_sha256(ck, &[0x02]))
@@ -590,10 +590,10 @@ fn seal_kat() {
     assert_eq!(open(&k, &n, &body, &ad).unwrap(), b"handshake");
 }
 
-/// Метки маршрутизации Этапа 6: routing_secret, направленные сессионные метки, инбокс-метка.
+/// Метки маршрутизации Этапа 7: routing_secret, направленные сессионные метки, инбокс-метка.
 #[test]
 fn route_label_kat() {
-    // routing_secret выводится из forward-secret initial_root_key (Этап 6), НЕ из session_id/transcript_hash
+    // routing_secret выводится из forward-secret initial_root_key (Этап 7), НЕ из session_id/transcript_hash
     let initial_root_key = [0xABu8; 32];
     let rs = hkdf_sha256(&[0u8; 32], &initial_root_key, b"mt-routing", 32);
     assert_eq!(
@@ -622,7 +622,7 @@ fn route_label_kat() {
     );
 }
 
-/// Этап 6 proof-of-time: seed привязан ко всему конверту; цепь y0=H(seed), y_{i+1}=H(y_i).
+/// Этап 7 proof-of-time: seed привязан ко всему конверту; цепь y0=H(seed), y_{i+1}=H(y_i).
 /// Малошаговый вектор (STEPS=4) фиксирует ФОРМАТ seed и итерации (боевой INBOX_POT_STEPS=2^20).
 #[test]
 fn pot_chain_kat() {
@@ -699,7 +699,7 @@ fn frame(t: u8, body: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Этап 6: кодек WebSocket-кадров слепой доставки (frame_len u32 LE + type + body).
+/// Этап 7: кодек WebSocket-кадров слепой доставки (frame_len u32 LE + type + body).
 #[test]
 fn frame_codec_kat() {
     let mut sub = 1u16.to_le_bytes().to_vec();
@@ -754,7 +754,7 @@ fn safety_number(a: &[u8; 32], b: &[u8; 32]) -> String {
     party_code(lo) + &party_code(hi)
 }
 
-/// Этап 7: пер-личностный код и парный отпечаток (итер. SHA-256, ITER=5200).
+/// Этап 8: пер-личностный код и парный отпечаток (итер. SHA-256, ITER=5200).
 #[test]
 fn safety_number_kat() {
     let a: [u8; 32] =
@@ -797,7 +797,7 @@ fn content_typing(msg_id: &[u8; 16], sent_at: u64, state: u8) -> Vec<u8> {
     v
 }
 
-/// Этап 8: кодек контента (plaintext храповика) — text / delivery_receipt / typing.
+/// Этап 9: кодек контента (plaintext храповика) — text / delivery_receipt / typing.
 #[test]
 fn content_codec_kat() {
     assert_eq!(
@@ -899,7 +899,7 @@ fn contact_record_kat() {
     );
 }
 
-/// Этап 11: отдельный ключ шифрования контактов (разделение с safe_key Этапа 9).
+/// Этап 11: отдельный ключ шифрования контактов (разделение с safe_key Этапа 3).
 #[test]
 fn contacts_key_kat() {
     let vault_key = [0x55u8; 32];
@@ -951,7 +951,7 @@ fn media_content_kat() {
     );
 }
 
-/// Этап 9 (E5): случайный vault_key, passkey-wrapper, safe_key.
+/// Этап 3 (E5): случайный vault_key, passkey-wrapper, safe_key.
 #[test]
 fn vault_wrapper_kat() {
     let vault_key = [0x33u8; 32];
@@ -968,7 +968,7 @@ fn vault_wrapper_kat() {
     );
 }
 
-/// Этап 6 (E1): commitment удаления = SHA-256(delete_preimage).
+/// Этап 7 (E1): commitment удаления = SHA-256(delete_preimage).
 #[test]
 fn delete_commitment_kat() {
     assert_eq!(
