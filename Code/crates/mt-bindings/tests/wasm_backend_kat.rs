@@ -818,3 +818,40 @@ fn device_registry_kat() {
         "d32761561a28a29b68125de252c05c9f529185fd7d5182863b4bbc0720a3e863"
     );
 }
+
+/// Этап 11: сообщение подписи заявки на @имя.
+#[test]
+fn username_claim_kat() {
+    let acc =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
+    let mut msg = b"mt-username".to_vec();
+    msg.push(0x00);
+    msg.extend_from_slice(b"alice");
+    msg.extend_from_slice(&acc);
+    assert_eq!(msg.len(), 49);
+    assert_eq!(
+        hex::encode(Sha256::digest(&msg)),
+        "3dd4fd698cb00f19ee52888af860e14d48bc50674c77e01e576cf024161021b6"
+    );
+}
+
+/// Этап 11: канонический layout ContactRecord (приватный, шифруется в сейфе).
+#[test]
+fn contact_record_kat() {
+    let acc =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
+    let uname = b"alice";
+    let disp = b"Alice";
+    let mut rec = acc.clone();
+    rec.push(0x01); // verified
+    rec.push(uname.len() as u8);
+    rec.extend_from_slice(uname);
+    rec.push(disp.len() as u8);
+    rec.extend_from_slice(disp);
+    rec.extend_from_slice(&1000u64.to_le_bytes());
+    assert_eq!(rec.len(), 53);
+    assert_eq!(
+        hex::encode(&rec),
+        "9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a210105616c69636505416c696365e803000000000000"
+    );
+}
