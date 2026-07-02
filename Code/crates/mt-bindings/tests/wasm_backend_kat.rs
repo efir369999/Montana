@@ -682,7 +682,7 @@ fn seal_roundtrip() {
     assert_eq!(open(&kb, &nb, &sealed, ad).unwrap(), b"InitialHandshake");
 }
 
-/// Этап 1: passkey-PRF salt — плоский SHA-256 ASCII-строки (без конвенции domain||0x00).
+/// Этап 2: passkey-PRF salt — плоский SHA-256 ASCII-строки (без конвенции domain||0x00).
 #[test]
 fn prf_salt_kat() {
     assert_eq!(
