@@ -593,8 +593,9 @@ fn seal_kat() {
 /// Метки маршрутизации Этапа 6: routing_secret, направленные сессионные метки, инбокс-метка.
 #[test]
 fn route_label_kat() {
-    let session_id = [0xABu8; 32];
-    let rs = hkdf_sha256(&[0u8; 32], &session_id, b"mt-routing", 32);
+    // routing_secret выводится из forward-secret initial_root_key (Этап 6), НЕ из session_id/transcript_hash
+    let initial_root_key = [0xABu8; 32];
+    let rs = hkdf_sha256(&[0u8; 32], &initial_root_key, b"mt-routing", 32);
     assert_eq!(
         hex::encode(&rs),
         "5dde1ca30d45f658626b6acfac59f25b39bfc8cbbf9db4250fd60ceb4f6624d1"
@@ -611,13 +612,50 @@ fn route_label_kat() {
     assert_eq!(label(0x01), "1b4bc34a8901e9cef430c077f9b19d54");
     let acc =
         hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
+    // инбокс-метка СТАБИЛЬНА (без W): даёт wake-push, вращение приватности не давало
     let mut ib = b"mt-inbox".to_vec();
     ib.push(0u8);
     ib.extend_from_slice(&acc);
-    ib.extend_from_slice(&w.to_le_bytes());
     assert_eq!(
         hex::encode(&Sha256::digest(&ib)[..16]),
-        "92b557facd76d16be3aee0979ea8b1d7"
+        "7d5db70fa1b5f7e7902bba6bbbd626ba"
+    );
+}
+
+/// Этап 6 proof-of-time: seed привязан ко всему конверту; цепь y0=H(seed), y_{i+1}=H(y_i).
+/// Малошаговый вектор (STEPS=4) фиксирует ФОРМАТ seed и итерации (боевой INBOX_POT_STEPS=2^20).
+#[test]
+fn pot_chain_kat() {
+    let ib = hex::decode("7d5db70fa1b5f7e7902bba6bbbd626ba").unwrap(); // inbox_label 16 B
+    let item_id = [0x44u8; 16];
+    let delete_commitment = [0x55u8; 32];
+    let ct_seal = [0x66u8; 1088];
+    let sealed = [0x77u8; 64];
+    let mut seed = b"mt-pot".to_vec();
+    seed.push(0u8);
+    seed.extend_from_slice(&ib);
+    seed.extend_from_slice(&item_id);
+    seed.extend_from_slice(&delete_commitment);
+    seed.extend_from_slice(&ct_seal);
+    seed.extend_from_slice(&sealed);
+    let mut y = Sha256::digest(&seed).to_vec(); // y0
+    for _ in 0..4u32 {
+        y = Sha256::digest(&y).to_vec();
+    }
+    assert_eq!(
+        hex::encode(&y),
+        "ed47bd474d18e22ef2ff96811fa08c26193e9ac597515be2d96920f72de0a17f"
+    );
+}
+
+/// Этап 10 бэкап истории: history_key = HKDF(0x32, vault_key, "mt-history-key", 32).
+#[test]
+fn history_key_kat() {
+    let vault_key = [0x55u8; 32];
+    let hk = hkdf_sha256(&[0u8; 32], &vault_key, b"mt-history-key", 32);
+    assert_eq!(
+        hex::encode(&hk),
+        "e6a7dc51003770589d9f731c1231c1523be7348c7769383875dd34bd6c578def"
     );
 }
 
