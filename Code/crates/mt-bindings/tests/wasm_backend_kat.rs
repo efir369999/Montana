@@ -806,32 +806,6 @@ fn content_codec_kat() {
     );
 }
 
-#[test]
-fn vault_kat() {
-    let vault_key = [0x55u8; 32];
-    let okm = hkdf_sha256(&[0u8; 32], &vault_key, b"mt-vault-safe", 32);
-    let mut safe_key = [0u8; 32];
-    safe_key.copy_from_slice(&okm);
-    assert_eq!(
-        hex::encode(safe_key),
-        "760b5cd948fe3daf6b9107d101ee97f360ed5ff28bf26e5a780718d24b45b6c9"
-    );
-    let nonce = [0u8; 12];
-    let mut content = vec![0x01u8];
-    content.extend_from_slice(&[0u8; 32]);
-    let acc =
-        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
-    let mut ad = b"mt-vault".to_vec();
-    ad.push(0u8);
-    ad.extend_from_slice(&acc);
-    let body = seal(&safe_key, &nonce, &content, &ad);
-    assert_eq!(
-        hex::encode(&body),
-        "0ceeaf3bef191b597c0d39a170d394992aae56fdbefef6fb986c639ac6326ce81fc8267bccc4f5c74616f15fbb78144a53"
-    );
-    assert_eq!(open(&safe_key, &nonce, &body, &ad).unwrap(), content);
-}
-
 /// Этап 10: канонический байт-layout подписываемого DeviceRegistry (rollback-защита registry_seq).
 #[test]
 fn device_registry_kat() {
@@ -891,11 +865,11 @@ fn contact_record_kat() {
     );
 }
 
-/// Этап 11: отдельный ключ шифрования контактов (разделение с safe_key Этапа 3).
+/// Этап 11: отдельный ключ шифрования контактов (из сида entropy_32, отдельный домен).
 #[test]
 fn contacts_key_kat() {
-    let vault_key = [0x55u8; 32];
-    let ck = hkdf_sha256(&[0u8; 32], &vault_key, b"mt-contacts-key", 32);
+    let entropy_32 = [0x55u8; 32];
+    let ck = hkdf_sha256(&[0u8; 32], &entropy_32, b"mt-contacts-key", 32);
     assert_eq!(
         hex::encode(&ck),
         "8a341c252f20b83f33ba2471fd915b11bed788c0b23f205cf8ce3a4de2c65301"
@@ -940,23 +914,6 @@ fn media_content_kat() {
     assert_eq!(
         hex::encode(&c),
         "0511111111111111111111111111111111e803000000000000016c385ae2ef1c472b373a77e582c889d7ed2585c5a036c246b580f05f94c7efd366666666666666666666666666666666666666666666666666666666666666660d0000000000000009696d6167652f706e6705612e706e670000"
-    );
-}
-
-/// Этап 3 (E5): случайный vault_key, wrapper Облачного пароля (method 0x02), safe_key.
-#[test]
-fn vault_wrapper_kat() {
-    let vault_key = [0x33u8; 32];
-    let safe_key = hkdf_sha256(&[0u8; 32], &vault_key, b"mt-vault-safe", 32);
-    assert_eq!(
-        hex::encode(&safe_key),
-        "f6969b50e058119eb092180f92eabfe077c289f848c3c033fc58788ed0536fb8"
-    );
-    let kek = [0x55u8; 32]; // Argon2id output sample (Облачный пароль)
-    let wrapped = seal(&kek, &[0u8; 12], &vault_key, b"mt-vault-wrap\x00\x02");
-    assert_eq!(
-        hex::encode(&wrapped),
-        "2c92269dd3026bced8f42164b306b05995720c3cb316fbe7412b14bfaa88e1eb85c6cf02d48b3537a51af22a58898f24"
     );
 }
 
