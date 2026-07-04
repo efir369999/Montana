@@ -8,9 +8,11 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};
 
 use mt_crypto::{
-    keypair_from_seed, sign as mldsa_sign, verify as mldsa_verify, PublicKey, SecretKey, Signature,
+    keypair_from_seed, keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate,
+    sign as mldsa_sign, verify as mldsa_verify, MlkemCiphertext, MlkemPublicKey, MlkemSecretKey,
+    PublicKey, SecretKey, Signature,
 };
-use mt_mnemonic::{mldsa_seed_for_role, mnemonic_to_master_seed};
+use mt_mnemonic::{mldsa_seed_for_role, mlkem_seed_for_role, mnemonic_to_master_seed};
 use mt_state::derive_account_id;
 use zeroize::Zeroizing;
 
@@ -295,6 +297,136 @@ pub unsafe extern "C" fn mt_entropy_to_mnemonic(
     })
 }
 
+/// HKDF-Expand(master_seed, role, 64) -> ML-KEM-768 seed (d‖z). Этап 1: app_kem_key.
+#[no_mangle]
+pub unsafe extern "C" fn mt_mlkem_seed_for_role(
+    master_seed: *const u8,
+    role: *const u8,
+    role_len: usize,
+    out_seed: *mut u8,
+) -> c_int {
+    guard(|| {
+        if master_seed.is_null() || role.is_null() || out_seed.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let mut master_arr = Zeroizing::new([0u8; MT_MASTER_SEED_LEN]);
+        master_arr.copy_from_slice(slice::from_raw_parts(master_seed, MT_MASTER_SEED_LEN));
+        let role_bytes = slice::from_raw_parts(role, role_len);
+        let seed = Zeroizing::new(mlkem_seed_for_role(&master_arr, role_bytes));
+        slice::from_raw_parts_mut(out_seed, MT_MLKEM_SEED_LEN).copy_from_slice(&seed[..]);
+        MT_OK
+    })
+}
+
+/// ML-KEM-768 KeyGen из 64-байтного сида (FIPS 203, deterministic). pk 1184 / sk 2400.
+#[no_mangle]
+pub unsafe extern "C" fn mt_mlkem_keypair_from_seed(
+    seed: *const u8,
+    out_pubkey: *mut u8,
+    out_seckey: *mut u8,
+) -> c_int {
+    guard(|| {
+        if seed.is_null() || out_pubkey.is_null() || out_seckey.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let mut arr = Zeroizing::new([0u8; MT_MLKEM_SEED_LEN]);
+        arr.copy_from_slice(slice::from_raw_parts(seed, MT_MLKEM_SEED_LEN));
+        match keypair_from_seed_mlkem(&arr) {
+            Ok((pk, sk)) => {
+                slice::from_raw_parts_mut(out_pubkey, MT_MLKEM_PUBKEY_SIZE)
+                    .copy_from_slice(pk.as_bytes());
+                slice::from_raw_parts_mut(out_seckey, MT_MLKEM_SECKEY_SIZE)
+                    .copy_from_slice(sk.as_bytes());
+                MT_OK
+            },
+            Err(_) => MT_ERR_KEYGEN_FAILED,
+        }
+    })
+}
+
+/// ML-KEM-768 Encapsulate (FIPS 203 §6.2). pk 1184 -> ct 1088 / ss 32.
+#[no_mangle]
+pub unsafe extern "C" fn mt_mlkem_encaps(
+    pubkey: *const u8,
+    out_ct: *mut u8,
+    out_ss: *mut u8,
+) -> c_int {
+    guard(|| {
+        if pubkey.is_null() || out_ct.is_null() || out_ss.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let pk =
+            match MlkemPublicKey::from_slice(slice::from_raw_parts(pubkey, MT_MLKEM_PUBKEY_SIZE)) {
+                Some(k) => k,
+                None => return MT_ERR_KEM_FAILED,
+            };
+        match mlkem_encapsulate(&pk) {
+            Ok((ct, ss)) => {
+                slice::from_raw_parts_mut(out_ct, MT_MLKEM_CT_SIZE).copy_from_slice(ct.as_bytes());
+                slice::from_raw_parts_mut(out_ss, MT_MLKEM_SS_SIZE).copy_from_slice(ss.as_bytes());
+                MT_OK
+            },
+            Err(_) => MT_ERR_KEM_FAILED,
+        }
+    })
+}
+
+/// ML-KEM-768 Decapsulate (FIPS 203 §6.3, implicit-rejection). sk 2400, ct 1088 -> ss 32.
+#[no_mangle]
+pub unsafe extern "C" fn mt_mlkem_decaps(
+    seckey: *const u8,
+    ct: *const u8,
+    out_ss: *mut u8,
+) -> c_int {
+    guard(|| {
+        if seckey.is_null() || ct.is_null() || out_ss.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let sk =
+            match MlkemSecretKey::from_slice(slice::from_raw_parts(seckey, MT_MLKEM_SECKEY_SIZE)) {
+                Some(k) => k,
+                None => return MT_ERR_KEM_FAILED,
+            };
+        let ctv = match MlkemCiphertext::from_slice(slice::from_raw_parts(ct, MT_MLKEM_CT_SIZE)) {
+            Some(c) => c,
+            None => return MT_ERR_KEM_FAILED,
+        };
+        match mlkem_decapsulate(&sk, &ctv) {
+            Ok(ss) => {
+                slice::from_raw_parts_mut(out_ss, MT_MLKEM_SS_SIZE).copy_from_slice(ss.as_bytes());
+                MT_OK
+            },
+            Err(_) => MT_ERR_KEM_FAILED,
+        }
+    })
+}
+
+/// 24-словная мнемоника -> app_kem_key (ML-KEM-768) через роль "mt-app-encryption-key". pk 1184 / sk 2400.
+#[no_mangle]
+pub unsafe extern "C" fn mt_app_kem_from_mnemonic(
+    mnemonic_utf8: *const c_char,
+    out_pubkey: *mut u8,
+    out_seckey: *mut u8,
+) -> c_int {
+    guard(|| {
+        let mut master = Zeroizing::new([0u8; MT_MASTER_SEED_LEN]);
+        let rc = mt_mnemonic_to_master_seed(mnemonic_utf8, master.as_mut_ptr());
+        if rc != MT_OK {
+            return rc;
+        }
+        let mut kem_seed = Zeroizing::new([0u8; MT_MLKEM_SEED_LEN]);
+        let rc = mt_mlkem_seed_for_role(
+            master.as_ptr(),
+            mt_codec::domain::APP_ENCRYPTION_KEY.as_ptr(),
+            mt_codec::domain::APP_ENCRYPTION_KEY.len(),
+            kem_seed.as_mut_ptr(),
+        );
+        if rc != MT_OK {
+            return rc;
+        }
+        mt_mlkem_keypair_from_seed(kem_seed.as_ptr(), out_pubkey, out_seckey)
+    })
+}
 
 /// Argon2id(пароль, соль) -> 32 байта. Параметры спеки: m=65536 KiB, t=3, p=1, out=32.
 /// Для облачного сейфа (Этап 9): kek = Argon2id(Облачный пароль, соль).

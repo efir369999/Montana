@@ -25,6 +25,7 @@ extern "C" {
 #define MT_ERR_VERIFY_FAILED              -8
 #define MT_ERR_BUFFER_TOO_SMALL           -9
 #define MT_ERR_ADDRESS_INVALID           -10
+#define MT_ERR_KEM_FAILED                -11
 #define MT_ERR_PANIC                    -100
 
 #define MT_MASTER_SEED_LEN          64
@@ -34,6 +35,11 @@ extern "C" {
 #define MT_MLDSA_SIG_SIZE         3309
 #define MT_ACCOUNT_ID_LEN           32
 #define MT_SUITE_MLDSA65        0x0001
+#define MT_MLKEM_SEED_LEN           64
+#define MT_MLKEM_PUBKEY_SIZE      1184
+#define MT_MLKEM_SECKEY_SIZE      2400
+#define MT_MLKEM_CT_SIZE          1088
+#define MT_MLKEM_SS_SIZE            32
 
 uint32_t mt_abi_version(void);
 int mt_mnemonic_to_master_seed(const char *mnemonic_utf8, uint8_t *out_master_seed);
@@ -53,6 +59,14 @@ int mt_account_id_to_address(const uint8_t *account_id, uint8_t *out, size_t out
 /* textual address "mt..." -> account_id (32 bytes). Verifies the checksum. */
 int mt_address_to_account_id(const char *address_utf8, uint8_t *out_account_id);
 int mt_argon2id(const uint8_t *password, size_t password_len, const uint8_t *salt, size_t salt_len, uint8_t *out);
+
+/* ML-KEM-768 (FIPS 203) — Этап 1 app_kem_key + Этапы 4-7 обмен ключами. */
+int mt_mlkem_seed_for_role(const uint8_t *master_seed, const uint8_t *role, size_t role_len, uint8_t *out_seed);
+int mt_mlkem_keypair_from_seed(const uint8_t *seed, uint8_t *out_pubkey, uint8_t *out_seckey);
+int mt_mlkem_encaps(const uint8_t *pubkey, uint8_t *out_ct, uint8_t *out_ss);
+int mt_mlkem_decaps(const uint8_t *seckey, const uint8_t *ct, uint8_t *out_ss);
+/* 24 слова -> app_kem_key (ML-KEM-768, роль "mt-app-encryption-key"). */
+int mt_app_kem_from_mnemonic(const char *mnemonic_utf8, uint8_t *out_pubkey, uint8_t *out_seckey);
 
 #ifdef __cplusplus
 }

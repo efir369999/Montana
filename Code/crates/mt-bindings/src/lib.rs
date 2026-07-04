@@ -12,7 +12,7 @@ use core::panic::AssertUnwindSafe;
 use sha2::{Digest as _, Sha256};
 
 #[cfg(not(target_arch = "wasm32"))]
-mod ffi_c;
+pub mod ffi_c;
 
 #[cfg(target_arch = "wasm32")]
 mod ffi_wasm;
@@ -30,6 +30,12 @@ pub const MT_MLDSA_SIG_SIZE: usize = 3309;
 pub const MT_ACCOUNT_ID_LEN: usize = 32;
 pub const MT_MAX_MNEMONIC_BYTES: usize = 512;
 
+pub const MT_MLKEM_SEED_LEN: usize = 64;
+pub const MT_MLKEM_PUBKEY_SIZE: usize = 1184;
+pub const MT_MLKEM_SECKEY_SIZE: usize = 2400;
+pub const MT_MLKEM_CT_SIZE: usize = 1088;
+pub const MT_MLKEM_SS_SIZE: usize = 32;
+
 pub const MT_OK: i32 = 0;
 pub const MT_ERR_NULL_PTR: i32 = -1;
 pub const MT_ERR_INVALID_UTF8: i32 = -2;
@@ -42,6 +48,7 @@ pub const MT_ERR_VERIFY_FAILED: i32 = -8;
 pub const MT_ERR_BUFFER_TOO_SMALL: i32 = -9;
 pub const MT_ERR_KDF_FAILED: i32 = -10;
 pub const MT_ERR_ADDRESS_INVALID: i32 = -10;
+pub const MT_ERR_KEM_FAILED: i32 = -11;
 pub const MT_ERR_PANIC: i32 = -100;
 
 #[inline]
@@ -174,6 +181,11 @@ mod tests {
         assert_eq!(MT_MLDSA_PUBKEY_SIZE, mt_crypto::PUBLIC_KEY_SIZE);
         assert_eq!(MT_MLDSA_SECKEY_SIZE, mt_crypto::SECRET_KEY_SIZE);
         assert_eq!(MT_MLDSA_SIG_SIZE, mt_crypto::SIGNATURE_SIZE);
+        assert_eq!(MT_MLKEM_SEED_LEN, mt_crypto::MLKEM_SEED_SIZE);
+        assert_eq!(MT_MLKEM_PUBKEY_SIZE, mt_crypto::MLKEM_PUBLIC_KEY_SIZE);
+        assert_eq!(MT_MLKEM_SECKEY_SIZE, mt_crypto::MLKEM_SECRET_KEY_SIZE);
+        assert_eq!(MT_MLKEM_CT_SIZE, mt_crypto::MLKEM_CIPHERTEXT_SIZE);
+        assert_eq!(MT_MLKEM_SS_SIZE, mt_crypto::MLKEM_SHARED_SECRET_SIZE);
     }
 }
 
