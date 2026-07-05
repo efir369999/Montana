@@ -68,6 +68,18 @@ int mt_mlkem_decaps(const uint8_t *seckey, const uint8_t *ct, uint8_t *out_ss);
 /* 24 слова -> app_kem_key (ML-KEM-768, роль "mt-app-encryption-key"). */
 int mt_app_kem_from_mnemonic(const char *mnemonic_utf8, uint8_t *out_pubkey, uint8_t *out_seckey);
 
+/* Движок E2E (mt-messenger-e2e), Этап 6 хот-путь. Выходы — owned-буферы,
+ * освобождать mt_e2e_free(ptr,len). session — непрозрачный блоб SessionState. */
+void mt_e2e_free(uint8_t *ptr, size_t len);
+int mt_e2e_encrypt(const uint8_t *session, size_t session_len,
+                   const uint8_t *pt, size_t pt_len, const uint8_t *rng_seed,
+                   uint8_t **out_session, size_t *out_session_len,
+                   uint8_t **out_msg, size_t *out_msg_len);
+int mt_e2e_decrypt(const uint8_t *session, size_t session_len,
+                   const uint8_t *msg, size_t msg_len,
+                   uint8_t **out_session, size_t *out_session_len,
+                   uint8_t **out_pt, size_t *out_pt_len);
+
 #ifdef __cplusplus
 }
 #endif
