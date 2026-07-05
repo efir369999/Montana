@@ -95,3 +95,20 @@ fn forged_message_does_not_advance() {
     assert!(bob.decrypt(&forged).is_err());
     assert_eq!(bob.decrypt(&m1).unwrap(), b"real");
 }
+
+#[test]
+fn session_survives_serialization() {
+    let (mut alice, mut bob) = setup();
+    let m1 = alice.encrypt(b"first", &[0xA1; 64]).unwrap();
+    assert_eq!(bob.decrypt(&m1).unwrap(), b"first");
+
+    // Боб сохраняет состояние, «перезагружается», продолжает
+    let blob = bob.to_bytes();
+    let mut bob2 = SessionState::from_bytes(&blob).unwrap();
+
+    let r1 = bob2.encrypt(b"after-reload", &[0xB1; 64]).unwrap();
+    assert_eq!(alice.decrypt(&r1).unwrap(), b"after-reload");
+
+    let m2 = alice.encrypt(b"second", &[0xA2; 64]).unwrap();
+    assert_eq!(bob2.decrypt(&m2).unwrap(), b"second");
+}

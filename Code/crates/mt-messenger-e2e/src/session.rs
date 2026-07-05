@@ -43,6 +43,91 @@ fn to_pub(pk: &MlkemPublicKey) -> [u8; MLKEM_PUBKEY_SIZE] {
     pk.as_bytes().to_owned()
 }
 
+fn put_opt_pub(o: &mut Vec<u8>, v: &Option<[u8; MLKEM_PUBKEY_SIZE]>) {
+    match v {
+        Some(x) => {
+            o.push(1);
+            o.extend_from_slice(x);
+        },
+        None => o.push(0),
+    }
+}
+fn put_opt_ct(o: &mut Vec<u8>, v: &Option<[u8; MLKEM_CT_SIZE]>) {
+    match v {
+        Some(x) => {
+            o.push(1);
+            o.extend_from_slice(x);
+        },
+        None => o.push(0),
+    }
+}
+fn put_opt32(o: &mut Vec<u8>, v: &Option<[u8; 32]>) {
+    match v {
+        Some(x) => {
+            o.push(1);
+            o.extend_from_slice(x);
+        },
+        None => o.push(0),
+    }
+}
+fn get_opt_pub(b: &[u8], p: &mut usize) -> Result<Option<[u8; MLKEM_PUBKEY_SIZE]>, RatchetError> {
+    if b.len() < *p + 1 {
+        return Err(RatchetError::BadFormat);
+    }
+    let f = b[*p];
+    *p += 1;
+    match f {
+        0 => Ok(None),
+        1 => {
+            if b.len() < *p + MLKEM_PUBKEY_SIZE {
+                return Err(RatchetError::BadFormat);
+            }
+            let a: [u8; MLKEM_PUBKEY_SIZE] = b[*p..*p + MLKEM_PUBKEY_SIZE].try_into().unwrap();
+            *p += MLKEM_PUBKEY_SIZE;
+            Ok(Some(a))
+        },
+        _ => Err(RatchetError::BadFormat),
+    }
+}
+fn get_opt_ct(b: &[u8], p: &mut usize) -> Result<Option<[u8; MLKEM_CT_SIZE]>, RatchetError> {
+    if b.len() < *p + 1 {
+        return Err(RatchetError::BadFormat);
+    }
+    let f = b[*p];
+    *p += 1;
+    match f {
+        0 => Ok(None),
+        1 => {
+            if b.len() < *p + MLKEM_CT_SIZE {
+                return Err(RatchetError::BadFormat);
+            }
+            let a: [u8; MLKEM_CT_SIZE] = b[*p..*p + MLKEM_CT_SIZE].try_into().unwrap();
+            *p += MLKEM_CT_SIZE;
+            Ok(Some(a))
+        },
+        _ => Err(RatchetError::BadFormat),
+    }
+}
+fn get_opt32(b: &[u8], p: &mut usize) -> Result<Option<[u8; 32]>, RatchetError> {
+    if b.len() < *p + 1 {
+        return Err(RatchetError::BadFormat);
+    }
+    let f = b[*p];
+    *p += 1;
+    match f {
+        0 => Ok(None),
+        1 => {
+            if b.len() < *p + 32 {
+                return Err(RatchetError::BadFormat);
+            }
+            let a: [u8; 32] = b[*p..*p + 32].try_into().unwrap();
+            *p += 32;
+            Ok(Some(a))
+        },
+        _ => Err(RatchetError::BadFormat),
+    }
+}
+
 impl SessionState {
     /// Инициатор (Алиса) из выходов Этапа 5.
     pub fn init_initiator(
@@ -144,6 +229,79 @@ impl SessionState {
         out.extend_from_slice(&body);
         self.ns += 1;
         Ok(out)
+    }
+
+    /// Сериализация состояния сессии (для хранения на устройстве / передачи через FFI).
+    /// Канонический LE-формат. Секретный ключ включён — блоб хранить как секрет.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut o = Vec::new();
+        o.extend_from_slice(&self.session_id);
+        o.extend_from_slice(&self.rk);
+        o.extend_from_slice(&self.dhs_pub);
+        o.extend_from_slice(self.dhs_sk.as_bytes());
+        put_opt_pub(&mut o, &self.dhr);
+        put_opt32(&mut o, &self.cks);
+        put_opt_ct(&mut o, &self.send_ct);
+        put_opt32(&mut o, &self.ckr);
+        o.extend_from_slice(&self.ns.to_le_bytes());
+        o.extend_from_slice(&self.nr.to_le_bytes());
+        o.extend_from_slice(&self.pn.to_le_bytes());
+        o.push(self.ratchet_pending as u8);
+        o.extend_from_slice(&(self.mkskipped.len() as u32).to_le_bytes());
+        for (rp, n, mk) in &self.mkskipped {
+            o.extend_from_slice(rp);
+            o.extend_from_slice(&n.to_le_bytes());
+            o.extend_from_slice(mk);
+        }
+        o
+    }
+
+    pub fn from_bytes(b: &[u8]) -> Result<Self, RatchetError> {
+        let mut p = 0usize;
+        let take = |p: &mut usize, n: usize| -> Result<&[u8], RatchetError> {
+            if b.len() < *p + n {
+                return Err(RatchetError::BadFormat);
+            }
+            let s = &b[*p..*p + n];
+            *p += n;
+            Ok(s)
+        };
+        let session_id: [u8; 32] = take(&mut p, 32)?.try_into().unwrap();
+        let rk: [u8; 32] = take(&mut p, 32)?.try_into().unwrap();
+        let dhs_pub: [u8; MLKEM_PUBKEY_SIZE] = take(&mut p, MLKEM_PUBKEY_SIZE)?.try_into().unwrap();
+        let dhs_sk =
+            MlkemSecretKey::from_slice(take(&mut p, 2400)?).ok_or(RatchetError::BadFormat)?;
+        let dhr = get_opt_pub(b, &mut p)?;
+        let cks = get_opt32(b, &mut p)?;
+        let send_ct = get_opt_ct(b, &mut p)?;
+        let ckr = get_opt32(b, &mut p)?;
+        let ns = u32::from_le_bytes(take(&mut p, 4)?.try_into().unwrap());
+        let nr = u32::from_le_bytes(take(&mut p, 4)?.try_into().unwrap());
+        let pn = u32::from_le_bytes(take(&mut p, 4)?.try_into().unwrap());
+        let ratchet_pending = take(&mut p, 1)?[0] != 0;
+        let count = u32::from_le_bytes(take(&mut p, 4)?.try_into().unwrap()) as usize;
+        let mut mkskipped = Vec::with_capacity(count);
+        for _ in 0..count {
+            let rp = take(&mut p, MLKEM_PUBKEY_SIZE)?.to_vec();
+            let n = u32::from_le_bytes(take(&mut p, 4)?.try_into().unwrap());
+            let mk: [u8; 32] = take(&mut p, 32)?.try_into().unwrap();
+            mkskipped.push((rp, n, mk));
+        }
+        Ok(Self {
+            session_id,
+            rk,
+            dhs_pub,
+            dhs_sk,
+            dhr,
+            cks,
+            send_ct,
+            ckr,
+            ns,
+            nr,
+            pn,
+            ratchet_pending,
+            mkskipped,
+        })
     }
 
     /// RatchetDecrypt. Состояние меняется только при успехе AEAD.
