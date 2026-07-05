@@ -1,0 +1,20 @@
+[package]
+name = "mt-messenger-e2e"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+description = "Montana Messenger E2E — общий Rust-движок (PQXDH, KEM-храповик, слепые метки) для iOS/Web/Python. Спека Montana Messenger v0.40.0, Этапы 5-7. Клиенты линкуют, не реимплементируют."
+
+[dependencies]
+sha2 = { workspace = true }
+zeroize = { workspace = true }
+chacha20poly1305 = "0.10"
+mt-crypto = { path = "../mt-crypto" }
+mt-mnemonic = { path = "../mt-mnemonic" }
+mt-codec = { path = "../mt-codec" }
+
+[dev-dependencies]
+hex = "0.4"
