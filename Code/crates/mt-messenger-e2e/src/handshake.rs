@@ -46,6 +46,8 @@ pub struct RecipientBundle<'a> {
     pub one_time: Option<(u32, &'a MlkemPublicKey)>,
 }
 
+// PQXDH transcript (spec stage 5): fields kept explicit for byte-exact layout
+#[allow(clippy::too_many_arguments)]
 fn transcript_bytes(
     account_id_a: &[u8; 32],
     account_id_b: &[u8; 32],
@@ -314,7 +316,7 @@ pub fn process_handshake(
         bob.app_kem_pub,
         bob.signed_prekey_pub,
         spk_id_b,
-        opk_for_transcript.map(|(id, pk)| (id, pk)),
+        opk_for_transcript,
         ct_id.try_into().unwrap(),
         ct_spk.try_into().unwrap(),
         ct_opk.map(|c| c.try_into().unwrap()),

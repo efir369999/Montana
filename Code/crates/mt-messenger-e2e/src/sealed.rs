@@ -8,6 +8,7 @@ use mt_crypto::{
     mlkem_decapsulate, mlkem_encapsulate, MlkemCiphertext, MlkemPublicKey, MlkemSecretKey,
 };
 
+use crate::handshake::E2eError;
 use crate::kdf::hkdf_sha256;
 use crate::ratchet::{open, seal};
 
@@ -86,8 +87,8 @@ pub fn seal_envelope(
     item_id: &[u8; ITEM_ID_SIZE],
     delete_preimage: &[u8; 32],
     pot_steps: u32,
-) -> Result<Envelope, ()> {
-    let (ct_seal, ss_seal) = mlkem_encapsulate(app_kem_pub_b).map_err(|_| ())?;
+) -> Result<Envelope, E2eError> {
+    let (ct_seal, ss_seal) = mlkem_encapsulate(app_kem_pub_b).map_err(|_| E2eError::Crypto)?;
     let mut ss_arr = [0u8; 32];
     ss_arr.copy_from_slice(ss_seal.as_bytes());
     let (seal_k, seal_n) = seal_key_nonce(&ss_arr);
