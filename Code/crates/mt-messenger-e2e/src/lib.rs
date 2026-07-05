@@ -6,6 +6,7 @@
 //! - `ratchet` — Этап 6: двойной храповик (KEM-храповик), AEAD сообщений.
 //! - `labels`  — Этап 7: слепая доставка, вращающиеся метки очередей.
 
+pub mod handshake;
 pub mod kdf;
 pub mod labels;
 pub mod pqxdh;
