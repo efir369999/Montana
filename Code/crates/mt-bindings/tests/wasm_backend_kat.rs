@@ -682,7 +682,6 @@ fn seal_roundtrip() {
     assert_eq!(open(&kb, &nb, &sealed, ad).unwrap(), b"InitialHandshake");
 }
 
-
 fn frame(t: u8, body: &[u8]) -> Vec<u8> {
     let mut fb = vec![t];
     fb.extend_from_slice(body);
