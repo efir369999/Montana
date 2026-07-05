@@ -1016,3 +1016,19 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Closure cost:**    > 1 working day — a separate milestone.
 **Status:**          open (spec-defined, code pending)
 **Acknowledged:**    author asked to specify entry distribution in the spec now and defer the implementation (2026-07-02); recorded per critic finding F-4 (spec-ahead-of-code)
+
+
+---
+
+## DEV-047 (open, acknowledged): Metadata-private mailbox access for federated clients (segregated indirect legs) specified, not implemented
+
+**Crate:**           mt-net / messenger client (target)
+**File:line:**       not yet implemented (federated clients connect directly to the mailbox relay)
+**Spec section:**    Network spec "Metadata-private mailbox access (federated clients)"; Montana Messenger stage 7 (blind delivery), SUBSCRIBE segregation
+**Spec quote:**      "Two relay roles serve a federated client, and they are distinct relays in different /16 groups: the inbox relay ... the session relay ... neither relay alone links an account to a session label"
+**What the code does:** nothing. A federated client reaches a single mailbox relay directly; there is no access_class typing, no transit-relay indirection, and no inbox-relay / session-relay separation. The volunteer transit-relay primitive (Circuit Relay v2) exists but is not yet wired for metadata-private mailbox access, and the messenger client uses one relay for both the account-derived inbox label and the rotating session labels.
+**Severity:**        medium (spec-ahead-of-code; a privacy feature gap, not a wrong-behaviour bug). Until implemented, a single active-logging relay can correlate the two ends of a federated conversation by IP + the stable inbox-label co-batched with session labels.
+**Closure path:**    (a) mt-net + substrate: the inbox is an erasure-coded object in the §3 data substrate (m-of-k across the k nodes at H(account_id || epoch_seed), epoch_seed = the cemented aggregate carried from the previous selection interval per [I-8], reshuffled each interval with shard migration for durability); the session node is a single stable node at H(routing_secret) (secret-derived, untargetable, no rotation); relays and committee nodes are authenticated by IBT + Node-Table Merkle membership against a state root the light client obtains by verifying the signed cemented header chain from the genesis manifest; web-only clients run reduced-assurance (bootstrap trust); each leg reached over a volunteer transit-relay (put/poll split under /16+ASN diversity), so no single role holds the account marker with the session labels; (b) messenger client: inbox subscription on the inbox relay, session subscription on the session relay, on decorrelated poll clocks.
+**Closure cost:**    > 1 working day — a separate milestone (spans mt-net transport and the messenger client).
+**Status:**          open (spec-defined across Network spec + Messenger stage 7, code pending)
+**Acknowledged:**    author asked to apply the critic's 3-axis identity-marker segregation to the spec (2026-07-05); recorded per that decision
