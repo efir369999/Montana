@@ -15,10 +15,10 @@ mt-mnemonic   = { path = "../mt-mnemonic" }
 mt-codec      = { path = "../mt-codec" }
 zeroize       = { workspace = true }
 sha2          = { workspace = true }
+mt-messenger-e2e = { path = "../mt-messenger-e2e" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 mt-crypto     = { path = "../mt-crypto" }
-mt-messenger-e2e = { path = "../mt-messenger-e2e" }
 mt-state      = { path = "../mt-state" }
 mt-account    = { path = "../mt-account" }
 argon2        = { version = "0.5", default-features = false, features = ["alloc"] }
