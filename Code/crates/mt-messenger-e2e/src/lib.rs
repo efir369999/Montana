@@ -11,4 +11,5 @@ pub mod kdf;
 pub mod labels;
 pub mod pqxdh;
 pub mod ratchet;
+pub mod sealed;
 pub mod session;
