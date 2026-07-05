@@ -1923,10 +1923,15 @@ name = "mt-messenger-e2e"
 version = "1.2.0"
 dependencies = [
  "chacha20poly1305",
+ "getrandom 0.2.15",
+ "getrandom 0.4.3",
  "hex",
+ "ml-dsa",
+ "ml-kem",
  "mt-codec",
  "mt-crypto",
  "mt-mnemonic",
+ "rand_core 0.6.4",
  "sha2",
  "zeroize",
 ]

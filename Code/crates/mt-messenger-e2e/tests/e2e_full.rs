@@ -1,46 +1,40 @@
-//! Сквозной тест Этапов 5+6: рукопожатие PQXDH -> переписка через KEM-храповик,
-//! включая ответ (KEM-шаг, PCS) и приём вне порядка (пропущенные ключи).
+//! Сквозной тест Этапов 5+6 на байтовом крипто-API (cfg-развилка).
 
-use mt_crypto::{keypair_from_seed, keypair_from_seed_mlkem};
+use mt_messenger_e2e::crypto::{dsa_pub_from_seed, kem_keypair_from_seed, MLDSA_PUB, MLKEM_PUB};
 use mt_messenger_e2e::handshake::{
-    account_id, build_handshake, process_handshake, RecipientBundle, RecipientKeys, MLDSA_PUBKEY,
-    MLKEM_PUBKEY,
+    account_id, build_handshake, process_handshake, RecipientBundle, RecipientKeys,
 };
 use mt_messenger_e2e::session::SessionState;
 
 fn setup() -> (SessionState, SessionState) {
-    let (app_pk, app_sk) = keypair_from_seed_mlkem(&[0x11; 64]).unwrap();
-    let (spk_pk, spk_sk) = keypair_from_seed_mlkem(&[0x22; 64]).unwrap();
-    let (opk_pk, opk_sk) = keypair_from_seed_mlkem(&[0x33; 64]).unwrap();
-    let app_arr: [u8; MLKEM_PUBKEY] = app_pk.as_bytes().to_owned();
-    let spk_arr: [u8; MLKEM_PUBKEY] = spk_pk.as_bytes().to_owned();
-    let opk_arr: [u8; MLKEM_PUBKEY] = opk_pk.as_bytes().to_owned();
-    let (bob_acc_pub, _) = keypair_from_seed(&[0x44; 32]).unwrap();
-    let bob_pub: [u8; MLDSA_PUBKEY] = bob_acc_pub.as_bytes().to_owned();
+    let (app_pub, app_sk) = kem_keypair_from_seed(&[0x11; 64]).unwrap();
+    let (spk_pub, spk_sk) = kem_keypair_from_seed(&[0x22; 64]).unwrap();
+    let (opk_pub, opk_sk) = kem_keypair_from_seed(&[0x33; 64]).unwrap();
+    let bob_pub: [u8; MLDSA_PUB] = dsa_pub_from_seed(&[0x44; 32]).unwrap();
     let bob_id = account_id(&bob_pub);
-
-    let (alice_acc_pub, alice_sk) = keypair_from_seed(&[0x55; 32]).unwrap();
-    let alice_pub: [u8; MLDSA_PUBKEY] = alice_acc_pub.as_bytes().to_owned();
+    let alice_pub: [u8; MLDSA_PUB] = dsa_pub_from_seed(&[0x55; 32]).unwrap();
 
     let bundle = RecipientBundle {
         account_key_pub: &bob_pub,
-        app_kem_pub: &app_pk,
-        signed_prekey_pub: &spk_pk,
+        app_kem_pub: &app_pub,
+        signed_prekey_pub: &spk_pub,
         spk_id: 7,
-        one_time: Some((99, &opk_pk)),
+        one_time: Some((99, &opk_pub)),
     };
-    let hs = build_handshake(&alice_pub, &alice_sk, &bundle, &[0x66; 64], 1000).unwrap();
+    let hs = build_handshake(&alice_pub, &[0x55; 32], &bundle, &[0x66; 64], 1000).unwrap();
     let keys = RecipientKeys {
         account_id: &bob_id,
-        app_kem_pub: &app_arr,
+        app_kem_pub: &app_pub,
         app_kem_sk: &app_sk,
-        signed_prekey_pub: &spk_arr,
+        signed_prekey_pub: &spk_pub,
         signed_prekey_sk: &spk_sk,
-        one_time: Some((&opk_arr, &opk_sk)),
+        one_time: Some((&opk_pub, &opk_sk)),
     };
     let proc = process_handshake(&hs.bytes, &keys, 1001, 604800).unwrap();
     assert_eq!(hs.session.root_key, proc.session.root_key);
 
+    let _ = (opk_pub, opk_sk, MLKEM_PUB);
+    let (_spk_pub2, spk_sk2) = kem_keypair_from_seed(&[0x22; 64]).unwrap();
     let alice = SessionState::init_initiator(
         hs.transcript_hash,
         hs.session.root_key,
@@ -49,13 +43,12 @@ fn setup() -> (SessionState, SessionState) {
         hs.eph_kem_sk_a,
         hs.signed_prekey_pub_b,
     );
-    let (_spk_pk2, spk_sk2) = keypair_from_seed_mlkem(&[0x22; 64]).unwrap();
     let bob = SessionState::init_responder(
         proc.transcript_hash,
         proc.session.root_key,
         proc.session.sending_chain_key,
         proc.eph_kem_pub_a,
-        spk_arr,
+        spk_pub,
         spk_sk2,
     );
     (alice, bob)
@@ -101,14 +94,10 @@ fn session_survives_serialization() {
     let (mut alice, mut bob) = setup();
     let m1 = alice.encrypt(b"first", &[0xA1; 64]).unwrap();
     assert_eq!(bob.decrypt(&m1).unwrap(), b"first");
-
-    // Боб сохраняет состояние, «перезагружается», продолжает
     let blob = bob.to_bytes();
     let mut bob2 = SessionState::from_bytes(&blob).unwrap();
-
     let r1 = bob2.encrypt(b"after-reload", &[0xB1; 64]).unwrap();
     assert_eq!(alice.decrypt(&r1).unwrap(), b"after-reload");
-
     let m2 = alice.encrypt(b"second", &[0xA2; 64]).unwrap();
     assert_eq!(bob2.decrypt(&m2).unwrap(), b"second");
 }

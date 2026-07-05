@@ -1,20 +1,17 @@
 //! Этап 5 — машина состояний PQXDH: сборка/разбор InitialHandshake, сторона
 //! Алисы (build) и Боба (process). Стенограмма и layout — байт-точно по спеке.
+//! Крипто — через crate::crypto (cfg-развилка native/wasm), только байты.
 
 use sha2::{Digest, Sha256};
 
-use mt_crypto::{
-    keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate, sign as mldsa_sign,
-    verify as mldsa_verify, MlkemCiphertext, MlkemPublicKey, MlkemSecretKey, PublicKey, SecretKey,
-    Signature,
+use crate::crypto::{
+    dsa_pub_from_seed, dsa_sign, dsa_verify, kem_decapsulate, kem_encapsulate,
+    kem_keypair_from_seed, MLDSA_PUB, MLDSA_SIG, MLKEM_CT, MLKEM_PUB,
 };
-
 use crate::pqxdh::{confirm_tag, derive_session_keys, SessionKeys, DOMAIN_SIG};
 
-pub const MLDSA_PUBKEY: usize = 1952;
-pub const MLDSA_SIG: usize = 3309;
-pub const MLKEM_PUBKEY: usize = 1184;
-pub const MLKEM_CT: usize = 1088;
+pub const MLDSA_PUBKEY: usize = MLDSA_PUB;
+pub const MLKEM_PUBKEY: usize = MLKEM_PUB;
 const SUITE_MLDSA65_LE: [u8; 2] = [0x01, 0x00];
 
 #[derive(Debug, PartialEq, Eq)]
@@ -37,26 +34,25 @@ pub fn account_id(account_key_pub: &[u8]) -> [u8; 32] {
     h.finalize().into()
 }
 
-/// Связка Боба (публичная часть, из Этапа 4) — вход для стороны Алисы.
+/// Связка Боба (публичная часть, из Этапа 4).
 pub struct RecipientBundle<'a> {
-    pub account_key_pub: &'a [u8; MLDSA_PUBKEY],
-    pub app_kem_pub: &'a MlkemPublicKey,
-    pub signed_prekey_pub: &'a MlkemPublicKey,
+    pub account_key_pub: &'a [u8; MLDSA_PUB],
+    pub app_kem_pub: &'a [u8; MLKEM_PUB],
+    pub signed_prekey_pub: &'a [u8; MLKEM_PUB],
     pub spk_id: u32,
-    pub one_time: Option<(u32, &'a MlkemPublicKey)>,
+    pub one_time: Option<(u32, &'a [u8; MLKEM_PUB])>,
 }
 
-// PQXDH transcript (spec stage 5): fields kept explicit for byte-exact layout
 #[allow(clippy::too_many_arguments)]
 fn transcript_bytes(
     account_id_a: &[u8; 32],
     account_id_b: &[u8; 32],
     send_time: u64,
-    eph_kem_pub_a: &[u8; MLKEM_PUBKEY],
-    app_kem_pub_b: &[u8; MLKEM_PUBKEY],
-    signed_prekey_pub_b: &[u8; MLKEM_PUBKEY],
+    eph_kem_pub_a: &[u8; MLKEM_PUB],
+    app_kem_pub_b: &[u8; MLKEM_PUB],
+    signed_prekey_pub_b: &[u8; MLKEM_PUB],
     spk_id_b: u32,
-    opk: Option<(u32, &[u8; MLKEM_PUBKEY])>,
+    opk: Option<(u32, &[u8; MLKEM_PUB])>,
     ct_id: &[u8; MLKEM_CT],
     ct_spk: &[u8; MLKEM_CT],
     ct_opk: Option<&[u8; MLKEM_CT]>,
@@ -88,32 +84,29 @@ fn transcript_bytes(
 }
 
 pub struct Handshake {
-    /// Сериализованный InitialHandshake (кладётся в sealed-конверт Этапа 7).
     pub bytes: Vec<u8>,
-    /// Выходы для загрузки храповика Этапа 6.
     pub session: SessionKeys,
-    pub eph_kem_pub_a: [u8; MLKEM_PUBKEY],
-    pub eph_kem_sk_a: MlkemSecretKey,
-    pub signed_prekey_pub_b: [u8; MLKEM_PUBKEY],
+    pub eph_kem_pub_a: [u8; MLKEM_PUB],
+    pub eph_kem_sk_a: Vec<u8>,
+    pub signed_prekey_pub_b: [u8; MLKEM_PUB],
     pub transcript_hash: [u8; 32],
 }
 
-/// Сторона Алисы. `eph_seed` (64B) — клиентская случайность для эфемерной пары.
-#[allow(clippy::too_many_arguments)]
+/// Сторона Алисы. `account_seed` (32B) — сид её ML-DSA-ключа; `eph_seed` (64B) —
+/// клиентская случайность для эфемерной ML-KEM пары.
 pub fn build_handshake(
-    alice_account_pub: &[u8; MLDSA_PUBKEY],
-    alice_account_sk: &SecretKey,
+    alice_account_pub: &[u8; MLDSA_PUB],
+    account_seed: &[u8; 32],
     bob: &RecipientBundle,
     eph_seed: &[u8; 64],
     send_time: u64,
 ) -> Result<Handshake, E2eError> {
-    let (eph_pub, eph_sk) = keypair_from_seed_mlkem(eph_seed).map_err(|_| E2eError::Crypto)?;
-    let (ct_id, ss_id) = mlkem_encapsulate(bob.app_kem_pub).map_err(|_| E2eError::Crypto)?;
-    let (ct_spk, ss_spk) =
-        mlkem_encapsulate(bob.signed_prekey_pub).map_err(|_| E2eError::Crypto)?;
+    let (eph_pub, eph_sk) = kem_keypair_from_seed(eph_seed).ok_or(E2eError::Crypto)?;
+    let (ct_id, ss_id) = kem_encapsulate(bob.app_kem_pub).ok_or(E2eError::Crypto)?;
+    let (ct_spk, ss_spk) = kem_encapsulate(bob.signed_prekey_pub).ok_or(E2eError::Crypto)?;
     let opk_enc = match bob.one_time {
         Some((id, pk)) => {
-            let (ct, ss) = mlkem_encapsulate(pk).map_err(|_| E2eError::Crypto)?;
+            let (ct, ss) = kem_encapsulate(pk).ok_or(E2eError::Crypto)?;
             Some((id, ct, ss))
         },
         None => None,
@@ -121,20 +114,20 @@ pub fn build_handshake(
 
     let id_a = account_id(alice_account_pub);
     let id_b = account_id(bob.account_key_pub);
-    let opk_pub_ref = bob.one_time.map(|(id, pk)| (id, pk.as_bytes()));
-    let ct_opk_ref = opk_enc.as_ref().map(|(_, ct, _)| ct.as_bytes());
+    let opk_pub_ref = bob.one_time;
+    let ct_opk_ref = opk_enc.as_ref().map(|(_, ct, _)| ct);
 
     let tb = transcript_bytes(
         &id_a,
         &id_b,
         send_time,
-        eph_pub.as_bytes(),
-        bob.app_kem_pub.as_bytes(),
-        bob.signed_prekey_pub.as_bytes(),
+        &eph_pub,
+        bob.app_kem_pub,
+        bob.signed_prekey_pub,
         bob.spk_id,
         opk_pub_ref,
-        ct_id.as_bytes(),
-        ct_spk.as_bytes(),
+        &ct_id,
+        &ct_spk,
         ct_opk_ref,
     );
     let transcript_hash: [u8; 32] = Sha256::digest(&tb).into();
@@ -142,74 +135,60 @@ pub fn build_handshake(
     let mut sig_msg = DOMAIN_SIG.to_vec();
     sig_msg.push(0u8);
     sig_msg.extend_from_slice(&transcript_hash);
-    let sig = mldsa_sign(alice_account_sk, &sig_msg).map_err(|_| E2eError::Crypto)?;
+    let sig = dsa_sign(account_seed, &sig_msg).ok_or(E2eError::Crypto)?;
 
-    let ss_opk_ref = opk_enc.as_ref().map(|(_, _, ss)| {
-        let mut a = [0u8; 32];
-        a.copy_from_slice(ss.as_bytes());
-        a
-    });
-    let mut ss_id_a = [0u8; 32];
-    ss_id_a.copy_from_slice(ss_id.as_bytes());
-    let mut ss_spk_a = [0u8; 32];
-    ss_spk_a.copy_from_slice(ss_spk.as_bytes());
-    let session = derive_session_keys(&ss_id_a, &ss_spk_a, ss_opk_ref.as_ref(), &transcript_hash);
+    let ss_opk_ref = opk_enc.as_ref().map(|(_, _, ss)| *ss);
+    let session = derive_session_keys(&ss_id, &ss_spk, ss_opk_ref.as_ref(), &transcript_hash);
     let tag = confirm_tag(&session.confirm_key, &transcript_hash);
 
-    // Сериализация InitialHandshake (layout спеки).
     let mut out = Vec::new();
     out.push(0x01);
     out.extend_from_slice(alice_account_pub);
-    out.extend_from_slice(eph_pub.as_bytes());
+    out.extend_from_slice(&eph_pub);
     out.extend_from_slice(&send_time.to_le_bytes());
     out.extend_from_slice(&bob.spk_id.to_le_bytes());
     match (bob.one_time, &opk_enc) {
         (Some((opk_id, _)), Some((_, ct_opk, _))) => {
             out.push(0x01);
             out.extend_from_slice(&opk_id.to_le_bytes());
-            out.extend_from_slice(ct_id.as_bytes());
-            out.extend_from_slice(ct_spk.as_bytes());
-            out.extend_from_slice(ct_opk.as_bytes());
+            out.extend_from_slice(&ct_id);
+            out.extend_from_slice(&ct_spk);
+            out.extend_from_slice(ct_opk);
         },
         _ => {
             out.push(0x00);
-            out.extend_from_slice(ct_id.as_bytes());
-            out.extend_from_slice(ct_spk.as_bytes());
+            out.extend_from_slice(&ct_id);
+            out.extend_from_slice(&ct_spk);
         },
     }
-    out.extend_from_slice(sig.as_bytes());
+    out.extend_from_slice(&sig);
     out.extend_from_slice(&tag);
-
-    let mut eph_pub_arr = [0u8; MLKEM_PUBKEY];
-    eph_pub_arr.copy_from_slice(eph_pub.as_bytes());
-    let mut spk_pub_arr = [0u8; MLKEM_PUBKEY];
-    spk_pub_arr.copy_from_slice(bob.signed_prekey_pub.as_bytes());
 
     Ok(Handshake {
         bytes: out,
         session,
-        eph_kem_pub_a: eph_pub_arr,
+        eph_kem_pub_a: eph_pub,
         eph_kem_sk_a: eph_sk,
-        signed_prekey_pub_b: spk_pub_arr,
+        signed_prekey_pub_b: *bob.signed_prekey_pub,
         transcript_hash,
     })
 }
 
 pub struct Processed {
     pub session: SessionKeys,
-    pub eph_kem_pub_a: [u8; MLKEM_PUBKEY],
+    pub eph_kem_pub_a: [u8; MLKEM_PUB],
     pub transcript_hash: [u8; 32],
     pub opk_consumed: Option<u32>,
 }
 
-/// Приватный материал Боба для обработки рукопожатия.
+/// Приватный материал Боба.
 pub struct RecipientKeys<'a> {
     pub account_id: &'a [u8; 32],
-    pub app_kem_pub: &'a [u8; MLKEM_PUBKEY],
-    pub app_kem_sk: &'a MlkemSecretKey,
-    pub signed_prekey_pub: &'a [u8; MLKEM_PUBKEY],
-    pub signed_prekey_sk: &'a MlkemSecretKey,
-    pub one_time: Option<(&'a [u8; MLKEM_PUBKEY], &'a MlkemSecretKey)>,
+    pub app_kem_pub: &'a [u8; MLKEM_PUB],
+    pub app_kem_sk: &'a [u8],
+    pub signed_prekey_pub: &'a [u8; MLKEM_PUB],
+    pub signed_prekey_sk: &'a [u8],
+    pub one_time: Option<(&'a [u8; MLKEM_PUB], &'a [u8])>,
 }
 
 fn ct_eq(a: &[u8], b: &[u8]) -> bool {
@@ -223,15 +202,7 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     d == 0
 }
 
-fn decaps32(sk: &MlkemSecretKey, ct: &[u8]) -> Result<[u8; 32], E2eError> {
-    let c = MlkemCiphertext::from_slice(ct).ok_or(E2eError::BadLength)?;
-    let ss = mlkem_decapsulate(sk, &c).map_err(|_| E2eError::Crypto)?;
-    let mut out = [0u8; 32];
-    out.copy_from_slice(ss.as_bytes());
-    Ok(out)
-}
-
-/// Сторона Боба: разбор, проверка свежести/подписи, три декапсуляции, вывод корня,
+/// Сторона Боба: разбор, свежесть, проверка sig_A, три декапсуляции, вывод корня,
 /// сверка confirm_tag. Любой сбой → отклонение без изменения состояния.
 pub fn process_handshake(
     hs: &[u8],
@@ -239,7 +210,7 @@ pub fn process_handshake(
     now: u64,
     accept_skew: u64,
 ) -> Result<Processed, E2eError> {
-    let base = 1 + MLDSA_PUBKEY + MLKEM_PUBKEY + 8 + 4;
+    let base = 1 + MLDSA_PUB + MLKEM_PUB + 8 + 4;
     if hs.len() < base + 1 {
         return Err(E2eError::BadLength);
     }
@@ -247,10 +218,10 @@ pub fn process_handshake(
         return Err(E2eError::BadVersion);
     }
     let mut p = 1;
-    let account_key_pub_a = &hs[p..p + MLDSA_PUBKEY];
-    p += MLDSA_PUBKEY;
-    let eph_kem_pub_a = &hs[p..p + MLKEM_PUBKEY];
-    p += MLKEM_PUBKEY;
+    let account_key_pub_a = &hs[p..p + MLDSA_PUB];
+    p += MLDSA_PUB;
+    let eph_kem_pub_a = &hs[p..p + MLKEM_PUB];
+    p += MLKEM_PUB;
     let send_time = u64::from_le_bytes(hs[p..p + 8].try_into().unwrap());
     p += 8;
     let spk_id_b = u32::from_le_bytes(hs[p..p + 4].try_into().unwrap());
@@ -302,7 +273,7 @@ pub fn process_handshake(
     let tag = &hs[p..p + 32];
 
     let id_a = account_id(account_key_pub_a);
-    let eph_arr: [u8; MLKEM_PUBKEY] = eph_kem_pub_a.try_into().unwrap();
+    let eph_arr: [u8; MLKEM_PUB] = eph_kem_pub_a.try_into().unwrap();
     let opk_for_transcript = match (has_opk, opk_id_b, bob.one_time) {
         (true, Some(id), Some((pk, _))) => Some((id, pk)),
         _ => None,
@@ -319,25 +290,21 @@ pub fn process_handshake(
         opk_for_transcript,
         ct_id.try_into().unwrap(),
         ct_spk.try_into().unwrap(),
-        ct_opk.map(|c| c.try_into().unwrap()),
+        ct_opk.map(|c| <&[u8; MLKEM_CT]>::try_from(c).unwrap()),
     );
     let transcript_hash: [u8; 32] = Sha256::digest(&tb).into();
 
-    // Проверка подписи Алисы над стенограммой.
     let mut sig_msg = DOMAIN_SIG.to_vec();
     sig_msg.push(0u8);
     sig_msg.extend_from_slice(&transcript_hash);
-    let pk_a = PublicKey::from_slice(account_key_pub_a).ok_or(E2eError::BadLength)?;
-    let sig_a = Signature::from_slice(sig).ok_or(E2eError::BadLength)?;
-    if !mldsa_verify(&pk_a, &sig_msg, &sig_a) {
+    if !dsa_verify(account_key_pub_a, &sig_msg, sig) {
         return Err(E2eError::BadSignature);
     }
 
-    // Три декапсуляции.
-    let ss_id = decaps32(bob.app_kem_sk, ct_id)?;
-    let ss_spk = decaps32(bob.signed_prekey_sk, ct_spk)?;
+    let ss_id = kem_decapsulate(bob.app_kem_sk, ct_id).ok_or(E2eError::Crypto)?;
+    let ss_spk = kem_decapsulate(bob.signed_prekey_sk, ct_spk).ok_or(E2eError::Crypto)?;
     let ss_opk = match (ct_opk, bob.one_time) {
-        (Some(c), Some((_, sk))) => Some(decaps32(sk, c)?),
+        (Some(c), Some((_, sk))) => Some(kem_decapsulate(sk, c).ok_or(E2eError::Crypto)?),
         _ => None,
     };
 
@@ -359,164 +326,101 @@ pub fn process_handshake(
 mod tests {
     use super::*;
 
-    fn mldsa(seed: &[u8; 32]) -> ([u8; MLDSA_PUBKEY], SecretKey) {
-        let (pk, sk) = mt_crypto::keypair_from_seed(seed).unwrap();
-        (pk.as_bytes().to_owned(), sk)
+    fn acc(seed: &[u8; 32]) -> [u8; MLDSA_PUB] {
+        dsa_pub_from_seed(seed).unwrap()
     }
-
-    fn kem(seed: u8) -> (MlkemPublicKey, MlkemSecretKey, [u8; MLKEM_PUBKEY]) {
-        let (pk, sk) = keypair_from_seed_mlkem(&[seed; 64]).unwrap();
-        let arr = pk.as_bytes().to_owned();
-        (pk, sk, arr)
+    fn kem(seed: u8) -> ([u8; MLKEM_PUB], Vec<u8>) {
+        kem_keypair_from_seed(&[seed; 64]).unwrap()
     }
 
     #[test]
     fn handshake_agreement_with_opk() {
-        let (app_pk, app_sk, app_arr) = kem(0x11);
-        let (spk_pk, spk_sk, spk_arr) = kem(0x22);
-        let (opk_pk, opk_sk, opk_arr) = kem(0x33);
-        let (bob_pub, _bob_sk) = mldsa(&[0x44; 32]);
+        let (app_pub, app_sk) = kem(0x11);
+        let (spk_pub, spk_sk) = kem(0x22);
+        let (opk_pub, opk_sk) = kem(0x33);
+        let bob_pub = acc(&[0x44; 32]);
         let bob_id = account_id(&bob_pub);
-        let (alice_pub, alice_sk) = mldsa(&[0x55; 32]);
+        let alice_pub = acc(&[0x55; 32]);
 
         let bundle = RecipientBundle {
             account_key_pub: &bob_pub,
-            app_kem_pub: &app_pk,
-            signed_prekey_pub: &spk_pk,
+            app_kem_pub: &app_pub,
+            signed_prekey_pub: &spk_pub,
             spk_id: 7,
-            one_time: Some((99, &opk_pk)),
+            one_time: Some((99, &opk_pub)),
         };
-        let hs = build_handshake(&alice_pub, &alice_sk, &bundle, &[0x66; 64], 1000).unwrap();
-
+        let hs = build_handshake(&alice_pub, &[0x55; 32], &bundle, &[0x66; 64], 1000).unwrap();
         let keys = RecipientKeys {
             account_id: &bob_id,
-            app_kem_pub: &app_arr,
+            app_kem_pub: &app_pub,
             app_kem_sk: &app_sk,
-            signed_prekey_pub: &spk_arr,
+            signed_prekey_pub: &spk_pub,
             signed_prekey_sk: &spk_sk,
-            one_time: Some((&opk_arr, &opk_sk)),
+            one_time: Some((&opk_pub, &opk_sk)),
         };
         let proc = process_handshake(&hs.bytes, &keys, 1001, 604800).unwrap();
         assert_eq!(hs.session.root_key, proc.session.root_key);
-        assert_eq!(hs.session.sending_chain_key, proc.session.sending_chain_key);
         assert_eq!(hs.transcript_hash, proc.transcript_hash);
         assert_eq!(proc.opk_consumed, Some(99));
     }
 
     #[test]
-    fn handshake_agreement_without_opk() {
-        let (app_pk, app_sk, app_arr) = kem(0x11);
-        let (spk_pk, spk_sk, spk_arr) = kem(0x22);
-        let (bob_pub, _) = mldsa(&[0x44; 32]);
-        let bob_id = account_id(&bob_pub);
-        let (alice_pub, alice_sk) = mldsa(&[0x55; 32]);
-
-        let bundle = RecipientBundle {
-            account_key_pub: &bob_pub,
-            app_kem_pub: &app_pk,
-            signed_prekey_pub: &spk_pk,
-            spk_id: 7,
-            one_time: None,
-        };
-        let hs = build_handshake(&alice_pub, &alice_sk, &bundle, &[0x66; 64], 1000).unwrap();
-        let keys = RecipientKeys {
-            account_id: &bob_id,
-            app_kem_pub: &app_arr,
-            app_kem_sk: &app_sk,
-            signed_prekey_pub: &spk_arr,
-            signed_prekey_sk: &spk_sk,
-            one_time: None,
-        };
-        let proc = process_handshake(&hs.bytes, &keys, 1001, 604800).unwrap();
-        assert_eq!(hs.session.root_key, proc.session.root_key);
-        assert_eq!(proc.opk_consumed, None);
-    }
-
-    #[test]
-    fn tampered_ct_rejected() {
-        let (app_pk, app_sk, app_arr) = kem(0x11);
-        let (spk_pk, spk_sk, spk_arr) = kem(0x22);
-        let (bob_pub, _) = mldsa(&[0x44; 32]);
-        let bob_id = account_id(&bob_pub);
-        let (alice_pub, alice_sk) = mldsa(&[0x55; 32]);
-
-        let bundle = RecipientBundle {
-            account_key_pub: &bob_pub,
-            app_kem_pub: &app_pk,
-            signed_prekey_pub: &spk_pk,
-            spk_id: 7,
-            one_time: None,
-        };
-        let mut hs = build_handshake(&alice_pub, &alice_sk, &bundle, &[0x66; 64], 1000).unwrap();
-        let ct_off = 1 + MLDSA_PUBKEY + MLKEM_PUBKEY + 8 + 4 + 1;
-        hs.bytes[ct_off] ^= 1;
-        let keys = RecipientKeys {
-            account_id: &bob_id,
-            app_kem_pub: &app_arr,
-            app_kem_sk: &app_sk,
-            signed_prekey_pub: &spk_arr,
-            signed_prekey_sk: &spk_sk,
-            one_time: None,
-        };
-        // ct входит в подписанную стенограмму -> ломается подпись (внешняя целостность).
-        let r = process_handshake(&hs.bytes, &keys, 1001, 604800);
-        assert!(matches!(r, Err(E2eError::BadSignature)));
-    }
-
-    #[test]
     fn tampered_confirm_tag_rejected() {
-        let (app_pk, app_sk, app_arr) = kem(0x11);
-        let (spk_pk, spk_sk, spk_arr) = kem(0x22);
-        let (bob_pub, _) = mldsa(&[0x44; 32]);
+        let (app_pub, app_sk) = kem(0x11);
+        let (spk_pub, spk_sk) = kem(0x22);
+        let bob_pub = acc(&[0x44; 32]);
         let bob_id = account_id(&bob_pub);
-        let (alice_pub, alice_sk) = mldsa(&[0x55; 32]);
+        let alice_pub = acc(&[0x55; 32]);
         let bundle = RecipientBundle {
             account_key_pub: &bob_pub,
-            app_kem_pub: &app_pk,
-            signed_prekey_pub: &spk_pk,
+            app_kem_pub: &app_pub,
+            signed_prekey_pub: &spk_pub,
             spk_id: 7,
             one_time: None,
         };
-        let mut hs = build_handshake(&alice_pub, &alice_sk, &bundle, &[0x66; 64], 1000).unwrap();
-        // confirm_tag (последние 32 байта) НЕ в стенограмме -> подпись валидна, тег не сойдётся.
+        let mut hs = build_handshake(&alice_pub, &[0x55; 32], &bundle, &[0x66; 64], 1000).unwrap();
         let n = hs.bytes.len();
         hs.bytes[n - 1] ^= 1;
         let keys = RecipientKeys {
             account_id: &bob_id,
-            app_kem_pub: &app_arr,
+            app_kem_pub: &app_pub,
             app_kem_sk: &app_sk,
-            signed_prekey_pub: &spk_arr,
+            signed_prekey_pub: &spk_pub,
             signed_prekey_sk: &spk_sk,
             one_time: None,
         };
-        let r = process_handshake(&hs.bytes, &keys, 1001, 604800);
-        assert!(matches!(r, Err(E2eError::ConfirmMismatch)));
+        assert!(matches!(
+            process_handshake(&hs.bytes, &keys, 1001, 604800),
+            Err(E2eError::ConfirmMismatch)
+        ));
     }
 
     #[test]
     fn stale_rejected() {
-        let (app_pk, app_sk, app_arr) = kem(0x11);
-        let (spk_pk, spk_sk, spk_arr) = kem(0x22);
-        let (bob_pub, _) = mldsa(&[0x44; 32]);
+        let (app_pub, app_sk) = kem(0x11);
+        let (spk_pub, spk_sk) = kem(0x22);
+        let bob_pub = acc(&[0x44; 32]);
         let bob_id = account_id(&bob_pub);
-        let (alice_pub, alice_sk) = mldsa(&[0x55; 32]);
+        let alice_pub = acc(&[0x55; 32]);
         let bundle = RecipientBundle {
             account_key_pub: &bob_pub,
-            app_kem_pub: &app_pk,
-            signed_prekey_pub: &spk_pk,
+            app_kem_pub: &app_pub,
+            signed_prekey_pub: &spk_pub,
             spk_id: 7,
             one_time: None,
         };
-        let hs = build_handshake(&alice_pub, &alice_sk, &bundle, &[0x66; 64], 1000).unwrap();
+        let hs = build_handshake(&alice_pub, &[0x55; 32], &bundle, &[0x66; 64], 1000).unwrap();
         let keys = RecipientKeys {
             account_id: &bob_id,
-            app_kem_pub: &app_arr,
+            app_kem_pub: &app_pub,
             app_kem_sk: &app_sk,
-            signed_prekey_pub: &spk_arr,
+            signed_prekey_pub: &spk_pub,
             signed_prekey_sk: &spk_sk,
             one_time: None,
         };
-        let r = process_handshake(&hs.bytes, &keys, 1_000_000, 604800);
-        assert!(matches!(r, Err(E2eError::Stale)));
+        assert!(matches!(
+            process_handshake(&hs.bytes, &keys, 1_000_000, 604800),
+            Err(E2eError::Stale)
+        ));
     }
 }

@@ -1,15 +1,12 @@
 //! Этап 6 — машина состояний двойного храповика (KEM-храповик на ML-KEM-768).
-//! RatchetEncrypt/Decrypt поверх примитивов ratchet.rs. Приём — на пробной логике:
-//! состояние меняется только при успехе AEAD (поддельное сообщение не двигает храповик).
+//! Крипта — через crate::crypto (cfg-развилка). Приём — на пробной логике:
+//! состояние меняется только при успехе AEAD.
 
-use mt_crypto::{
-    keypair_from_seed_mlkem, mlkem_decapsulate, mlkem_encapsulate, MlkemCiphertext, MlkemPublicKey,
-    MlkemSecretKey,
-};
-
+use crate::crypto::{kem_decapsulate, kem_encapsulate, kem_keypair_from_seed};
 use crate::ratchet::{ad_bytes, kdf_ck, kdf_rk, msg_key, open, seal, MLKEM_PUBKEY_SIZE};
 
 pub const MLKEM_CT_SIZE: usize = 1088;
+pub const MLKEM_SK_SIZE: usize = 2400;
 pub const MAX_SKIP: u32 = 1000;
 pub const MAX_MKSKIPPED: usize = 2000;
 pub const MAX_PLAINTEXT: usize = 1_048_576;
@@ -27,7 +24,7 @@ pub struct SessionState {
     session_id: [u8; 32],
     rk: [u8; 32],
     dhs_pub: [u8; MLKEM_PUBKEY_SIZE],
-    dhs_sk: MlkemSecretKey,
+    dhs_sk: Vec<u8>,
     dhr: Option<[u8; MLKEM_PUBKEY_SIZE]>,
     cks: Option<[u8; 32]>,
     send_ct: Option<[u8; MLKEM_CT_SIZE]>,
@@ -37,10 +34,6 @@ pub struct SessionState {
     pn: u32,
     ratchet_pending: bool,
     mkskipped: Vec<(Vec<u8>, u32, [u8; 32])>,
-}
-
-fn to_pub(pk: &MlkemPublicKey) -> [u8; MLKEM_PUBKEY_SIZE] {
-    pk.as_bytes().to_owned()
 }
 
 fn put_opt_pub(o: &mut Vec<u8>, v: &Option<[u8; MLKEM_PUBKEY_SIZE]>) {
@@ -129,13 +122,13 @@ fn get_opt32(b: &[u8], p: &mut usize) -> Result<Option<[u8; 32]>, RatchetError> 
 }
 
 impl SessionState {
-    /// Инициатор (Алиса) из выходов Этапа 5.
+    #[allow(clippy::too_many_arguments)]
     pub fn init_initiator(
         session_id: [u8; 32],
         initial_root_key: [u8; 32],
         initial_sending_chain_key: [u8; 32],
         eph_kem_pub_a: [u8; MLKEM_PUBKEY_SIZE],
-        eph_kem_sk_a: MlkemSecretKey,
+        eph_kem_sk_a: Vec<u8>,
         signed_prekey_pub_b: [u8; MLKEM_PUBKEY_SIZE],
     ) -> Self {
         Self {
@@ -155,14 +148,14 @@ impl SessionState {
         }
     }
 
-    /// Получатель (Боб) из выходов Этапа 5.
+    #[allow(clippy::too_many_arguments)]
     pub fn init_responder(
         session_id: [u8; 32],
         initial_root_key: [u8; 32],
         initial_sending_chain_key: [u8; 32],
         eph_kem_pub_a: [u8; MLKEM_PUBKEY_SIZE],
         signed_prekey_pub_b: [u8; MLKEM_PUBKEY_SIZE],
-        signed_prekey_sk_b: MlkemSecretKey,
+        signed_prekey_sk_b: Vec<u8>,
     ) -> Self {
         Self {
             session_id,
@@ -181,64 +174,13 @@ impl SessionState {
         }
     }
 
-    /// RatchetEncrypt. `rng_seed` (64B) — клиентская случайность для нового DHs
-    /// (используется только при выполнении KEM-шага).
-    pub fn encrypt(
-        &mut self,
-        plaintext: &[u8],
-        rng_seed: &[u8; 64],
-    ) -> Result<Vec<u8>, RatchetError> {
-        if plaintext.len() > MAX_PLAINTEXT {
-            return Err(RatchetError::TooLarge);
-        }
-        if self.ratchet_pending {
-            self.pn = self.ns;
-            self.ns = 0;
-            let (new_pub, new_sk) =
-                keypair_from_seed_mlkem(rng_seed).map_err(|_| RatchetError::Crypto)?;
-            let dhr = self.dhr.ok_or(RatchetError::BadFormat)?;
-            let dhr_pk = MlkemPublicKey::from_slice(&dhr).ok_or(RatchetError::BadFormat)?;
-            let (ct, ss) = mlkem_encapsulate(&dhr_pk).map_err(|_| RatchetError::Crypto)?;
-            let mut ss_arr = [0u8; 32];
-            ss_arr.copy_from_slice(ss.as_bytes());
-            let (new_rk, new_cks) = kdf_rk(&self.rk, &ss_arr);
-            self.rk = new_rk;
-            self.cks = Some(new_cks);
-            self.dhs_pub = to_pub(&new_pub);
-            self.dhs_sk = new_sk;
-            self.send_ct = Some(ct.as_bytes().to_owned());
-            self.ratchet_pending = false;
-        }
-        let cks = self.cks.ok_or(RatchetError::BadFormat)?;
-        let (mk, next_cks) = kdf_ck(&cks);
-        self.cks = Some(next_cks);
-        let (enc_key, nonce) = msg_key(&mk);
-        let ad = ad_bytes(&self.session_id, self.pn, self.ns, &self.dhs_pub);
-        let body = seal(&enc_key, &nonce, plaintext, &ad);
-
-        let has_ct = self.send_ct.is_some();
-        let mut out = Vec::new();
-        out.extend_from_slice(&self.dhs_pub);
-        out.push(if has_ct { 0x01 } else { 0x00 });
-        if let Some(ct) = &self.send_ct {
-            out.extend_from_slice(ct);
-        }
-        out.extend_from_slice(&self.pn.to_le_bytes());
-        out.extend_from_slice(&self.ns.to_le_bytes());
-        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
-        out.extend_from_slice(&body);
-        self.ns += 1;
-        Ok(out)
-    }
-
-    /// Сериализация состояния сессии (для хранения на устройстве / передачи через FFI).
-    /// Канонический LE-формат. Секретный ключ включён — блоб хранить как секрет.
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut o = Vec::new();
         o.extend_from_slice(&self.session_id);
         o.extend_from_slice(&self.rk);
         o.extend_from_slice(&self.dhs_pub);
-        o.extend_from_slice(self.dhs_sk.as_bytes());
+        o.extend_from_slice(&(self.dhs_sk.len() as u32).to_le_bytes());
+        o.extend_from_slice(&self.dhs_sk);
         put_opt_pub(&mut o, &self.dhr);
         put_opt32(&mut o, &self.cks);
         put_opt_ct(&mut o, &self.send_ct);
@@ -269,8 +211,11 @@ impl SessionState {
         let session_id: [u8; 32] = take(&mut p, 32)?.try_into().unwrap();
         let rk: [u8; 32] = take(&mut p, 32)?.try_into().unwrap();
         let dhs_pub: [u8; MLKEM_PUBKEY_SIZE] = take(&mut p, MLKEM_PUBKEY_SIZE)?.try_into().unwrap();
-        let dhs_sk =
-            MlkemSecretKey::from_slice(take(&mut p, 2400)?).ok_or(RatchetError::BadFormat)?;
+        let sk_len = u32::from_le_bytes(take(&mut p, 4)?.try_into().unwrap()) as usize;
+        if sk_len != MLKEM_SK_SIZE {
+            return Err(RatchetError::BadFormat);
+        }
+        let dhs_sk = take(&mut p, sk_len)?.to_vec();
         let dhr = get_opt_pub(b, &mut p)?;
         let cks = get_opt32(b, &mut p)?;
         let send_ct = get_opt_ct(b, &mut p)?;
@@ -304,9 +249,51 @@ impl SessionState {
         })
     }
 
-    /// RatchetDecrypt. Состояние меняется только при успехе AEAD.
+    pub fn encrypt(
+        &mut self,
+        plaintext: &[u8],
+        rng_seed: &[u8; 64],
+    ) -> Result<Vec<u8>, RatchetError> {
+        if plaintext.len() > MAX_PLAINTEXT {
+            return Err(RatchetError::TooLarge);
+        }
+        if self.ratchet_pending {
+            self.pn = self.ns;
+            self.ns = 0;
+            let (new_pub, new_sk) = kem_keypair_from_seed(rng_seed).ok_or(RatchetError::Crypto)?;
+            let dhr = self.dhr.ok_or(RatchetError::BadFormat)?;
+            let (ct, ss) = kem_encapsulate(&dhr).ok_or(RatchetError::Crypto)?;
+            let (new_rk, new_cks) = kdf_rk(&self.rk, &ss);
+            self.rk = new_rk;
+            self.cks = Some(new_cks);
+            self.dhs_pub = new_pub;
+            self.dhs_sk = new_sk;
+            self.send_ct = Some(ct);
+            self.ratchet_pending = false;
+        }
+        let cks = self.cks.ok_or(RatchetError::BadFormat)?;
+        let (mk, next_cks) = kdf_ck(&cks);
+        self.cks = Some(next_cks);
+        let (enc_key, nonce) = msg_key(&mk);
+        let ad = ad_bytes(&self.session_id, self.pn, self.ns, &self.dhs_pub);
+        let body = seal(&enc_key, &nonce, plaintext, &ad);
+
+        let has_ct = self.send_ct.is_some();
+        let mut out = Vec::new();
+        out.extend_from_slice(&self.dhs_pub);
+        out.push(if has_ct { 0x01 } else { 0x00 });
+        if let Some(ct) = &self.send_ct {
+            out.extend_from_slice(ct);
+        }
+        out.extend_from_slice(&self.pn.to_le_bytes());
+        out.extend_from_slice(&self.ns.to_le_bytes());
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&body);
+        self.ns += 1;
+        Ok(out)
+    }
+
     pub fn decrypt(&mut self, msg: &[u8]) -> Result<Vec<u8>, RatchetError> {
-        // Разбор
         let mut p = 0;
         if msg.len() < MLKEM_PUBKEY_SIZE + 1 {
             return Err(RatchetError::BadFormat);
@@ -348,7 +335,6 @@ impl SessionState {
             ad_bytes(&self.session_id, m_pn, m_ns, &rp)
         };
 
-        // (1) пропущенный ключ?
         if let Some(idx) = self
             .mkskipped
             .iter()
@@ -357,11 +343,10 @@ impl SessionState {
             let mk = self.mkskipped[idx].2;
             let (enc_key, nonce) = msg_key(&mk);
             let pt = open(&enc_key, &nonce, body, &ad).ok_or(RatchetError::Decrypt)?;
-            self.mkskipped.remove(idx); // расходуется только при успехе
+            self.mkskipped.remove(idx);
             return Ok(pt);
         }
 
-        // Рабочая копия скалярного состояния (secret key только читается).
         let is_kem_step = match &self.dhr {
             Some(d) => &d[..] != ratchet_pub,
             None => true,
@@ -377,7 +362,6 @@ impl SessionState {
             if !has_ct {
                 return Err(RatchetError::BadFormat);
             }
-            // досохранить пропущенные текущей приёмной цепочки до m_pn
             if let (Some(dr), Some(mut c)) = (dhr, ckr) {
                 if m_pn.saturating_sub(nr) > MAX_SKIP {
                     return Err(RatchetError::TooManySkipped);
@@ -389,11 +373,8 @@ impl SessionState {
                     nr += 1;
                 }
             }
-            let ctv = MlkemCiphertext::from_slice(ct.unwrap()).ok_or(RatchetError::BadFormat)?;
-            let ss = mlkem_decapsulate(&self.dhs_sk, &ctv).map_err(|_| RatchetError::Crypto)?;
-            let mut ss_arr = [0u8; 32];
-            ss_arr.copy_from_slice(ss.as_bytes());
-            let (new_rk, new_ckr) = kdf_rk(&rk, &ss_arr);
+            let ss = kem_decapsulate(&self.dhs_sk, ct.unwrap()).ok_or(RatchetError::Crypto)?;
+            let (new_rk, new_ckr) = kdf_rk(&rk, &ss);
             rk = new_rk;
             ckr = Some(new_ckr);
             let mut ndr = [0u8; MLKEM_PUBKEY_SIZE];
@@ -403,7 +384,6 @@ impl SessionState {
             pending = true;
         }
 
-        // пропустить в текущей цепочке до m_ns
         let mut c = ckr.ok_or(RatchetError::BadFormat)?;
         if m_ns.saturating_sub(nr) > MAX_SKIP {
             return Err(RatchetError::TooManySkipped);
@@ -419,7 +399,6 @@ impl SessionState {
         let (enc_key, nonce) = msg_key(&mk);
         let pt = open(&enc_key, &nonce, body, &ad).ok_or(RatchetError::Decrypt)?;
 
-        // Успех AEAD -> коммит рабочей копии.
         self.rk = rk;
         self.ckr = Some(next_c);
         self.dhr = dhr;
