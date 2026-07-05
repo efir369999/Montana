@@ -79,6 +79,17 @@ int mt_e2e_decrypt(const uint8_t *session, size_t session_len,
                    const uint8_t *msg, size_t msg_len,
                    uint8_t **out_session, size_t *out_session_len,
                    uint8_t **out_pt, size_t *out_pt_len);
+int mt_e2e_build_handshake(const uint8_t *alice_account_pub, const uint8_t *alice_account_sk,
+                           const uint8_t *bob_account_pub, const uint8_t *bob_app_kem_pub,
+                           const uint8_t *bob_spk_pub, uint32_t spk_id, uint8_t opk_flag,
+                           uint32_t opk_id, const uint8_t *bob_opk_pub, const uint8_t *eph_seed,
+                           uint64_t send_time, uint8_t **out_hs, size_t *out_hs_len,
+                           uint8_t **out_session, size_t *out_session_len);
+int mt_e2e_process_handshake(const uint8_t *hs, size_t hs_len, const uint8_t *bob_account_id,
+                             const uint8_t *bob_app_kem_pub, const uint8_t *bob_app_kem_sk,
+                             const uint8_t *bob_spk_pub, const uint8_t *bob_spk_sk, uint8_t opk_flag,
+                             const uint8_t *bob_opk_pub, const uint8_t *bob_opk_sk, uint64_t now,
+                             uint64_t accept_skew, uint8_t **out_session, size_t *out_session_len);
 
 #ifdef __cplusplus
 }
