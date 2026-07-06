@@ -1032,3 +1032,16 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Closure cost:**    > 1 working day — a separate milestone (spans mt-net transport and the messenger client).
 **Status:**          open (spec-defined across Network spec + Messenger stage 7, code pending)
 **Acknowledged:**    author asked to apply the critic's 3-axis identity-marker segregation to the spec (2026-07-05); recorded per that decision
+
+## DEV-048 (open, acknowledged): stale delivery model in mt-net (RangeSubscribe 0x63–0x65 + Blob Buffer) superseded by Messenger stage 7
+
+**Crate:**           mt-net (msg_type.rs, payloads.rs, tests/test_vectors.rs, lib.rs, fuzz), mt-net-transport/codec.rs
+**File:line:**       crates/mt-net/src/msg_type.rs (0x63/0x64/0x65), crates/mt-net/src/payloads.rs (RangeSubscribe*, BlobEntry), crates/mt-net/tests/test_vectors.rs (vector_c_0x63/0x64/0x65)
+**Spec section:**    Network spec "Blind message delivery (client layer)" (reconciled); authoritative delivery is Montana Messenger stage 7 (blind delivery: rotating queue labels)
+**Spec quote:**      "The network layer restates no label formula or delivery wire-format ... Delivery frames are messenger application frames inside that session, not network-layer protocol message types"
+**What the code does:** mt-net implements the pre-refactor federated delivery — protocol message types 0x63 RangeSubscribeRequest / 0x64 RangeSubscribeResponse / 0x65 RangeSubscribeError over a Blob Buffer keyed by app_id = SHA-256("mt-app" || label), with 32-byte HKDF / "mt-queue-rotation" labels. Superseded: the messenger delivers over its own application Frame protocol (0x01–0x07 SUBSCRIBE/SEND/DELIVER/ACK/POLL/POLL_RESP) inside the client↔node Noise session, with 16-byte HMAC(routing_secret,"mt-label"‖dir‖W) session labels and a stable SHA-256("mt-inbox"‖account_id) inbox label (Messenger stage 7 KAT route_label_kat).
+**Severity:**        medium (spec-ahead-of-code; dead network-layer message types + divergent label scheme, not a wrong-behaviour bug in the live path). The 32-byte HKDF labels / Blob Buffer do not match the messenger's 16-byte HMAC labels, so a client built on the mt-net types would be wire-incompatible with the messenger.
+**Closure path:**    remove 0x63–0x65 from mt-net::msg_type + payloads + test_vectors + fuzz targets + mt-net-transport codec; drop Blob Buffer / app_id / "mt-queue-rotation" label derivation; federated delivery is the messenger client's Frame protocol over the Noise session (no network-layer RangeSubscribe). Keep 0x60–0x62 BatchLookup (current). Update the message-type registry to 18 codes / 5 categories to match the spec.
+**Closure cost:**    < 1 working day (mechanical removal + registry/test update in mt-net).
+**Status:**          open (spec reconciled in Network spec; mt-net cleanup pending)
+**Acknowledged:**    author asked to reconcile the network spec to the messenger and fix (2026-07-06); recorded per that decision

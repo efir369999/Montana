@@ -1,6 +1,6 @@
 # Montana — Network Layer Specification
 
-**Version:** 1.19.0 (2026-07-06)
+**Version:** 1.20.0 (2026-07-06)
 
 **Layer:** Network — sits between Protocol (low) and App (high).
 
@@ -19,7 +19,7 @@ Montana's network layer covers transport and discovery between consensus nodes a
 - Transport Randomness — unpredictable network-bound seeds
 - PeerRecord and discovery
 - Mesh Transport (Bluetooth / Wi-Fi Direct, store-and-forward)
-- Sync protocols (FastSync, BatchLookup, RangeSubscribe, Label Rotation)
+- Sync protocols (FastSync, BatchLookup)
 - Network-layer Threat Model
 - Network-layer binding KAT vectors
 - apply_mesh_frame and apply_store_and_forward — normative rules
@@ -993,7 +993,7 @@ Operations in Montana are **state events on the canonical TimeChain**, not ephem
 | Sybil eclipse | ✅ via 4-dim diversity | ✅ | ✅ | ✅ |
 | Sender authorship inference (nearby peers) | ✅ via Dandelion++ | ✅ | ✅ | ✅ |
 | Long-term recipient linkability | ✅ via Label Rotation per τ₁ | ✅ | ✅ | ✅ |
-| Hosting third-party metadata | ⚠️ partial — inbox committee (§3) ≠ session node raises the account who-graph to role collusion; activity-timing / volume residual | ✅ via own node | ✅ | ✅ |
+| Hosting third-party metadata | ⚠️ partial — inbox committee ≠ session node raises the account who-graph to role collusion; activity-timing / volume residual | ✅ via own node | ✅ | ✅ |
 | Content surveillance | ✅ via Anchor encryption | ✅ | ✅ | ✅ |
 | Quantum store-now-decrypt-later | ✅ via Noise_PQ XX (post-quantum transport end-to-end) | ✅ | ✅ | ✅ |
 | Backbone GPS-precision timing-correlation | ⚠️ partial through aggregation (10⁶ msg threshold) | ⚠️ same + Tor obscures | ⚠️ + temporal randomization | ⚠️ + multi-path delays |
@@ -1006,7 +1006,7 @@ Markers: ✅ closed; ⚠️ partial / mitigated; ❌ not closed (intentional or 
 
 A network protocol cannot prevent endpoint compromise. **But Montana architecturally bounds the damage** through unique patterns:
 
-- **Light-Node-at-Home split** (App spec § 26): the master_seed lives on the home node, the phone holds only ephemeral session keys. Compromising the phone ≠ compromising the master key.
+- **Light-Node-at-Home split** (App spec, «Light-Node-at-Home»): the master_seed lives on the home node, the phone holds only ephemeral session keys. Compromising the phone ≠ compromising the master key.
 - **Chain-anchored ephemeral session rotation per τ₁**: the session key is derivable via `HKDF(master_seed, current_window || "session-W")`. Maximum exposure window = 60 s.
 - **Junona local pre-processing**: the AI agent on the own node performs decryption + summarization; the phone never holds the full content in memory.
 - **Block-lattice sub-account hierarchy**: the phone uses a daily-spend sub-account ($X/day limit); the master savings account exists only on the home node.
@@ -1084,9 +1084,6 @@ The envelope is always a 14-byte header + payload. Because IBT uniform frames ca
 | 0x60 | BatchLookupRequest | request | `{query_type: u8, count: u8, queries: count × query_entry}` (see the «Batch Lookup Protocol» section) |
 | 0x61 | BatchLookupResponse | response | `{query_type: u8, count: u8, results: count × result_entry}` |
 | 0x62 | BatchLookupError | response | `{query_type: u8, error_code: u8}` |
-| 0x63 | RangeSubscribeRequest | request | `{count: u16, labels: count × 32B}` (see the «Label Rotation + Range Subscribe Protocol» section) |
-| 0x64 | RangeSubscribeResponse | response | `{blob_count: u16, blobs: blob_count × BlobEntry}` |
-| 0x65 | RangeSubscribeError | response | `{error_code: u8}` |
 | 0xF0 | Ping | request | (no payload) |
 | 0xF1 | Pong | response | (no payload) |
 | 0xFF | Bye | one-way | `{reason: u8}` (graceful shutdown) |
@@ -1326,124 +1323,9 @@ On exceeding the limit the client receives a `RateLimited` error and must apply 
 
 ---
 
-## Label Rotation + Range Subscribe Protocol
+## Blind message delivery (client layer)
 
-A baseline-privacy protocol for Blob Buffer polling by account-only users (those who operate through someone else's node). It protects against long-term session identification via static queue labels. It includes a catch-up mechanism for users returning online after an offline period.
-
-The mechanism applies to the client layer (messenger sessions). The rotation formulas are authoritative in the App spec, section 23.2 (single source of truth). The catch-up protocol (RangeSubscribe) is protocol-level message types.
-
-### What is closed and what remains open
-
-**Closed by rotation:**
-- Long-term session identification. The host cannot build a stable map `account_X → {sessions_X}` because the queue labels change every τ₁. The set of labels observed across different windows cannot be correlated without knowing the session's `initial_root_key`.
-- Historical reconstruction from the host's archival logs. Even stored label observations cannot be decomposed into a session identity without the session keys.
-
-**Permanent architectural limits** (not closed at the protocol level for account-only):
-- **Session count.** The host sees the number of active label subscriptions per τ₁ as a proxy for the number of active sessions. Hiding it requires cover traffic, which under self-cover is distinguishable from real by provenance (a blob arriving from the client's own IBT vs external gossip). Protocol-level ambient cover requires continuous background generation of fake messages and does not scale to 1B. Architecturally insurmountable within Montana's invariants.
-- **Activity timing patterns.** The host sees when the client publishes and receives messages. Protection requires constant-rate cover — the same constraints as session count.
-- **Cross-host collusion per-τ₁.** If Alice's host and Bob's host coordinate, pair identification is possible within one τ₁ (publish-receive correlation). Rotation protects against long-term accumulation, not against per-τ₁ collusion.
-
-Full protection against these three classes comes only from the Light-Node-at-Home (see App spec section 26). Your own node = no third-party observer = these leaks do not exist for that user.
-
-### Label rotation formula
-
-Queue labels for a session rotate deterministically every τ₁ based on the current `window_index`. The authoritative formula is in the App spec, section 23.2.
-
-A brief description: label derivation uses `HKDF-SHA-256` with the session's `initial_root_key` as IKM, session_id as salt, and `"mt-queue-rotation" || direction_byte || W.to_le_bytes_8` as info. Both sides of a session derive the same label deterministically for the same window.
-
-**Sync tolerance:** the receiver subscribes to labels for `W ∈ {W_current, W_current − 1}` — a two-window tolerance for canonical-window desynchronization between the participants.
-
-### Message type 0x63 — RangeSubscribeRequest
-
-For users returning online after an offline period. The client computes labels locally for the needed range of windows and requests blobs from the host.
-
-Payload format:
-
-```
-RangeSubscribeRequest:
-  count        2B   <- u16 LE, number of labels in the request (≤ max_range_labels_per_request = 10 000)
-  labels       count × 32B   <- client-computed queue labels for the needed (session × window) pairs
-```
-
-**RangeSubscribeRequest invariants:**
-
-- `count ≤ max_range_labels_per_request` (= 10 000); otherwise → reject `RangeTooLarge`.
-- Labels are 32-byte opaque identifiers; the host does not check their semantic validity (it just looks for matches in the Blob Buffer).
-- The source account (the IBT-authenticated sender) is active in the Account Table.
-- Rate limit: `max_range_subscribes_per_τ₁ = 16` per account per window; on exceedance → reject `RateLimited`.
-
-### Message type 0x64 — RangeSubscribeResponse
-
-Payload format:
-
-```
-RangeSubscribeResponse:
-  blob_count   2B   <- u16 LE, number of blobs found
-  blobs        blob_count × BlobEntry
-
-where BlobEntry:
-  matched_label  32B   <- one of the request labels
-  blob_size      4B    <- u32 LE, blob size in bytes
-  blob_data      blob_size × B   <- encrypted payload
-```
-
-The host returns all blobs from the Blob Buffer whose app_id matches one of the requested labels (via the derivation `app_id = SHA-256("mt-app" || label)`). Blobs are returned in an arbitrary order; the client matches them to labels via the `matched_label` field.
-
-### Message type 0x65 — RangeSubscribeError
-
-```
-RangeSubscribeError:
-  error_code   1B   <- 0x01 RateLimited, 0x02 RangeTooLarge, 0x03 ResourceExhausted
-```
-
-### Host validation workflow
-
-1. Verify the client's IBT authentication (level 3 for account-only).
-2. Verify `count ≤ max_range_labels_per_request`.
-3. Verify the rate limit `max_range_subscribes_per_τ₁`.
-4. For each label in the request, look it up in the local Blob Buffer by app_id.
-5. Assemble all matched blobs into the response.
-6. Send the RangeSubscribeResponse (or a RangeSubscribeError on failure).
-
-**TTL bound.** The Blob Buffer has TTL = τ₂ (~14 days). Labels for windows older than τ₂ are no longer in the Blob Buffer, so the match result is empty. The client may request any labels, but it only makes sense to request up to τ₂ back.
-
-### Efficiency at 1B scale
-
-Worst case offline 1440 τ₁:
-- 100 sessions × 1440 windows × 2 (double-window derivation) = 288 000 labels to catch up.
-- 10 000 labels per request → 29 requests.
-- 16 per τ₁ rate limit → catch up in **2 τ₁**.
-
-Worst case offline 1 τ₂ (full TTL):
-- 100 × 20 160 × 2 = 4.03M labels.
-- 403 requests → 26 τ₁ → **~26 minutes catch-up**.
-
-Host load:
-- 1000 clients × 10K SHA-256 comparisons = 10M lookups per request cycle.
-- SQLite-style read ≤ 10 µs per lookup → 100 sec CPU per 1000 clients.
-- Spread across the catch-up window — peak CPU ~10% when clients return simultaneously after a mass offline event.
-
-Works at 1B.
-
-### Invariant applicability
-
-- **[I-1] PQ-secure:** SHA-256 label comparison + HKDF-SHA-256 label derivation. ✓
-- **[I-2]:** not affected (client layer, not consensus). ✓
-- **[I-3]:** labels are client-layer derived, not consensus state. ✓
-- **[I-5] Commodity hardware:** HKDF is trivial on any CPU. ✓
-- **[I-6] Regulatory compatibility:** RangeSubscribe is a bulk read operation, not a privacy mixer. The labels themselves are visible to the host explicitly. ✓
-- **[I-7] Minimal cryptographic surface:** reuses the existing HKDF-SHA-256. ✓
-- **[I-14] State lifecycle:** labels are ephemeral, blobs expire through the τ₂ TTL. No persistent consensus state. ✓
-- **[I-15] Time-based scarcity:** rate limit via `max_range_subscribes_per_τ₁`. ✓
-- **[I-16] Out-of-band identity binding:** orthogonal. ✓
-
-### Rate limit rationale
-
-`max_range_subscribes_per_τ₁ = 16` at `max_range_labels_per_request = 10 000` gives at most 160 000 labels in requests per account per τ₁. It covers catch-up after 1 hour offline with margin. For a longer offline the client catches up over several τ₁ — acceptable.
-
-`max_range_labels_per_request = 10 000` — a balance between single-request capacity and host CPU load per request. 10K SHA-256 lookups ≈ 100 ms CPU on an average SQLite — a single request is processable in real time.
-
----
+Rotating-label blind delivery for account-only (federated) clients — label rotation, the blind-relay frame protocol (subscribe / send / deliver / ack / poll), and the offline catch-up — is a client-layer mechanism carried end-to-end inside the client↔node Noise_PQ session, authoritative in the Montana Messenger specification (blind delivery: rotating queue labels), which holds its binding label-derivation vectors. The network layer restates no label formula or delivery wire-format; it contributes the transport substrate (Noise_PQ XX carried over volunteer transit-relays, see «Volunteer transit-relay role») and the federated role placement (see «Metadata-private mailbox access»). Delivery frames are messenger application frames inside that session, not network-layer protocol message types.
 
 ## Network-layer mechanism closure cards
 
@@ -2190,7 +2072,7 @@ Global invariant check:
                                                 msg_type ∈ the valid registry
                                                   (0x01, 0x03, 0x04, 0x10,
                                                    0x20–0x22, 0x40–0x42,
-                                                   0x50–0x51, 0x60–0x65,
+                                                   0x50–0x51, 0x60–0x62,
                                                    0xF0–0xF1, 0xFF;
                                                    registry fixed in spec)
                                                 msg_version = 1
@@ -2213,7 +2095,7 @@ Status:                             closed (with an open sub-finding on the back
 ### Card — Message type registry (group)
 
 ```
-Object:                     a unified trait over 21 message-type codes, grouped into 6
+Object:                     a unified trait over 18 message-type codes, grouped into 5
                             categories by semantics; each category shares common validation
                             + lifecycle characteristics
 Created by:                  determined per category (see below)
@@ -2262,17 +2144,7 @@ Categories:
      Lifecycle:   request/response; results are ephemeral at the client
      Category:    request/response; IBT access level 3 (account)
 
-  E. App Subscription — 3 codes
-     Codes:       0x63 RangeSubscribeRequest | 0x64 RangeSubscribeResponse |
-                  0x65 RangeSubscribeError
-     Created by:  the account client (Request) / the host (Response/Error)
-     Verified by: the «Label Rotation + Range Subscribe Protocol» spec section «Host
-                  validation workflow», including the label rotation formula + per-account
-                  rate-limit
-     Lifecycle:   request/response; the client stores blob_count blobs locally for catch-up
-     Category:    request/response; IBT access level 3
-
-  F. Liveness — 3 codes
+  E. Liveness — 3 codes
      Codes:       0xF0 Ping | 0xF1 Pong | 0xFF Bye
      Created by:  either side of the connection
      Verified by: the Pong receiver answers Pong (no payload); Bye — graceful shutdown
@@ -2281,11 +2153,11 @@ Categories:
                   must answer before the end of the current τ₁ at the receiver)
 
 State:                      per category — see the corresponding cards of the existing
-                            objects (category A) or ephemeral (categories B-F)
+                            objects (category A) or ephemeral (categories B-E)
 Which root:                 category A — payload objects are cemented through the normal
                             consensus root (Account/Node chains, proposal hash chain);
-                            categories B-F — enter no root
-Lifetime:                   category A — permanent in consensus state; categories B-F —
+                            categories B-E — enter no root
+Lifetime:                   category A — permanent in consensus state; categories B-E —
                             ephemeral
 Expiry:                     per category
 Conflict:                   an unknown msg_type → log+ignore (forward compat); an invalid
@@ -2295,7 +2167,7 @@ Cost of misbehaviour:       flooding with invalid payloads: ML-DSA-65 verify ≈
                             is detected before crypto verify via the Gate 13a invariants for
                             each type
 State transition:           category A — applied through the consensus path (apply_proposal
-                            of the corresponding objects); categories B-F — not involved
+                            of the corresponding objects); categories B-E — not involved
 
 Object class:                       per category (mostly value)
 Canonical inclusion:                A: yes (in a proposal or chain entries); B-F: no
@@ -2305,7 +2177,7 @@ Can absence change state:           no
 Seed inputs canonical:              per object (category A) — see the cards in the main body
                                     of the spec
 Expiry exploitable by streak:       no
-Temporal anchors bounded:           per object for category A; categories B-F: yes (request
+Temporal anchors bounded:           per object for category A; categories B-E: yes (request
                                     TTL τ₁)
 
 Global invariant check (aggregated over categories):
@@ -2320,11 +2192,11 @@ Global invariant check (aggregated over categories):
   [I-5] Commodity hardware:              yes
   [I-6] Regulatory compat:               yes
   [I-7] Minimal crypto surface:          yes (no new primitives — category A reuses
-                                              payload-specific signatures, categories B-F
+                                              payload-specific signatures, categories B-E
                                               introduce no crypto)
   [I-8] Network-bound unpredictability:  per object for category A — see their cards in the
                                               main spec (Proposal, SSHA_Reveal, etc.)
-  [I-9] Bit-exact deterministic:         yes for all 21 codes — closure via binding KAT
+  [I-9] Bit-exact deterministic:         yes for all 18 codes — closure via binding KAT
                                               vectors (conformance status «pending» until the
                                               vectors are regenerated)
   [I-10] Single Source of Truth:         yes (the registry in one place — the «Protocol
@@ -2332,7 +2204,7 @@ Global invariant check (aggregated over categories):
                                               in its own section)
   [I-11..I-13]:                          n/a (not nickname / auction / monetary mechanisms)
   [I-14] State lifecycle:                category A — through apply_proposal of the existing
-                                              objects; categories B-F — ephemeral
+                                              objects; categories B-E — ephemeral
   [I-15] Time-based scarcity:            yes (per-IBT-session rate-limits; categories D/E have
                                               explicit per-account rate-limits in the spec)
 
@@ -2734,25 +2606,6 @@ Vector C-0x62 (BatchLookupError)
   Expected output (hex, 2 B): 01 01
   (mt-net::tests::test_vectors::vector_c_0x62_batch_lookup_error, byte-exact)
 
-Vector C-0x63 (RangeSubscribeRequest)
-  Input payload:
-    count              = 4 = 0x0400 (u16 LE)
-    labels             = 4 × 32 B labels (byte_repeat(0xE0..0xE3, 32) for
-                         each)
-  Expected output (hex, 130 B): 04 00 + (32×0xE0) + (32×0xE1) + (32×0xE2) + (32×0xE3)
-  (mt-net::tests::test_vectors::vector_c_0x63_range_subscribe_request_4_labels, byte-exact)
-
-Vector C-0x64 (RangeSubscribeResponse)
-  Input payload: see the «Label Rotation + Range Subscribe Protocol»
-                 BlobEntry layout
-  Expected output: pending — reference implementation
-
-Vector C-0x65 (RangeSubscribeError)
-  Input payload:
-    error_code         = 0x02 (label_not_found)
-  Expected output (hex, 1 B): 02
-  (mt-net::tests::test_vectors::vector_c_0x65_range_subscribe_error, byte-exact)
-
 Vector C-0xF0 (Ping — empty payload — same as A1, duplicated in the registry
                 for completeness)
   Expected output: same as Vector A1
@@ -2862,15 +2715,15 @@ Vector E2: SF envelope with max ttl_window and a larger fragment
 
 #### Conformance status
 
-Total vectors: 47
+Total vectors: 44
   A. Envelope                        : 3
   B. IBT proofs (online + mesh)      : 2
-  C. Per-msg-type                    : 21 (18 codes + Ping/Pong/Bye explicit)
+  C. Per-msg-type                    : 18 (15 codes + Ping/Pong/Bye explicit)
   D. MeshFrame                       : 3
   E. Store-and-Forward               : 2
-  Subtotal                           : 31
+  Subtotal                           : 28
 
-Expanded coverage (additional boundary + edge per type to reach 47): up to 16
+Expanded coverage (additional boundary + edge per type to reach 44): up to 16
 more vectors are added in a reference-impl iteration ("typical / boundary /
 edge" per critical type as in the Gate 0.5 [I-9] requirement).
 
