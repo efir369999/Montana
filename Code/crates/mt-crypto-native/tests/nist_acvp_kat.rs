@@ -17,7 +17,8 @@
 use mt_crypto_native::{
     mt_keypair_from_seed_mldsa, mt_keypair_from_seed_mlkem, mt_sign_mldsa, mt_sign_mldsa_ctx,
     MLDSA65_PUBKEY_SIZE, MLDSA65_SECRETKEY_SIZE, MLDSA65_SEED_SIZE, MLDSA65_SIGNATURE_SIZE,
-    MLKEM768_PUBKEY_SIZE, MLKEM768_SECRETKEY_SIZE, MLKEM768_SEED_SIZE, MT_OK,
+    mt_mlkem_decapsulate, MLKEM768_CIPHERTEXT_SIZE, MLKEM768_PUBKEY_SIZE,
+    MLKEM768_SECRETKEY_SIZE, MLKEM768_SEED_SIZE, MT_OK,
 };
 use serde::Deserialize;
 use std::fs;
@@ -326,5 +327,61 @@ fn siggen_empty_ctx_equivalence() {
     assert_eq!(
         sig_no_ctx, sig_empty_ctx,
         "mt_sign_mldsa и mt_sign_mldsa_ctx с empty context должны давать одинаковую подпись"
+    );
+}
+
+
+#[derive(Deserialize)]
+struct MlKemDecapFile {
+    source: String,
+    tests: Vec<MlKemDecapTest>,
+}
+
+#[derive(Deserialize)]
+struct MlKemDecapTest {
+    #[serde(rename = "tcId")]
+    tc_id: u32,
+    dk: String,
+    c: String,
+    k: String,
+}
+
+#[test]
+fn nist_acvp_ml_kem_768_decap_byte_exact() {
+    let path = fixture_path("ml_kem_768_decap.json");
+    let raw = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read fixture {}: {}", path.display(), e));
+    let kat: MlKemDecapFile = serde_json::from_str(&raw).expect("parse ml_kem_768_decap.json");
+    assert!(!kat.tests.is_empty(), "no tests in fixture");
+    println!(
+        "NIST ACVP ML-KEM-768 Decapsulation — {} tests from: {}",
+        kat.tests.len(),
+        kat.source
+    );
+
+    let mut passed = 0u32;
+    for t in &kat.tests {
+        let dk = hex_decode(&t.dk);
+        let c = hex_decode(&t.c);
+        let expected_k = hex_decode(&t.k);
+        assert_eq!(dk.len(), MLKEM768_SECRETKEY_SIZE, "tcId={} dk len", t.tc_id);
+        assert_eq!(c.len(), MLKEM768_CIPHERTEXT_SIZE, "tcId={} c len", t.tc_id);
+        assert_eq!(expected_k.len(), 32, "tcId={} k len", t.tc_id);
+
+        let mut ss = [0u8; 32];
+        let rc = unsafe { mt_mlkem_decapsulate(dk.as_ptr(), c.as_ptr(), ss.as_mut_ptr()) };
+        assert_eq!(rc, MT_OK, "tcId={} mt_mlkem_decapsulate failed", t.tc_id);
+        assert_eq!(
+            ss.as_slice(),
+            expected_k.as_slice(),
+            "tcId={} ML-KEM-768 decaps shared secret diverges from NIST FIPS 203 expected",
+            t.tc_id
+        );
+        passed += 1;
+    }
+    println!(
+        "PASS: {}/{} ML-KEM-768 Decapsulation NIST KAT byte-exact",
+        passed,
+        kat.tests.len()
     );
 }
