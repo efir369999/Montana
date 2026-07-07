@@ -87,6 +87,10 @@ int mt_e2e_build_handshake(const uint8_t *alice_account_pub, const uint8_t *acco
                            uint64_t send_time, uint8_t **out_hs, size_t *out_hs_len,
                            uint8_t **out_session, size_t *out_session_len);
 int mt_e2e_process_handshake(const uint8_t *hs, size_t hs_len, const uint8_t *bob_account_id,
+int mt_e2e_seal_blob(const uint8_t *blob_key, const uint8_t *nonce, const uint8_t *input, size_t input_len, uint8_t **out_ptr, size_t *out_len);
+int mt_e2e_blob_id(const uint8_t *sealed_blob, size_t len, uint8_t *out32);
+int mt_e2e_open_blob(const uint8_t *blob_key, const uint8_t *sealed_blob, size_t len, uint8_t **out_ptr, size_t *out_len);
+size_t mt_e2e_pad_len(size_t n);
                              const uint8_t *bob_app_kem_pub, const uint8_t *bob_app_kem_sk,
                              const uint8_t *bob_spk_pub, const uint8_t *bob_spk_sk, uint8_t opk_flag,
                              const uint8_t *bob_opk_pub, const uint8_t *bob_opk_sk, uint64_t now,

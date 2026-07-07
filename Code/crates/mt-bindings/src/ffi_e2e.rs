@@ -281,3 +281,85 @@ pub unsafe extern "C" fn mt_e2e_process_handshake(
         MT_OK
     })
 }
+
+use mt_messenger_e2e::media::{blob_id as media_blob_id, open_blob, pad_len as media_pad_len, seal_blob};
+
+/// Запечатать медиа-блоб: sealed_blob = nonce || Seal(blob_key, nonce, input, AD=mt-media).
+/// out — owned-буфер (освободить mt_e2e_free). `input` — уже финальный (паддинг pad_len до вызова).
+///
+/// # Safety
+/// blob_key — 32 байта, nonce — 12 байт, input — input_len байт; out_ptr/out_len ненулевые.
+#[no_mangle]
+pub unsafe extern "C" fn mt_e2e_seal_blob(
+    blob_key: *const u8,
+    nonce: *const u8,
+    input: *const u8,
+    input_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> c_int {
+    guard(|| {
+        if blob_key.is_null() || nonce.is_null() || (input.is_null() && input_len != 0) || out_ptr.is_null() || out_len.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let mut key = [0u8; 32];
+        key.copy_from_slice(slice::from_raw_parts(blob_key, 32));
+        let mut n = [0u8; 12];
+        n.copy_from_slice(slice::from_raw_parts(nonce, 12));
+        let inp = if input_len == 0 { &[][..] } else { slice::from_raw_parts(input, input_len) };
+        write_out(seal_blob(&key, &n, inp), out_ptr, out_len);
+        MT_OK
+    })
+}
+
+/// blob_id = SHA-256(sealed_blob) -> out32 (32 байта).
+///
+/// # Safety
+/// sealed_blob — len байт; out32 — 32 байта.
+#[no_mangle]
+pub unsafe extern "C" fn mt_e2e_blob_id(sealed_blob: *const u8, len: usize, out32: *mut u8) -> c_int {
+    guard(|| {
+        if (sealed_blob.is_null() && len != 0) || out32.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let b = if len == 0 { &[][..] } else { slice::from_raw_parts(sealed_blob, len) };
+        let id = media_blob_id(b);
+        slice::from_raw_parts_mut(out32, 32).copy_from_slice(&id);
+        MT_OK
+    })
+}
+
+/// Расшифровать блоб -> padded plaintext (owned; усечь до size вызывающему). Ошибка -> MT_ERR_KEM_FAILED.
+///
+/// # Safety
+/// blob_key — 32 байта; sealed_blob — len байт; out_ptr/out_len ненулевые.
+#[no_mangle]
+pub unsafe extern "C" fn mt_e2e_open_blob(
+    blob_key: *const u8,
+    sealed_blob: *const u8,
+    len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> c_int {
+    guard(|| {
+        if blob_key.is_null() || (sealed_blob.is_null() && len != 0) || out_ptr.is_null() || out_len.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let mut key = [0u8; 32];
+        key.copy_from_slice(slice::from_raw_parts(blob_key, 32));
+        let b = if len == 0 { &[][..] } else { slice::from_raw_parts(sealed_blob, len) };
+        match open_blob(&key, b) {
+            Some(pt) => {
+                write_out(pt, out_ptr, out_len);
+                MT_OK
+            }
+            None => MT_ERR_KEM_FAILED,
+        }
+    })
+}
+
+/// pad_len(n) — целевой размер после паддинга (скрытие размера).
+#[no_mangle]
+pub extern "C" fn mt_e2e_pad_len(n: usize) -> usize {
+    media_pad_len(n)
+}
