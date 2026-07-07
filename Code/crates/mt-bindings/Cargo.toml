@@ -21,7 +21,6 @@ mt-messenger-e2e = { path = "../mt-messenger-e2e" }
 mt-crypto     = { path = "../mt-crypto" }
 mt-state      = { path = "../mt-state" }
 mt-account    = { path = "../mt-account" }
-argon2        = { version = "0.5", default-features = false, features = ["alloc"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }
