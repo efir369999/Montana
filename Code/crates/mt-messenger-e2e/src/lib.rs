@@ -10,6 +10,7 @@ pub mod crypto;
 pub mod handshake;
 pub mod kdf;
 pub mod labels;
+pub mod media;
 pub mod pqxdh;
 pub mod ratchet;
 pub mod sealed;
