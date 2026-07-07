@@ -70,6 +70,7 @@ pub struct Envelope {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::result_unit_err)]
 pub fn seal_envelope(
     app_kem_pub_b: &[u8; MLKEM_PUB],
     account_id_b: &[u8; 32],

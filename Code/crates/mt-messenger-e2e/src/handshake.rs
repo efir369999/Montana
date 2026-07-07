@@ -5,7 +5,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::crypto::{
-    dsa_pub_from_seed, dsa_sign, dsa_verify, kem_decapsulate, kem_encapsulate,
+    dsa_sign, dsa_verify, kem_decapsulate, kem_encapsulate,
     kem_keypair_from_seed, MLDSA_PUB, MLDSA_SIG, MLKEM_CT, MLKEM_PUB,
 };
 use crate::pqxdh::{confirm_tag, derive_session_keys, SessionKeys, DOMAIN_SIG};
@@ -326,7 +326,7 @@ mod tests {
     use super::*;
 
     fn acc(seed: &[u8; 32]) -> [u8; MLDSA_PUB] {
-        dsa_pub_from_seed(seed).unwrap()
+        crate::crypto::dsa_pub_from_seed(seed).unwrap()
     }
     fn kem(seed: u8) -> ([u8; MLKEM_PUB], Vec<u8>) {
         kem_keypair_from_seed(&[seed; 64]).unwrap()
