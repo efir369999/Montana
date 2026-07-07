@@ -84,12 +84,12 @@ pub mod domain {
     pub const RECOVERY_FINGERPRINT: &[u8] = b"mt-recovery-fingerprint";
     // Мессенджер-слой (Montana Messenger v0.49). Канонический источник доменных строк
     // identity-binding / auth / истории — клиенты (iOS MontanaDomain, Web) зеркалят отсюда.
-    pub const MSG_IDKEM: &[u8] = b"mt-idkem";              // подпись app_kem_pub ключом account_key (Этап 4/5)
-    pub const MSG_PREKEY: &[u8] = b"mt-prekey";            // подпись signed_prekey
-    pub const MSG_AUTH: &[u8] = b"mt-auth";                // подпись сессионного nonce (Этап 2)
-    pub const MSG_HISTORY_KEY: &[u8] = b"mt-history-key";  // HKDF info для history_key (Этап 10)
-    pub const MSG_HISTORY: &[u8] = b"mt-history";          // AD блоков истории (Этап 10)
-    pub const MSG_DEVICE_LINK: &[u8] = b"montana-link";    // обёртка ключа при QR-привязке устройства
+    pub const MSG_IDKEM: &[u8] = b"mt-idkem"; // подпись app_kem_pub ключом account_key (Этап 4/5)
+    pub const MSG_PREKEY: &[u8] = b"mt-prekey"; // подпись signed_prekey
+    pub const MSG_AUTH: &[u8] = b"mt-auth"; // подпись сессионного nonce (Этап 2)
+    pub const MSG_HISTORY_KEY: &[u8] = b"mt-history-key"; // HKDF info для history_key (Этап 10)
+    pub const MSG_HISTORY: &[u8] = b"mt-history"; // AD блоков истории (Этап 10)
+    pub const MSG_DEVICE_LINK: &[u8] = b"montana-link"; // обёртка ключа при QR-привязке устройства
 }
 
 #[cfg(test)]

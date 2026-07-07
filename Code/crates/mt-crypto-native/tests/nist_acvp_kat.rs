@@ -15,9 +15,9 @@
 // independent oracle).
 
 use mt_crypto_native::{
-    mt_keypair_from_seed_mldsa, mt_keypair_from_seed_mlkem, mt_sign_mldsa, mt_sign_mldsa_ctx,
-    MLDSA65_PUBKEY_SIZE, MLDSA65_SECRETKEY_SIZE, MLDSA65_SEED_SIZE, MLDSA65_SIGNATURE_SIZE,
-    mt_mlkem_decapsulate, MLKEM768_CIPHERTEXT_SIZE, MLKEM768_PUBKEY_SIZE,
+    mt_keypair_from_seed_mldsa, mt_keypair_from_seed_mlkem, mt_mlkem_decapsulate, mt_sign_mldsa,
+    mt_sign_mldsa_ctx, MLDSA65_PUBKEY_SIZE, MLDSA65_SECRETKEY_SIZE, MLDSA65_SEED_SIZE,
+    MLDSA65_SIGNATURE_SIZE, MLKEM768_CIPHERTEXT_SIZE, MLKEM768_PUBKEY_SIZE,
     MLKEM768_SECRETKEY_SIZE, MLKEM768_SEED_SIZE, MT_OK,
 };
 use serde::Deserialize;
@@ -329,7 +329,6 @@ fn siggen_empty_ctx_equivalence() {
         "mt_sign_mldsa и mt_sign_mldsa_ctx с empty context должны давать одинаковую подпись"
     );
 }
-
 
 #[derive(Deserialize)]
 struct MlKemDecapFile {
