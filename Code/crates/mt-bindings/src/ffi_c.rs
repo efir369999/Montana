@@ -3,6 +3,9 @@
 //! Все функции возвращают i32 status code. Output буферы — caller-supplied,
 //! фиксированной длины, документированной в `mt_bindings.h`.
 
+// Контракты безопасности (размеры буферов, ненулевые указатели) документированы в mt_bindings.h.
+#![allow(clippy::missing_safety_doc)]
+
 use core::slice;
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};
