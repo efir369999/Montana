@@ -5,8 +5,8 @@
 use sha2::{Digest, Sha256};
 
 use crate::crypto::{
-    dsa_sign, dsa_verify, kem_decapsulate, kem_encapsulate,
-    kem_keypair_from_seed, MLDSA_PUB, MLDSA_SIG, MLKEM_CT, MLKEM_PUB,
+    dsa_sign, dsa_verify, kem_decapsulate, kem_encapsulate, kem_keypair_from_seed, MLDSA_PUB,
+    MLDSA_SIG, MLKEM_CT, MLKEM_PUB,
 };
 use crate::pqxdh::{confirm_tag, derive_session_keys, SessionKeys, DOMAIN_SIG};
 
