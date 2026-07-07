@@ -43,6 +43,7 @@ extern "C" {
 
 uint32_t mt_abi_version(void);
 int mt_mnemonic_to_master_seed(const char *mnemonic_utf8, uint8_t *out_master_seed);
+int mt_mnemonic_to_entropy(const char *mnemonic_utf8, uint8_t *out_entropy);
 int mt_mldsa_seed_for_role(const uint8_t *master_seed, const uint8_t *role, size_t role_len, uint8_t *out_seed);
 int mt_mldsa_keypair_from_seed(const uint8_t *seed, uint8_t *out_pubkey, uint8_t *out_seckey);
 int mt_derive_account_id(uint16_t suite_id, const uint8_t *pubkey, uint8_t *out_account_id);

@@ -25,6 +25,16 @@ fn kat_entropy_zero_to_account_id() {
     eprintln!("acc_seed    : {}", hex::encode(acc_seed));
     eprintln!("pubkey[..16]: {}", hex::encode(&pk.as_bytes()[..16]));
     eprintln!("account_id  : {}", hex::encode(account_id));
+
+    // Binding-вектор (спека Этап 1): entropy=0 -> фиксированный account_id + адрес.
+    assert_eq!(
+        hex::encode(account_id),
+        "9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21"
+    );
+    assert_eq!(
+        mt_bindings::account_id_to_address(&account_id),
+        "mt2D4zg5S4qjjNLmuqLZsuS9rwMUoa47SgmQ7RQvkW7hfVmaRgfb"
+    );
 }
 
 #[test]

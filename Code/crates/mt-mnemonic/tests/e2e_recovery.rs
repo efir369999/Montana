@@ -18,12 +18,13 @@ use mt_mnemonic::{
 
 // Terminal observable IDs (per spec):
 //
-//   account_id = SHA-256("mt-account" || suite_id_bytes (LE u16) || pk_acc)
-//   node_id    = SHA-256("mt-node" || pk_node)
+//   account_id = SHA-256("mt-account" || 0x00 || suite_id_bytes (LE u16) || pk_acc)
+//   node_id    = SHA-256("mt-node" || 0x00 || pk_node)
 
 fn account_id(pk: &PublicKey) -> [u8; 32] {
-    let mut buf = Vec::with_capacity(domain::ACCOUNT.len() + 2 + pk.as_bytes().len());
+    let mut buf = Vec::with_capacity(domain::ACCOUNT.len() + 3 + pk.as_bytes().len());
     buf.extend_from_slice(domain::ACCOUNT);
+    buf.push(0u8);   // канонический разделитель домена (конвенция hash() ядра)
     let suite_id = (SuiteId::Mldsa65 as u16).to_le_bytes();
     buf.extend_from_slice(&suite_id);
     buf.extend_from_slice(pk.as_bytes());
@@ -31,8 +32,9 @@ fn account_id(pk: &PublicKey) -> [u8; 32] {
 }
 
 fn node_id(pk: &PublicKey) -> [u8; 32] {
-    let mut buf = Vec::with_capacity(domain::NODE.len() + pk.as_bytes().len());
+    let mut buf = Vec::with_capacity(domain::NODE.len() + 1 + pk.as_bytes().len());
     buf.extend_from_slice(domain::NODE);
+    buf.push(0u8);   // канонический разделитель домена
     buf.extend_from_slice(pk.as_bytes());
     sha256_raw(&buf)
 }

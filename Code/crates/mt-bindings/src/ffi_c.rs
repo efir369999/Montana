@@ -12,7 +12,7 @@ use mt_crypto::{
     sign as mldsa_sign, verify as mldsa_verify, MlkemCiphertext, MlkemPublicKey, MlkemSecretKey,
     PublicKey, SecretKey, Signature,
 };
-use mt_mnemonic::{mldsa_seed_for_role, mlkem_seed_for_role, mnemonic_to_master_seed};
+use mt_mnemonic::{mldsa_seed_for_role, mlkem_seed_for_role, mnemonic_to_entropy, mnemonic_to_master_seed};
 use mt_state::derive_account_id;
 use zeroize::Zeroizing;
 
@@ -43,6 +43,33 @@ pub unsafe extern "C" fn mt_mnemonic_to_master_seed(
             Ok(seed) => {
                 slice::from_raw_parts_mut(out_master_seed, MT_MASTER_SEED_LEN)
                     .copy_from_slice(&seed[..]);
+                MT_OK
+            },
+            Err(e) => match e {
+                mt_mnemonic::MnemonicError::WordCount(_) => MT_ERR_MNEMONIC_WORD_COUNT,
+                mt_mnemonic::MnemonicError::UnknownWord(_) => MT_ERR_MNEMONIC_UNKNOWN_WORD,
+                mt_mnemonic::MnemonicError::ChecksumMismatch => MT_ERR_MNEMONIC_CHECKSUM,
+            },
+        }
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn mt_mnemonic_to_entropy(
+    mnemonic_utf8: *const c_char,
+    out_entropy: *mut u8,
+) -> c_int {
+    guard(|| {
+        if mnemonic_utf8.is_null() || out_entropy.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let cs = match CStr::from_ptr(mnemonic_utf8).to_str() {
+            Ok(s) => s,
+            Err(_) => return MT_ERR_INVALID_UTF8,
+        };
+        match mnemonic_to_entropy(cs) {
+            Ok(ent) => {
+                slice::from_raw_parts_mut(out_entropy, 32).copy_from_slice(&ent[..]);
                 MT_OK
             },
             Err(e) => match e {

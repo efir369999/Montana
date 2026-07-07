@@ -39,7 +39,7 @@ impl core::fmt::Display for MnemonicError {
 
 impl std::error::Error for MnemonicError {}
 
-pub fn mnemonic_to_master_seed(mnemonic: &str) -> Result<[u8; MASTER_SEED_LEN], MnemonicError> {
+pub fn mnemonic_to_entropy(mnemonic: &str) -> Result<[u8; 32], MnemonicError> {
     // split_whitespace вместо split(' ') — UX-friendly: пользователь
     // может скопировать мнемонику с tab-ами, multiple spaces, либо
     // newlines между словами (типичный случай при copy-paste из менеджера
@@ -56,18 +56,19 @@ pub fn mnemonic_to_master_seed(mnemonic: &str) -> Result<[u8; MASTER_SEED_LEN], 
     }
 
     let buf: [u8; PACKED_BYTES] = pack_indices_to_bytes(&indices);
-    let entropy: [u8; 32] = {
-        let mut arr = [0u8; 32];
-        arr.copy_from_slice(&buf[0..32]);
-        arr
-    };
+    let mut entropy = [0u8; 32];
+    entropy.copy_from_slice(&buf[0..32]);
     let checksum_provided = buf[32];
     let checksum_computed = sha256_raw(&entropy)[0];
 
     if checksum_provided != checksum_computed {
         return Err(MnemonicError::ChecksumMismatch);
     }
+    Ok(entropy)
+}
 
+pub fn mnemonic_to_master_seed(mnemonic: &str) -> Result<[u8; MASTER_SEED_LEN], MnemonicError> {
+    let entropy = mnemonic_to_entropy(mnemonic)?;
     let dk = pbkdf2_hmac_sha256(&entropy, domain::SEED, KDF_ITER, MASTER_SEED_LEN);
     let mut master_seed = [0u8; MASTER_SEED_LEN];
     master_seed.copy_from_slice(&dk);
