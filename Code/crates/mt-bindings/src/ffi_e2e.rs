@@ -104,9 +104,10 @@ pub unsafe extern "C" fn mt_e2e_decrypt(
 use mt_messenger_e2e::handshake::{
     build_handshake, process_handshake, RecipientBundle, RecipientKeys,
 };
-const MLDSA_PUB: usize = 1952;
-const MLKEM_PUB: usize = 1184;
-const MLKEM_SK: usize = 2400;
+// DSSOT-3: размеры — из авторитетных констант крейта (SSOT), не magic numbers.
+const MLDSA_PUB: usize = crate::MT_MLDSA_PUBKEY_SIZE;
+const MLKEM_PUB: usize = crate::MT_MLKEM_PUBKEY_SIZE;
+const MLKEM_SK: usize = crate::MT_MLKEM_SECKEY_SIZE;
 
 /// Сторона Алисы: рукопожатие + инициализация сессии. Возвращает InitialHandshake
 /// + блоб сессии инициатора. `account_seed` — 32 байта (сид ML-DSA личности).

@@ -454,3 +454,19 @@ pub unsafe extern "C" fn mt_app_kem_from_mnemonic(
         mt_mlkem_keypair_from_seed(kem_seed.as_ptr(), out_pubkey, out_seckey)
     })
 }
+
+/// history_key = HKDF-SHA-256(salt=0×32, ikm=entropy_32, info="mt-history-key", 32) — Этап 10 мессенджера.
+/// `entropy` — 32 байта; `out` — 32 байта. SSOT для history_key всех клиентов.
+#[no_mangle]
+pub unsafe extern "C" fn mt_history_key(entropy: *const u8, out: *mut u8) -> c_int {
+    guard(|| {
+        if entropy.is_null() || out.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let ent = slice::from_raw_parts(entropy, MT_HISTORY_KEY_LEN);
+        let prk = mt_mnemonic::hmac_sha256(&[0u8; 32], ent); // HKDF-Extract(salt=0×32, ikm=entropy)
+        let okm = mt_mnemonic::hkdf_expand(&prk, mt_codec::domain::MSG_HISTORY_KEY, MT_HISTORY_KEY_LEN);
+        slice::from_raw_parts_mut(out, MT_HISTORY_KEY_LEN).copy_from_slice(&okm);
+        MT_OK
+    })
+}

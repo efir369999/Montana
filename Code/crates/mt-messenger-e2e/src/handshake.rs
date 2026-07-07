@@ -26,12 +26,8 @@ pub enum E2eError {
 }
 
 pub fn account_id(account_key_pub: &[u8]) -> [u8; 32] {
-    let mut h = Sha256::new();
-    h.update(mt_codec::domain::ACCOUNT);
-    h.update([0u8]);
-    h.update(SUITE_MLDSA65_LE);
-    h.update(account_key_pub);
-    h.finalize().into()
+    // account_id по формуле спеки — через канонический mt_crypto::hash (тот же код, что mt_state::derive_account_id).
+    mt_crypto::hash(mt_codec::domain::ACCOUNT, &[&SUITE_MLDSA65_LE, account_key_pub])
 }
 
 /// Связка Боба (публичная часть, из Этапа 4).

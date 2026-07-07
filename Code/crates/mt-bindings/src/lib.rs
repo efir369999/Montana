@@ -31,6 +31,7 @@ pub const MT_MLDSA_PUBKEY_SIZE: usize = 1952;
 pub const MT_MLDSA_SECKEY_SIZE: usize = 4032;
 pub const MT_MLDSA_SIG_SIZE: usize = 3309;
 pub const MT_ACCOUNT_ID_LEN: usize = 32;
+pub const MT_HISTORY_KEY_LEN: usize = 32;
 pub const MT_MAX_MNEMONIC_BYTES: usize = 512;
 
 pub const MT_MLKEM_SEED_LEN: usize = 64;
@@ -194,6 +195,18 @@ mod tests {
 
 #[cfg(test)]
 mod kat_address {
+    #[test]
+    fn history_key_kat() {
+        let ent = [0x55u8; 32];
+        let mut out = [0u8; 32];
+        let rc = unsafe { crate::ffi_c::mt_history_key(ent.as_ptr(), out.as_mut_ptr()) };
+        assert_eq!(rc, 0);
+        assert_eq!(
+            out.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            "e6a7dc51003770589d9f731c1231c1523be7348c7769383875dd34bd6c578def"
+        );
+    }
+
     #[test]
     fn zero_entropy_address_kat() {
         // Эталонный вектор: 32 нулевых байта энтропии -> мнемоника -> account -> адрес.
