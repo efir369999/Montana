@@ -43,7 +43,8 @@ pub unsafe extern "C" fn mt_e2e_encrypt(
     out_msg_len: *mut usize,
 ) -> c_int {
     guard(|| {
-        if session.is_null() || rng_seed.is_null() || out_session.is_null() || out_msg.is_null() {
+        if session.is_null() || rng_seed.is_null() || out_session.is_null() || out_msg.is_null()
+            || (pt_len > 0 && pt.is_null()) {
             return MT_ERR_NULL_PTR;
         }
         let mut st = match SessionState::from_bytes(slice::from_raw_parts(session, session_len)) {
@@ -132,7 +133,10 @@ pub unsafe extern "C" fn mt_e2e_build_handshake(
     out_session_len: *mut usize,
 ) -> c_int {
     guard(|| {
-        if alice_account_pub.is_null() || account_seed.is_null() || eph_seed.is_null() {
+        if alice_account_pub.is_null() || account_seed.is_null() || eph_seed.is_null()
+            || bob_account_pub.is_null() || bob_app_kem_pub.is_null() || bob_spk_pub.is_null()
+            || out_hs.is_null() || out_hs_len.is_null() || out_session.is_null() || out_session_len.is_null()
+            || (opk_flag == 1 && bob_opk_pub.is_null()) {
             return MT_ERR_NULL_PTR;
         }
         let a_pub: [u8; MLDSA_PUB] = slice::from_raw_parts(alice_account_pub, MLDSA_PUB)
@@ -207,6 +211,13 @@ pub unsafe extern "C" fn mt_e2e_process_handshake(
     out_session_len: *mut usize,
 ) -> c_int {
     guard(|| {
+        if hs.is_null() || bob_account_id.is_null() || bob_app_kem_pub.is_null()
+            || bob_app_kem_sk.is_null() || bob_spk_pub.is_null() || bob_spk_sk.is_null()
+            || out_session.is_null() || out_session_len.is_null()
+            || (opk_flag == 1 && (bob_opk_pub.is_null() || bob_opk_sk.is_null()))
+        {
+            return crate::MT_ERR_NULL_PTR;
+        }
         let hs_bytes = slice::from_raw_parts(hs, hs_len);
         let acc_id: [u8; 32] = slice::from_raw_parts(bob_account_id, 32)
             .try_into()
