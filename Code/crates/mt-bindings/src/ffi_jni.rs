@@ -218,6 +218,30 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeVerify<'local>(
 //  Полная крипто-поверхность SSOT (зеркало ffi_c.rs) — идентичность/адрес/KEM.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// 24 слова → 32-байтный ML-DSA account seed (для E2E build_handshake, роль ACCOUNT_KEY).
+#[no_mangle]
+pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountSeedFromMnemonic<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    mnemonic_jstr: JString<'local>,
+) -> jbyteArray {
+    let null = std::ptr::null_mut();
+    let mnemonic: String = match env.get_string(&mnemonic_jstr) {
+        Ok(s) => s.into(),
+        Err(_) => return null,
+    };
+    let master = Zeroizing::new(match mnemonic_to_master_seed(&mnemonic) {
+        Ok(s) => s,
+        Err(_) => return null,
+    });
+    let seed = Zeroizing::new(mldsa_seed_for_role(&master, domain::ACCOUNT_KEY));
+    let out = env.byte_array_from_slice(&seed[..]);
+    match out {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => null,
+    }
+}
+
 /// 24 слова → 32 байта энтропии (для history_key).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMnemonicToEntropy<'local>(
