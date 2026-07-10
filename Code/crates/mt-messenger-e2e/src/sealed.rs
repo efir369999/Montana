@@ -165,6 +165,36 @@ mod tests {
     use crate::labels::inbox_label;
 
     #[test]
+    fn seal_and_pot_spec_kat() {
+        // Привязка боевых функций к hex спеки (Этап 7, «Тест-векторы»), не пере-вывод формул
+        let (k, n) = seal_key_nonce(&[0x44; 32]);
+        assert_eq!(
+            hex::encode(k),
+            "5f9f4ccf25e7ba4921c0bc004406af5b743c49783a5989bf185c58844c8d6e5b"
+        );
+        assert_eq!(hex::encode(n), "02b49c7b9e94ca37b1aed2ac");
+        let acc = hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
+            .unwrap();
+        let mut ad = b"mt-seal".to_vec();
+        ad.push(0u8);
+        ad.extend_from_slice(&acc);
+        let body = seal(&k, &n, b"handshake", &ad);
+        assert_eq!(
+            hex::encode(&body),
+            "488b64548e48d192e145fc04ae32ceb07c991c959a05c6b594"
+        );
+        let ib: [u8; 16] = hex::decode("7d5db70fa1b5f7e7902bba6bbbd626ba")
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let pot = compute_pot(&ib, &[0x44; 16], &[0x55; 32], &[0x66; 1088], &[0x77; 64], 4);
+        assert_eq!(
+            hex::encode(pot),
+            "ed47bd474d18e22ef2ff96811fa08c26193e9ac597515be2d96920f72de0a17f"
+        );
+    }
+
+    #[test]
     fn envelope_roundtrip() {
         let (pk, sk) = kem_keypair_from_seed(&[0x11; 64]).unwrap();
         let account_id_b = [0x44u8; 32];

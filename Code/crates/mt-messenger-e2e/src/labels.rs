@@ -83,6 +83,33 @@ mod tests {
     }
 
     #[test]
+    fn route_label_spec_kat() {
+        // Привязка боевых функций к hex спеки (Этап 7, «Тест-векторы»), не пере-вывод формул
+        let rs = routing_secret(&[0xAB; 32]);
+        assert_eq!(
+            hex::encode(rs),
+            "5dde1ca30d45f658626b6acfac59f25b39bfc8cbbf9db4250fd60ceb4f6624d1"
+        );
+        assert_eq!(
+            hex::encode(session_label(&rs, DIR_INITIATOR_TO_RESPONDER, 1000)),
+            "bb4ca49fe117ff008b3f959f19ec186b"
+        );
+        assert_eq!(
+            hex::encode(session_label(&rs, DIR_RESPONDER_TO_INITIATOR, 1000)),
+            "1b4bc34a8901e9cef430c077f9b19d54"
+        );
+        let acc: [u8; 32] =
+            hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        assert_eq!(
+            hex::encode(inbox_label(&acc)),
+            "7d5db70fa1b5f7e7902bba6bbbd626ba"
+        );
+    }
+
+    #[test]
     fn window_index_boundaries() {
         assert_eq!(window_index(0), 0);
         assert_eq!(window_index(59), 0);
