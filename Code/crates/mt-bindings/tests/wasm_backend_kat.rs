@@ -7,6 +7,7 @@ use ml_dsa::{
     EncodedVerifyingKey, Keypair, MlDsa65, Signature as RcSig, Signer, SigningKey, Verifier,
     VerifyingKey, B32,
 };
+use mt_messenger_e2e::safety::{party_code, safety_number};
 use mt_mnemonic::{entropy_to_mnemonic, mldsa_seed_for_role, mnemonic_to_master_seed};
 use sha2::{Digest, Sha256};
 
@@ -718,31 +719,6 @@ fn frame_codec_kat() {
         hex::encode(frame(0x05, &ack)),
         "4300000005010033333333333333333333333333333333444444444444444444444444444444446666666666666666666666666666666666666666666666666666666666666666"
     );
-}
-
-fn party_code(account_id: &[u8; 32]) -> String {
-    let mut init = b"mt-safety".to_vec();
-    init.push(0u8);
-    init.extend_from_slice(account_id);
-    let mut d: [u8; 32] = Sha256::digest(&init).into();
-    for _ in 1..5200 {
-        d = Sha256::digest(d).into();
-    }
-    let mut out = String::new();
-    for k in 0..6 {
-        let mut v: u64 = 0;
-        for &b in &d[5 * k..5 * k + 5] {
-            v = (v << 8) | b as u64;
-        }
-        v %= 100000;
-        out.push_str(&format!("{v:05}"));
-    }
-    out
-}
-
-fn safety_number(a: &[u8; 32], b: &[u8; 32]) -> String {
-    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
-    party_code(lo) + &party_code(hi)
 }
 
 /// Этап 8: пер-личностный код и парный отпечаток (итер. SHA-256, ITER=5200).

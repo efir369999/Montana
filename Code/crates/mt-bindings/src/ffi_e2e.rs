@@ -392,3 +392,48 @@ pub unsafe extern "C" fn mt_e2e_open_blob(
 pub extern "C" fn mt_e2e_pad_len(n: usize) -> usize {
     media_pad_len(n)
 }
+
+/// safety_number(id_A, id_B) → 60 ASCII-цифр (Этап 8). Оба указателя — 32 байта account_id;
+/// выход — owned-буфер (60 байт), освобождать mt_e2e_free.
+///
+/// # Safety
+/// `id_a`/`id_b` валидны на 32 байта; out-указатели ненулевые.
+#[no_mangle]
+pub unsafe extern "C" fn mt_e2e_safety_number(
+    id_a: *const u8,
+    id_b: *const u8,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> c_int {
+    guard(|| {
+        if id_a.is_null() || id_b.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let a: [u8; 32] = slice::from_raw_parts(id_a, 32).try_into().unwrap();
+        let b: [u8; 32] = slice::from_raw_parts(id_b, 32).try_into().unwrap();
+        let s = mt_messenger_e2e::safety::safety_number(&a, &b);
+        write_out(s.into_bytes(), out_ptr, out_len);
+        MT_OK
+    })
+}
+
+/// party_code(account_id) → 30 ASCII-цифр (Этап 8). Указатель — 32 байта; выход owned.
+///
+/// # Safety
+/// `id` валиден на 32 байта; out-указатели ненулевые.
+#[no_mangle]
+pub unsafe extern "C" fn mt_e2e_party_code(
+    id: *const u8,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> c_int {
+    guard(|| {
+        if id.is_null() || out_ptr.is_null() || out_len.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let a: [u8; 32] = slice::from_raw_parts(id, 32).try_into().unwrap();
+        let s = mt_messenger_e2e::safety::party_code(&a);
+        write_out(s.into_bytes(), out_ptr, out_len);
+        MT_OK
+    })
+}

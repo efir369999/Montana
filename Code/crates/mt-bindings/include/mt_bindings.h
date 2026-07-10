@@ -96,6 +96,8 @@ int mt_e2e_seal_blob(const uint8_t *blob_key, const uint8_t *nonce, const uint8_
 int mt_e2e_blob_id(const uint8_t *sealed_blob, size_t len, uint8_t *out32);
 int mt_e2e_open_blob(const uint8_t *blob_key, const uint8_t *sealed_blob, size_t len, uint8_t **out_ptr, size_t *out_len);
 size_t mt_e2e_pad_len(size_t n);
+int mt_e2e_safety_number(const uint8_t *id_a, const uint8_t *id_b, uint8_t **out_ptr, size_t *out_len);
+int mt_e2e_party_code(const uint8_t *id, uint8_t **out_ptr, size_t *out_len);
 
 #ifdef __cplusplus
 }

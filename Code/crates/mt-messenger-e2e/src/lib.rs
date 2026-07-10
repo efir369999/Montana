@@ -5,6 +5,7 @@
 //! - `pqxdh`   — Этап 5: установление постквантовой сессии (ML-KEM-768 PQXDH).
 //! - `ratchet` — Этап 6: двойной храповик (KEM-храповик), AEAD сообщений.
 //! - `labels`  — Этап 7: слепая доставка, вращающиеся метки очередей.
+//! - `safety`  — Этап 8: сверка отпечатка личности (safety number).
 
 pub mod crypto;
 pub mod handshake;
@@ -13,5 +14,6 @@ pub mod labels;
 pub mod media;
 pub mod pqxdh;
 pub mod ratchet;
+pub mod safety;
 pub mod sealed;
 pub mod session;
