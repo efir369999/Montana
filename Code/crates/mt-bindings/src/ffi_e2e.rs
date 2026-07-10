@@ -6,7 +6,8 @@ use std::os::raw::c_int;
 
 use mt_messenger_e2e::session::SessionState;
 
-use super::{guard, MT_ERR_KEM_FAILED, MT_ERR_NULL_PTR, MT_OK};
+use super::{guard, MT_ERR_KEM_FAILED, MT_ERR_NULL_PTR, MT_ERR_REPLAY, MT_OK};
+use mt_messenger_e2e::session::RatchetError;
 
 unsafe fn write_out(data: Vec<u8>, out_ptr: *mut *mut u8, out_len: *mut usize) {
     let mut boxed = data.into_boxed_slice();
@@ -97,6 +98,7 @@ pub unsafe extern "C" fn mt_e2e_decrypt(
         let message = slice::from_raw_parts(msg, msg_len);
         let pt = match st.decrypt(message) {
             Ok(p) => p,
+            Err(RatchetError::Replay) => return MT_ERR_REPLAY,
             Err(_) => return MT_ERR_KEM_FAILED,
         };
         write_out(st.to_bytes(), out_session, out_session_len);
@@ -282,7 +284,9 @@ pub unsafe extern "C" fn mt_e2e_process_handshake(
     })
 }
 
-use mt_messenger_e2e::media::{blob_id as media_blob_id, open_blob, pad_len as media_pad_len, seal_blob};
+use mt_messenger_e2e::media::{
+    blob_id as media_blob_id, open_blob, pad_len as media_pad_len, seal_blob,
+};
 
 /// Запечатать медиа-блоб: sealed_blob = nonce || Seal(blob_key, nonce, input, AD=mt-media).
 /// out — owned-буфер (освободить mt_e2e_free). `input` — уже финальный (паддинг pad_len до вызова).
@@ -299,14 +303,23 @@ pub unsafe extern "C" fn mt_e2e_seal_blob(
     out_len: *mut usize,
 ) -> c_int {
     guard(|| {
-        if blob_key.is_null() || nonce.is_null() || (input.is_null() && input_len != 0) || out_ptr.is_null() || out_len.is_null() {
+        if blob_key.is_null()
+            || nonce.is_null()
+            || (input.is_null() && input_len != 0)
+            || out_ptr.is_null()
+            || out_len.is_null()
+        {
             return MT_ERR_NULL_PTR;
         }
         let mut key = [0u8; 32];
         key.copy_from_slice(slice::from_raw_parts(blob_key, 32));
         let mut n = [0u8; 12];
         n.copy_from_slice(slice::from_raw_parts(nonce, 12));
-        let inp = if input_len == 0 { &[][..] } else { slice::from_raw_parts(input, input_len) };
+        let inp = if input_len == 0 {
+            &[][..]
+        } else {
+            slice::from_raw_parts(input, input_len)
+        };
         write_out(seal_blob(&key, &n, inp), out_ptr, out_len);
         MT_OK
     })
@@ -317,12 +330,20 @@ pub unsafe extern "C" fn mt_e2e_seal_blob(
 /// # Safety
 /// sealed_blob — len байт; out32 — 32 байта.
 #[no_mangle]
-pub unsafe extern "C" fn mt_e2e_blob_id(sealed_blob: *const u8, len: usize, out32: *mut u8) -> c_int {
+pub unsafe extern "C" fn mt_e2e_blob_id(
+    sealed_blob: *const u8,
+    len: usize,
+    out32: *mut u8,
+) -> c_int {
     guard(|| {
         if (sealed_blob.is_null() && len != 0) || out32.is_null() {
             return MT_ERR_NULL_PTR;
         }
-        let b = if len == 0 { &[][..] } else { slice::from_raw_parts(sealed_blob, len) };
+        let b = if len == 0 {
+            &[][..]
+        } else {
+            slice::from_raw_parts(sealed_blob, len)
+        };
         let id = media_blob_id(b);
         slice::from_raw_parts_mut(out32, 32).copy_from_slice(&id);
         MT_OK
@@ -342,17 +363,25 @@ pub unsafe extern "C" fn mt_e2e_open_blob(
     out_len: *mut usize,
 ) -> c_int {
     guard(|| {
-        if blob_key.is_null() || (sealed_blob.is_null() && len != 0) || out_ptr.is_null() || out_len.is_null() {
+        if blob_key.is_null()
+            || (sealed_blob.is_null() && len != 0)
+            || out_ptr.is_null()
+            || out_len.is_null()
+        {
             return MT_ERR_NULL_PTR;
         }
         let mut key = [0u8; 32];
         key.copy_from_slice(slice::from_raw_parts(blob_key, 32));
-        let b = if len == 0 { &[][..] } else { slice::from_raw_parts(sealed_blob, len) };
+        let b = if len == 0 {
+            &[][..]
+        } else {
+            slice::from_raw_parts(sealed_blob, len)
+        };
         match open_blob(&key, b) {
             Some(pt) => {
                 write_out(pt, out_ptr, out_len);
                 MT_OK
-            }
+            },
             None => MT_ERR_KEM_FAILED,
         }
     })

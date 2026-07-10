@@ -53,6 +53,7 @@ pub const MT_ERR_BUFFER_TOO_SMALL: i32 = -9;
 pub const MT_ERR_KDF_FAILED: i32 = -10;
 pub const MT_ERR_ADDRESS_INVALID: i32 = -10;
 pub const MT_ERR_KEM_FAILED: i32 = -11;
+pub const MT_ERR_REPLAY: i32 = -12;
 pub const MT_ERR_PANIC: i32 = -100;
 
 #[inline]

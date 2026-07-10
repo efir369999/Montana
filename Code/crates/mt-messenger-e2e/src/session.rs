@@ -4,6 +4,7 @@
 
 use crate::crypto::{kem_decapsulate, kem_encapsulate, kem_keypair_from_seed};
 use crate::ratchet::{ad_bytes, kdf_ck, kdf_rk, msg_key, open, seal, MLKEM_PUBKEY_SIZE};
+use zeroize::Zeroize;
 
 pub const MLKEM_CT_SIZE: usize = 1088;
 pub const MLKEM_SK_SIZE: usize = 2400;
@@ -17,6 +18,7 @@ pub enum RatchetError {
     TooManySkipped,
     TooLarge,
     Decrypt,
+    Replay,
     Crypto,
 }
 
@@ -118,6 +120,22 @@ fn get_opt32(b: &[u8], p: &mut usize) -> Result<Option<[u8; 32]>, RatchetError> 
             Ok(Some(a))
         },
         _ => Err(RatchetError::BadFormat),
+    }
+}
+
+impl Drop for SessionState {
+    fn drop(&mut self) {
+        self.rk.zeroize();
+        self.dhs_sk.zeroize();
+        if let Some(k) = self.cks.as_mut() {
+            k.zeroize();
+        }
+        if let Some(k) = self.ckr.as_mut() {
+            k.zeroize();
+        }
+        for (_, _, mk) in self.mkskipped.iter_mut() {
+            mk.zeroize();
+        }
     }
 }
 
@@ -272,11 +290,13 @@ impl SessionState {
             self.ratchet_pending = false;
         }
         let cks = self.cks.ok_or(RatchetError::BadFormat)?;
-        let (mk, next_cks) = kdf_ck(&cks);
+        let (mut mk, next_cks) = kdf_ck(&cks);
         self.cks = Some(next_cks);
-        let (enc_key, nonce) = msg_key(&mk);
+        let (mut enc_key, nonce) = msg_key(&mk);
         let ad = ad_bytes(&self.session_id, self.pn, self.ns, &self.dhs_pub);
         let body = seal(&enc_key, &nonce, plaintext, &ad);
+        mk.zeroize();
+        enc_key.zeroize();
 
         let has_ct = self.send_ct.is_some();
         let mut out = Vec::new();
@@ -340,10 +360,14 @@ impl SessionState {
             .iter()
             .position(|(rp, n, _)| rp.as_slice() == ratchet_pub && *n == m_ns)
         {
-            let mk = self.mkskipped[idx].2;
-            let (enc_key, nonce) = msg_key(&mk);
-            let pt = open(&enc_key, &nonce, body, &ad).ok_or(RatchetError::Decrypt)?;
-            self.mkskipped.remove(idx);
+            let mut mk = self.mkskipped[idx].2;
+            let (mut enc_key, nonce) = msg_key(&mk);
+            let pt = open(&enc_key, &nonce, body, &ad);
+            mk.zeroize();
+            enc_key.zeroize();
+            let pt = pt.ok_or(RatchetError::Decrypt)?;
+            let (_, _, mut used) = self.mkskipped.remove(idx);
+            used.zeroize();
             return Ok(pt);
         }
 
@@ -351,6 +375,11 @@ impl SessionState {
             Some(d) => &d[..] != ratchet_pub,
             None => true,
         };
+        // spec, Этап 6 «Правило exactly-once»: номер в текущей цепочке ниже курсора
+        // приёма и ключ уже израсходован/вытеснен -> повтор, сессия сохраняется.
+        if !is_kem_step && m_ns < self.nr {
+            return Err(RatchetError::Replay);
+        }
         let mut rk = self.rk;
         let mut ckr = self.ckr;
         let mut nr = self.nr;
@@ -395,9 +424,12 @@ impl SessionState {
             c = nc;
             nr += 1;
         }
-        let (mk, next_c) = kdf_ck(&c);
-        let (enc_key, nonce) = msg_key(&mk);
-        let pt = open(&enc_key, &nonce, body, &ad).ok_or(RatchetError::Decrypt)?;
+        let (mut mk, next_c) = kdf_ck(&c);
+        let (mut enc_key, nonce) = msg_key(&mk);
+        let pt = open(&enc_key, &nonce, body, &ad);
+        mk.zeroize();
+        enc_key.zeroize();
+        let pt = pt.ok_or(RatchetError::Decrypt)?;
 
         self.rk = rk;
         self.ckr = Some(next_c);

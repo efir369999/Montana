@@ -101,3 +101,19 @@ fn session_survives_serialization() {
     let m2 = alice.encrypt(b"second", &[0xA2; 64]).unwrap();
     assert_eq!(bob2.decrypt(&m2).unwrap(), b"second");
 }
+
+#[test]
+fn replay_below_cursor_keeps_session() {
+    use mt_messenger_e2e::session::RatchetError;
+    let (mut alice, mut bob) = setup();
+    let m1 = alice.encrypt(b"one", &[0xA1; 64]).unwrap();
+    let m2 = alice.encrypt(b"two", &[0xA2; 64]).unwrap();
+    assert_eq!(bob.decrypt(&m1).unwrap(), b"one");
+    assert_eq!(bob.decrypt(&m2).unwrap(), b"two");
+    assert_eq!(bob.decrypt(&m1).unwrap_err(), RatchetError::Replay);
+    assert_eq!(bob.decrypt(&m2).unwrap_err(), RatchetError::Replay);
+    let m3 = alice.encrypt(b"three", &[0xA3; 64]).unwrap();
+    assert_eq!(bob.decrypt(&m3).unwrap(), b"three");
+    let r = bob.encrypt(b"reply", &[0xB1; 64]).unwrap();
+    assert_eq!(alice.decrypt(&r).unwrap(), b"reply");
+}
