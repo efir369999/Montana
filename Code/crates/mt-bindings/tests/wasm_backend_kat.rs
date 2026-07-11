@@ -785,12 +785,12 @@ fn device_registry_kat() {
 /// Этап 11: сообщение подписи заявки на @имя.
 #[test]
 fn username_claim_kat() {
-    let acc =
-        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
-    let mut msg = b"mt-username".to_vec();
-    msg.push(0x00);
-    msg.extend_from_slice(b"alice");
-    msg.extend_from_slice(&acc);
+    let acc: [u8; 32] =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    let msg = mt_messenger_e2e::contacts::username_claim_message(b"alice", &acc);
     assert_eq!(msg.len(), 49);
     assert_eq!(
         hex::encode(Sha256::digest(&msg)),
@@ -801,17 +801,20 @@ fn username_claim_kat() {
 /// Этап 11: канонический layout ContactRecord (приватный, шифруется в сейфе).
 #[test]
 fn contact_record_kat() {
-    let acc =
-        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21").unwrap();
-    let uname = b"alice";
-    let disp = b"Alice";
-    let mut rec = acc.clone();
-    rec.push(0x01); // verified
-    rec.push(uname.len() as u8);
-    rec.extend_from_slice(uname);
-    rec.push(disp.len() as u8);
-    rec.extend_from_slice(disp);
-    rec.extend_from_slice(&1000u64.to_le_bytes());
+    let acc: [u8; 32] =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    let rec = mt_messenger_e2e::contacts::encode_contact_record(
+        &mt_messenger_e2e::contacts::ContactRecord {
+            account_id: acc,
+            verified: true,
+            username: b"alice".to_vec(),
+            display_name: b"Alice".to_vec(),
+            added_at: 1000,
+        },
+    );
     assert_eq!(rec.len(), 53);
     assert_eq!(
         hex::encode(&rec),
@@ -822,10 +825,9 @@ fn contact_record_kat() {
 /// Этап 11: отдельный ключ шифрования контактов (из сида entropy_32, отдельный домен).
 #[test]
 fn contacts_key_kat() {
-    let entropy_32 = [0x55u8; 32];
-    let ck = hkdf_sha256(&[0u8; 32], &entropy_32, b"mt-contacts-key", 32);
+    let ck = mt_messenger_e2e::contacts::contacts_key(&[0x55u8; 32]);
     assert_eq!(
-        hex::encode(&ck),
+        hex::encode(ck),
         "8a341c252f20b83f33ba2471fd915b11bed788c0b23f205cf8ce3a4de2c65301"
     );
 }
