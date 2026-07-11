@@ -437,3 +437,24 @@ pub unsafe extern "C" fn mt_e2e_party_code(
         MT_OK
     })
 }
+
+/// call_key/sframe_key (Этап 13, PQ-медиа-слой звонка). `call_seed` — 32 байта (из E2E-сигнала);
+/// out — 64 байта: call_key(32) ‖ sframe_key(32).
+///
+/// # Safety
+/// `call_seed` валиден на 32 байта; `out` — на 64 байта.
+#[no_mangle]
+pub unsafe extern "C" fn mt_e2e_call_key(call_seed: *const u8, out: *mut u8) -> c_int {
+    guard(|| {
+        if call_seed.is_null() || out.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let seed: [u8; 32] = slice::from_raw_parts(call_seed, 32).try_into().unwrap();
+        let ck = mt_messenger_e2e::call::call_key(&seed);
+        let sf = mt_messenger_e2e::call::sframe_key(&ck);
+        let dst = slice::from_raw_parts_mut(out, 64);
+        dst[..32].copy_from_slice(&ck);
+        dst[32..].copy_from_slice(&sf);
+        MT_OK
+    })
+}

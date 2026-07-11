@@ -875,6 +875,19 @@ fn media_content_kat() {
 
 /// Этап 7 (E1): commitment удаления = SHA-256(delete_preimage).
 #[test]
+fn call_key_kat() {
+    let ck = mt_messenger_e2e::call::call_key(&[0x44u8; 32]);
+    assert_eq!(
+        hex::encode(ck),
+        "c0a443e76155b699d691a3902eedc5c0f43ec860a28b57f6ca70633fc1d99bde"
+    );
+    assert_eq!(
+        hex::encode(mt_messenger_e2e::call::sframe_key(&ck)),
+        "5a23f3dfbad643d36fddf3c2d415371c0532a5a5640c514c061d94c1a47e3d84"
+    );
+}
+
+#[test]
 fn delete_commitment_kat() {
     assert_eq!(
         hex::encode(Sha256::digest([0x77u8; 32])),

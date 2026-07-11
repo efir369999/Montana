@@ -98,6 +98,7 @@ int mt_e2e_open_blob(const uint8_t *blob_key, const uint8_t *sealed_blob, size_t
 size_t mt_e2e_pad_len(size_t n);
 int mt_e2e_safety_number(const uint8_t *id_a, const uint8_t *id_b, uint8_t **out_ptr, size_t *out_len);
 int mt_e2e_party_code(const uint8_t *id, uint8_t **out_ptr, size_t *out_len);
+int mt_e2e_call_key(const uint8_t *call_seed, uint8_t *out);   /* out = call_key(32) || sframe_key(32) */
 
 #ifdef __cplusplus
 }
