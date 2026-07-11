@@ -4,7 +4,9 @@
 
 use mt_codec::{write_bytes, write_u16, write_u32, write_u8, CanonicalEncode};
 
+use crate::challenge::NONCE_SIZE; // X-1 SSOT: nonce общего примитива challenge (Этап 1)
 use crate::frame::{FrameError, MsgId, MSG_ID_SIZE};
+use mt_crypto::SIGNATURE_SIZE; // X-2 SSOT: размер ML-DSA-65 подписи из mt-crypto
 
 pub const EPOCH_TAG_SIZE: usize = 16;
 pub type EpochTag = [u8; EPOCH_TAG_SIZE];
@@ -113,9 +115,6 @@ impl Deposit {
     }
 }
 
-pub const NONCE_SIZE: usize = 16;
-pub const FETCH_SIG_SIZE: usize = 3309;
-
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct FetchReq {
     pub epoch_tag: EpochTag,
@@ -125,7 +124,7 @@ pub struct FetchReq {
 
 impl FetchReq {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(EPOCH_TAG_SIZE + NONCE_SIZE + FETCH_SIG_SIZE);
+        let mut b = Vec::with_capacity(EPOCH_TAG_SIZE + NONCE_SIZE + SIGNATURE_SIZE);
         b.extend_from_slice(&self.epoch_tag);
         b.extend_from_slice(&self.nonce);
         b.extend_from_slice(&self.sig);
@@ -133,7 +132,7 @@ impl FetchReq {
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, FrameError> {
-        if input.len() != EPOCH_TAG_SIZE + NONCE_SIZE + FETCH_SIG_SIZE {
+        if input.len() != EPOCH_TAG_SIZE + NONCE_SIZE + SIGNATURE_SIZE {
             return Err(FrameError::Truncated);
         }
         let mut epoch_tag = [0u8; EPOCH_TAG_SIZE];
@@ -258,7 +257,7 @@ mod tests {
         let r = FetchReq {
             epoch_tag: [0x01; 16],
             nonce: [0x02; 16],
-            sig: vec![0x03; FETCH_SIG_SIZE],
+            sig: vec![0x03; SIGNATURE_SIZE],
         };
         let b = r.to_bytes();
         assert_eq!(b.len(), 16 + 16 + 3309);
