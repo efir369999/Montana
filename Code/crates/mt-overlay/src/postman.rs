@@ -42,6 +42,10 @@ impl Postman {
     /// Контракт транспортного слоя (D2): `nonce` — свежий CSPRNG на каждую регистрацию;
     /// `channel_hash` — привязка к текущему соединению (TLS-Exporter/Noise handshake-hash).
     /// Межсоединительный реплей закрыт `channel_hash` (R4); внутрисоединительный — свежим `nonce`.
+    ///
+    /// S2: при регистрации одного `overlay_addr` двумя соединениями выигрывает последнее
+    /// (маршрут по addr идёт на новый conn). Это self-inflicted мультидевайс одной личности
+    /// (чужой addr зарегистрировать нельзя — нужна подпись), не атака.
     pub fn register(
         &mut self,
         conn: ConnId,
@@ -87,9 +91,11 @@ impl Postman {
                 None => Route::Buffer { frame },
             },
             // ACK от получателя назад отправителю по dst_overlay.
+            // S9: ACK эфемерен — если отправитель офлайн, ACK отбрасывается,
+            // НЕ буферизуется (буфер Этапа 2 — для контента, не для подтверждений).
             FrameType::Ack => match self.by_addr.get(&frame.dst_overlay) {
                 Some(&conn) => Route::AckToSender { conn, frame },
-                None => Route::Buffer { frame },
+                None => Route::Drop,
             },
             // DELIVER — исходящий тип почтальона, входящим быть не должен.
             FrameType::Deliver => {
@@ -176,6 +182,39 @@ mod tests {
         let sig = sign_registration(&sk2, &addr_a, &nonce, &ch).unwrap();
         assert_eq!(p.register(9, &pkb, &nonce, &ch, &sig), None);
         assert!(!p.is_registered(9));
+    }
+
+    #[test]
+    fn ack_to_offline_sender_is_dropped_not_buffered() {
+        // S9: ACK на неизвестный/офлайн dst — Drop, не Buffer.
+        let mut p = Postman::new();
+        let _b = reg(&mut p, 2, 0xB2);
+        let frame = OverlayFrame {
+            frame_type: FrameType::Ack,
+            dst_overlay: [0xEE; 32], // отправитель офлайн
+            src_overlay: [0; 32],
+            msg_id: [0x09; 16],
+            payload: Vec::new(),
+        };
+        assert!(matches!(p.route(2, frame), Route::Drop));
+    }
+
+    #[test]
+    fn ack_to_online_sender_forwarded() {
+        let mut p = Postman::new();
+        let a = reg(&mut p, 1, 0xA1);
+        let _b = reg(&mut p, 2, 0xB2);
+        let frame = OverlayFrame {
+            frame_type: FrameType::Ack,
+            dst_overlay: a,
+            src_overlay: [0; 32],
+            msg_id: [0x09; 16],
+            payload: Vec::new(),
+        };
+        assert!(matches!(
+            p.route(2, frame),
+            Route::AckToSender { conn: 1, .. }
+        ));
     }
 
     #[test]

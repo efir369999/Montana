@@ -68,6 +68,13 @@ impl std::error::Error for FrameError {}
 
 impl CanonicalEncode for OverlayFrame {
     fn encode(&self, buf: &mut Vec<u8>) {
+        // S8: payload_len — u32; при payload > MAX_PAYLOAD_LEN усечение исказило бы длину.
+        // Вызывающий обязан не превышать cap (decode отвергает такое на приёме).
+        debug_assert!(
+            self.payload.len() <= MAX_PAYLOAD_LEN,
+            "payload {} exceeds MAX_PAYLOAD_LEN",
+            self.payload.len()
+        );
         write_u8(buf, FRAME_VERSION);
         write_u8(buf, self.frame_type as u8);
         write_bytes(buf, &self.dst_overlay);

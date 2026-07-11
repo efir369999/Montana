@@ -16,6 +16,12 @@ pub type Nonce = [u8; NONCE_SIZE];
 pub type ChannelHash = [u8; CHANNEL_HASH_SIZE];
 
 // spec: msg = op_domain || 0x00 || resource_id || nonce || channel_hash
+//
+// S1 (canonical): resource_id БЕЗ length-prefix — однозначность держится на двух инвариантах:
+//   (1) op_domain (ASCII без 0x00) отделён `0x00`-сепаратором → cross-domain коллизия исключена;
+//   (2) в пределах одного op_domain длина resource_id ФИКСИРОВАНА: mt-reg → overlay_addr (32 B),
+//       mt-fetch → epoch_tag (16 B). Хвост (nonce 16 ‖ channel_hash 32) фиксирован.
+// Нарушение (2) — передача resource иной длины под тем же доменом — запрещено вызывающим.
 pub fn challenge_message(
     op_domain: &[u8],
     resource_id: &[u8],
