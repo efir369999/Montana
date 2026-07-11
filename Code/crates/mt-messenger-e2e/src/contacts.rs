@@ -191,7 +191,7 @@ mod tests {
             "9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a210105616c69636505416c696365e803000000000000"
         );
         // round-trip через список
-        let list = encode_contact_list(&[r.clone()]);
+        let list = encode_contact_list(std::slice::from_ref(&r));
         let back = decode_contact_list(&list).unwrap();
         assert_eq!(back, vec![r]);
     }

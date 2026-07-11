@@ -81,6 +81,11 @@ pub mod domain {
     pub const LIBP2P_TRANSPORT_KEY: &[u8] = b"mt-libp2p-transport-key";
     pub const TUNNEL_ONLINE: &[u8] = b"mt-tunnel-online";
     pub const TUNNEL_MESH: &[u8] = b"mt-tunnel-mesh";
+    // P2P-сеть (Montana P2P Network, Этап 1): оверлей-адрес узла из account_id.
+    pub const OVERLAY: &[u8] = b"mt-overlay";
+    // P2P-сеть: op-домены challenge-response владения (регистрация / fetch инбокса).
+    pub const OVERLAY_REG: &[u8] = b"mt-reg";
+    pub const OVERLAY_FETCH: &[u8] = b"mt-fetch";
     pub const RECOVERY_FINGERPRINT: &[u8] = b"mt-recovery-fingerprint";
     // Мессенджер-слой (Montana Messenger v0.49). Канонический источник доменных строк
     // identity-binding / auth / истории — клиенты (iOS MontanaDomain, Web) зеркалят отсюда.

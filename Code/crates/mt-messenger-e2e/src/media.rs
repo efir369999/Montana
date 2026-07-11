@@ -27,7 +27,9 @@ pub fn pad_len(n: usize) -> usize {
     }
     let bl = usize::BITS - n.leading_zeros(); // bit_length(n)
     let step = 1usize << (bl - 5);
-    n.div_ceil(step) * step
+    // ceiling division (n + step - 1) / step — MSRV 1.70 (div_ceil стабилен лишь с 1.73);
+    // переполнение невозможно: n ≤ MAX_PLAINTEXT (1 MiB) ≪ usize::MAX - step
+    ((n + step - 1) / step) * step
 }
 
 /// sealed_blob = nonce || ChaCha20-Poly1305.Seal(blob_key, nonce, input, AD="mt-media"||0x00).

@@ -1790,6 +1790,7 @@ dependencies = [
  "mt-crypto",
  "mt-messenger-e2e",
  "mt-mnemonic",
+ "mt-overlay",
  "mt-state",
  "sha2",
  "wasm-bindgen",
@@ -1966,6 +1967,16 @@ dependencies = [
  "tokio",
  "tokio-util",
  "zeroize",
+]
+
+[[package]]
+name = "mt-overlay"
+version = "1.2.0"
+dependencies = [
+ "hex",
+ "mt-codec",
+ "mt-crypto",
+ "mt-state",
 ]
 
 [[package]]

@@ -1,0 +1,17 @@
+[package]
+name = "mt-overlay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+description = "Montana P2P Network — оверлей-адресация и транспорт почтальона. Спека Montana P2P Network, Этап 1. Клиенты линкуют, не реимплементируют."
+
+[dependencies]
+mt-codec = { path = "../mt-codec" }
+mt-crypto = { path = "../mt-crypto" }
+mt-state = { path = "../mt-state" }
+
+[dev-dependencies]
+hex = "0.4"

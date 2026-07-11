@@ -445,6 +445,9 @@ pub fn compute_state_root(
     )
 }
 
+// spec: suite_id 0x0001 = ML-DSA-65 (единственный активный suite)
+pub const SUITE_MLDSA65: u16 = 0x0001;
+
 // spec: account_id = SHA-256("mt-account" || suite_id || pubkey)
 pub fn derive_account_id(suite_id: u16, pubkey: &[u8; PUBLIC_KEY_SIZE]) -> AccountId {
     hash(domain::ACCOUNT, &[&suite_id.to_le_bytes(), pubkey])
