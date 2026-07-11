@@ -48,7 +48,7 @@ fn e2e_offline_deposit_fetch_reassemble_with_shard_loss() {
     let sig = sign_fetch(&bsk, &tag, &nonce, &ch).unwrap();
     assert!(verify_fetch(&bpk, &tag, &nonce, &ch, &sig, w_fetch));
 
-    let stored = postman.fetch(&tag);
+    let stored = postman.fetch(&tag).to_vec();
     assert_eq!(stored.len(), 4);
 
     // ТЕРМИНАЛ: теряем 2 из 4 → восстанавливаем из оставшихся 2.

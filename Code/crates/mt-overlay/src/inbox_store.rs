@@ -1,12 +1,13 @@
 //! Off-chain инбокс-хранилище почтальона (Этап 2): epoch_tag → осколки с TTL,
 //! drop-on-delivery, per-tag rate-limit. Не consensus state ([P2P-1]).
-//! E-3: принадлежность тега инкапсулирована — store знает account_id своих юзеров
-//! и сам проверяет tag ∈ own (внешним булевым флагом забыть невозможно).
+//! E-3: принадлежность тега инкапсулирована (own_account_ids внутри store).
+//! X-4: own-теги предвычислены в set per окно → deposit O(1), а не O(own×окна).
+//! X-5: fetch возвращает срез без клонирования.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::frame::{MsgId, MAX_PAYLOAD_LEN};
-use crate::inbox::{epoch_tag_belongs, EpochTag, N_FETCH};
+use crate::inbox::{epoch_tag, EpochTag, N_FETCH};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StoredShard {
@@ -29,6 +30,9 @@ pub const PER_TAG_PER_WINDOW_QUOTA: usize = 64;
 #[derive(Default)]
 pub struct InboxStore {
     own_account_ids: Vec<[u8; 32]>,
+    // X-4: предвычисленные теги own-юзеров за [W−N_FETCH, W+N_FETCH] для окна known_window.
+    known_tags: HashSet<EpochTag>,
+    known_window: Option<u64>,
     items: HashMap<EpochTag, Vec<StoredShard>>,
     rate: HashMap<(EpochTag, u64), usize>,
 }
@@ -42,17 +46,25 @@ impl InboxStore {
     pub fn register_own(&mut self, account_id: [u8; 32]) {
         if !self.own_account_ids.contains(&account_id) {
             self.own_account_ids.push(account_id);
+            self.known_window = None; // инвалидировать кеш — новый юзер войдёт в set
         }
     }
 
-    /// tag принадлежит какому-то own юзеру за окно-диапазон вокруг current_window
-    /// (депозит может нести окно из будущего/прошлого в пределах N_FETCH).
-    fn is_own_tag(&self, tag: &EpochTag, current_window: u64) -> bool {
+    /// X-4: перестроить set own-тегов при смене окна (амортизированно O(1) на депозит
+    /// в пределах окна; current_window монотонен и ставится почтальоном, не атакующим).
+    fn ensure_known(&mut self, current_window: u64) {
+        if self.known_window == Some(current_window) {
+            return;
+        }
+        self.known_tags.clear();
         let lo = current_window.saturating_sub(N_FETCH);
         let hi = current_window.saturating_add(N_FETCH);
-        self.own_account_ids
-            .iter()
-            .any(|acc| epoch_tag_belongs(acc, tag, lo, hi))
+        for acc in &self.own_account_ids {
+            for w in lo..=hi {
+                self.known_tags.insert(epoch_tag(acc, w));
+            }
+        }
+        self.known_window = Some(current_window);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -66,7 +78,8 @@ impl InboxStore {
         ttl_windows: u32,
         ct: Vec<u8>,
     ) -> Result<(), DepositError> {
-        if !self.is_own_tag(&tag, current_window) {
+        self.ensure_known(current_window);
+        if !self.known_tags.contains(&tag) {
             return Err(DepositError::NotOwnTag);
         }
         if ct.len() > MAX_PAYLOAD_LEN {
@@ -87,8 +100,9 @@ impl InboxStore {
         Ok(())
     }
 
-    pub fn fetch(&self, tag: &EpochTag) -> Vec<StoredShard> {
-        self.items.get(tag).cloned().unwrap_or_default()
+    /// X-5: срез осколков без клонирования.
+    pub fn fetch(&self, tag: &EpochTag) -> &[StoredShard] {
+        self.items.get(tag).map(Vec::as_slice).unwrap_or(&[])
     }
 
     pub fn drop_delivered(&mut self, tag: &EpochTag, msg_id: &MsgId) {
@@ -135,13 +149,23 @@ mod tests {
 
     #[test]
     fn reject_foreign_tag_encapsulated() {
-        // E-3: тег постороннего (не own) отвергается store-ом изнутри, без внешнего флага.
         let mut s = store_with_own();
         let foreign = epoch_tag(&[0x99; 32], 100);
         assert_eq!(
             s.deposit(foreign, 100, [1; 16], 0, 1, 240, vec![1; 64]),
             Err(DepositError::NotOwnTag)
         );
+    }
+
+    #[test]
+    fn new_own_user_invalidates_cache() {
+        // X-4 регрессия: регистрация нового юзера после первого депозита включает его теги.
+        let mut s = store_with_own();
+        let _ = s.deposit(epoch_tag(&ACC, 100), 100, [1; 16], 0, 1, 240, vec![0; 8]);
+        let acc2 = [0x22; 32];
+        s.register_own(acc2);
+        let tag2 = epoch_tag(&acc2, 100);
+        assert!(s.deposit(tag2, 100, [2; 16], 0, 1, 240, vec![0; 8]).is_ok());
     }
 
     #[test]
