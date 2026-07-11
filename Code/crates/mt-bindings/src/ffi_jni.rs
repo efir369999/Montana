@@ -24,10 +24,14 @@ use mt_mnemonic::{
 use mt_state::derive_account_id;
 use zeroize::Zeroizing;
 
-use mt_messenger_e2e::handshake::{build_handshake, process_handshake, RecipientBundle, RecipientKeys};
-use mt_messenger_e2e::media::{blob_id as media_blob_id, open_blob, pad_len as media_pad_len, seal_blob};
-use mt_messenger_e2e::session::SessionState;
 use super::{account_id_to_address, address_to_account_id};
+use mt_messenger_e2e::handshake::{
+    build_handshake, process_handshake, RecipientBundle, RecipientKeys,
+};
+use mt_messenger_e2e::media::{
+    blob_id as media_blob_id, open_blob, pad_len as media_pad_len, seal_blob,
+};
+use mt_messenger_e2e::session::SessionState;
 
 const MLKEM_PUB: usize = super::MT_MLKEM_PUBKEY_SIZE;
 const MLKEM_SK: usize = super::MT_MLKEM_SECKEY_SIZE;
@@ -166,7 +170,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeSign<'local>(
                 *b = 0;
             }
             return null;
-        }
+        },
     };
     for b in sk_bytes.iter_mut() {
         *b = 0;
@@ -212,7 +216,6 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeVerify<'local>(
         0
     }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Полная крипто-поверхность SSOT (зеркало ffi_c.rs) — идентичность/адрес/KEM.
@@ -605,7 +608,10 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eProcessHandsha
     let spk_pub: [u8; MLKEM_PUB] = spk_pub_v.as_slice().try_into().unwrap();
     let opk: Option<([u8; MLKEM_PUB], &[u8])> =
         if opk_pub_v.len() == MLKEM_PUB && opk_sk_v.len() == MLKEM_SK {
-            Some((opk_pub_v.as_slice().try_into().unwrap(), opk_sk_v.as_slice()))
+            Some((
+                opk_pub_v.as_slice().try_into().unwrap(),
+                opk_sk_v.as_slice(),
+            ))
         } else {
             None
         };
