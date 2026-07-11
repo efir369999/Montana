@@ -4,13 +4,15 @@
 pub mod challenge;
 pub mod dedup;
 pub mod frame;
+pub mod postman;
 pub mod prologue;
 
 pub use mt_state::AccountId;
 
-pub const OVERLAY_ADDR_SIZE: usize = 32;
+// SSOT: 32-байтный хеш — mt_crypto::Hash32; оверлей-адрес такой же ширины.
+pub const OVERLAY_ADDR_SIZE: usize = mt_crypto::HASH_SIZE;
 
-pub type OverlayAddr = [u8; OVERLAY_ADDR_SIZE];
+pub type OverlayAddr = mt_crypto::Hash32;
 
 // spec: overlay_addr = SHA-256("mt-overlay" || 0x00 || account_id)
 pub fn overlay_addr(account_id: &AccountId) -> OverlayAddr {

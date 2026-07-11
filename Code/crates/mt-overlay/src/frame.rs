@@ -9,8 +9,9 @@ pub const FRAME_VERSION: u8 = 0x01;
 pub const MSG_ID_SIZE: usize = 16;
 // version 1 + type 1 + dst 32 + src 32 + msg_id 16 + payload_len 4
 pub const FRAME_HEADER_SIZE: usize = 86;
-// Защитный DoS-предел декодера на payload (не протокольный инвариант):
-// верхний бакет Этапа 2 = 1 MiB, плюс запас на AEAD/erasure-оверхед.
+// Защитный DoS-предел декодера на payload (D3: cap реализации, НЕ byte-exact инвариант
+// спеки): верхний бакет Этапа 2 = 1 MiB (MAX_PLAINTEXT), плюс запас на AEAD/erasure-оверхед.
+// Отклонение сверху — FrameError::PayloadTooLong, не паника.
 pub const MAX_PAYLOAD_LEN: usize = 2 * 1024 * 1024;
 
 pub type MsgId = [u8; MSG_ID_SIZE];
