@@ -1,10 +1,12 @@
 //! Off-chain инбокс-хранилище почтальона (Этап 2): epoch_tag → осколки с TTL,
 //! drop-on-delivery, per-tag rate-limit. Не consensus state ([P2P-1]).
+//! E-3: принадлежность тега инкапсулирована — store знает account_id своих юзеров
+//! и сам проверяет tag ∈ own (внешним булевым флагом забыть невозможно).
 
 use std::collections::HashMap;
 
 use crate::frame::{MsgId, MAX_PAYLOAD_LEN};
-use crate::inbox::EpochTag;
+use crate::inbox::{epoch_tag_belongs, EpochTag, N_FETCH};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StoredShard {
@@ -12,22 +14,22 @@ pub struct StoredShard {
     pub shard_index: u8,
     pub shard_total: u8,
     pub ct: Vec<u8>,
-    pub expire_window: u64, // окно депозита + ttl_windows
+    pub expire_window: u64,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DepositError {
-    NotOwnTag,     // тег не принадлежит юзерам этого почтальона
-    RateLimited,   // превышена квота на тег в окне
-    OversizeShard, // осколок больше защитного cap
+    NotOwnTag,
+    RateLimited,
+    OversizeShard,
 }
 
 pub const PER_TAG_PER_WINDOW_QUOTA: usize = 64;
 
 #[derive(Default)]
 pub struct InboxStore {
+    own_account_ids: Vec<[u8; 32]>,
     items: HashMap<EpochTag, Vec<StoredShard>>,
-    // (epoch_tag, window) -> число депозитов в этом окне (rate-limit)
     rate: HashMap<(EpochTag, u64), usize>,
 }
 
@@ -36,12 +38,26 @@ impl InboxStore {
         Self::default()
     }
 
-    /// Депозит осколка. `is_own_tag` — почтальон уже проверил принадлежность тега
-    /// своим юзерам (inbox::epoch_tag_belongs) до вызова.
+    /// Зарегистрировать юзера этого почтальона (из RegHello Этапа 1 → account_id).
+    pub fn register_own(&mut self, account_id: [u8; 32]) {
+        if !self.own_account_ids.contains(&account_id) {
+            self.own_account_ids.push(account_id);
+        }
+    }
+
+    /// tag принадлежит какому-то own юзеру за окно-диапазон вокруг current_window
+    /// (депозит может нести окно из будущего/прошлого в пределах N_FETCH).
+    fn is_own_tag(&self, tag: &EpochTag, current_window: u64) -> bool {
+        let lo = current_window.saturating_sub(N_FETCH);
+        let hi = current_window.saturating_add(N_FETCH);
+        self.own_account_ids
+            .iter()
+            .any(|acc| epoch_tag_belongs(acc, tag, lo, hi))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn deposit(
         &mut self,
-        is_own_tag: bool,
         tag: EpochTag,
         current_window: u64,
         msg_id: MsgId,
@@ -50,7 +66,7 @@ impl InboxStore {
         ttl_windows: u32,
         ct: Vec<u8>,
     ) -> Result<(), DepositError> {
-        if !is_own_tag {
+        if !self.is_own_tag(&tag, current_window) {
             return Err(DepositError::NotOwnTag);
         }
         if ct.len() > MAX_PAYLOAD_LEN {
@@ -71,13 +87,10 @@ impl InboxStore {
         Ok(())
     }
 
-    /// Фетч всех осколков по тегу (после verify_fetch + ownership). НЕ удаляет —
-    /// удаление по явному drop_delivered (drop-on-delivery после reassembly у клиента).
     pub fn fetch(&self, tag: &EpochTag) -> Vec<StoredShard> {
         self.items.get(tag).cloned().unwrap_or_default()
     }
 
-    /// drop-on-delivery: клиент собрал сообщение → удалить все осколки этого msg_id.
     pub fn drop_delivered(&mut self, tag: &EpochTag, msg_id: &MsgId) {
         if let Some(v) = self.items.get_mut(tag) {
             v.retain(|s| &s.msg_id != msg_id);
@@ -87,69 +100,70 @@ impl InboxStore {
         }
     }
 
-    /// TTL-прунинг: удалить осколки с expire_window < current_window.
     pub fn prune(&mut self, current_window: u64) {
         self.items.retain(|_, v| {
             v.retain(|s| s.expire_window >= current_window);
             !v.is_empty()
         });
-        self.rate
-            .retain(|(_, w), _| *w + crate::inbox::N_FETCH >= current_window);
+        self.rate.retain(|(_, w), _| *w + N_FETCH >= current_window);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inbox::epoch_tag;
 
-    fn dep(store: &mut InboxStore, tag: EpochTag, w: u64, id: u8) -> Result<(), DepositError> {
-        store.deposit(true, tag, w, [id; 16], 0, 1, 240, vec![id; 64])
+    const ACC: [u8; 32] = [0x11; 32];
+
+    fn store_with_own() -> InboxStore {
+        let mut s = InboxStore::new();
+        s.register_own(ACC);
+        s
     }
 
     #[test]
-    fn deposit_fetch_drop() {
-        let mut s = InboxStore::new();
-        let tag = [0xAA; 16];
-        dep(&mut s, tag, 100, 1).unwrap();
+    fn deposit_fetch_drop_own_tag() {
+        let mut s = store_with_own();
+        let tag = epoch_tag(&ACC, 100);
+        s.deposit(tag, 100, [1; 16], 0, 1, 240, vec![1; 64])
+            .unwrap();
         assert_eq!(s.fetch(&tag).len(), 1);
         s.drop_delivered(&tag, &[1; 16]);
         assert_eq!(s.fetch(&tag).len(), 0);
     }
 
     #[test]
-    fn reject_foreign_tag() {
-        let mut s = InboxStore::new();
+    fn reject_foreign_tag_encapsulated() {
+        // E-3: тег постороннего (не own) отвергается store-ом изнутри, без внешнего флага.
+        let mut s = store_with_own();
+        let foreign = epoch_tag(&[0x99; 32], 100);
         assert_eq!(
-            s.deposit(false, [0; 16], 100, [1; 16], 0, 1, 240, vec![1; 64]),
+            s.deposit(foreign, 100, [1; 16], 0, 1, 240, vec![1; 64]),
             Err(DepositError::NotOwnTag)
         );
     }
 
     #[test]
     fn rate_limit_per_tag_window() {
-        let mut s = InboxStore::new();
-        let tag = [0xBB; 16];
+        let mut s = store_with_own();
+        let tag = epoch_tag(&ACC, 100);
         for i in 0..PER_TAG_PER_WINDOW_QUOTA {
             assert!(s
-                .deposit(true, tag, 100, [i as u8; 16], 0, 1, 240, vec![0; 8])
+                .deposit(tag, 100, [i as u8; 16], 0, 1, 240, vec![0; 8])
                 .is_ok());
         }
         assert_eq!(
-            s.deposit(true, tag, 100, [99; 16], 0, 1, 240, vec![0; 8]),
+            s.deposit(tag, 100, [99; 16], 0, 1, 240, vec![0; 8]),
             Err(DepositError::RateLimited)
         );
-        // другое окно — квота сбрасывается
-        assert!(s
-            .deposit(true, tag, 101, [0; 16], 0, 1, 240, vec![0; 8])
-            .is_ok());
     }
 
     #[test]
     fn ttl_prune_removes_expired() {
-        let mut s = InboxStore::new();
-        let tag = [0xCC; 16];
-        s.deposit(true, tag, 100, [1; 16], 0, 1, 10, vec![1; 8])
-            .unwrap(); // expire 110
+        let mut s = store_with_own();
+        let tag = epoch_tag(&ACC, 100);
+        s.deposit(tag, 100, [1; 16], 0, 1, 10, vec![1; 8]).unwrap();
         s.prune(105);
         assert_eq!(s.fetch(&tag).len(), 1);
         s.prune(111);

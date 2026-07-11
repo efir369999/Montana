@@ -181,7 +181,8 @@ impl FetchResp {
         }
         let count = u16::from_le_bytes([input[0], input[1]]) as usize;
         let mut o = 2;
-        let mut items = Vec::with_capacity(count);
+        // E-4: cap pre-alloc — минимальный item = msg_id16+idx1+total1+ct_len4 = 22 B.
+        let mut items = Vec::with_capacity(count.min((input.len() - 2) / 22));
         for _ in 0..count {
             if input.len() < o + MSG_ID_SIZE + 1 + 1 + 4 {
                 return Err(FrameError::Truncated);
