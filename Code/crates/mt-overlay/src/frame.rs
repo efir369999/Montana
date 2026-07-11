@@ -110,7 +110,9 @@ impl OverlayFrame {
         let mut msg_id = [0u8; MSG_ID_SIZE];
         msg_id.copy_from_slice(&input[o..o + MSG_ID_SIZE]);
         o += MSG_ID_SIZE;
-        let payload_len = u32::from_le_bytes(input[o..o + 4].try_into().expect("4 bytes"));
+        let mut len_bytes = [0u8; 4];
+        len_bytes.copy_from_slice(&input[o..o + 4]);
+        let payload_len = u32::from_le_bytes(len_bytes);
         o += 4;
         if payload_len as usize > MAX_PAYLOAD_LEN {
             return Err(FrameError::PayloadTooLong(payload_len));

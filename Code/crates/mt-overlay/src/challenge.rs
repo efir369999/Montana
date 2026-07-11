@@ -9,8 +9,8 @@ use crate::{overlay_addr, OverlayAddr};
 
 pub const NONCE_SIZE: usize = 16;
 pub const CHANNEL_HASH_SIZE: usize = 32;
-// spec: channel_hash для QUIC/TLS 1.3 = TLS-Exporter(label, "", 32) — label здесь
-pub const CHANNEL_EXPORT_LABEL: &[u8] = b"mt-overlay-channel";
+// spec: channel_hash для QUIC/TLS 1.3 = TLS-Exporter(label, "", 32); label — SSOT в mt-codec::domain
+pub use mt_codec::domain::OVERLAY_CHANNEL_LABEL as CHANNEL_EXPORT_LABEL;
 
 pub type Nonce = [u8; NONCE_SIZE];
 pub type ChannelHash = [u8; CHANNEL_HASH_SIZE];

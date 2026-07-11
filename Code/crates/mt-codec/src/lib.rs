@@ -68,16 +68,18 @@ pub mod domain {
     pub const SEED: &[u8] = b"mt-seed";
     pub const ACCOUNT_KEY: &[u8] = b"mt-account-key";
     pub const NODE_KEY: &[u8] = b"mt-node-key";
-    // spec v30.x: `mt-account-lottery` domain удалён (account lottery не существует).
     pub const CONTENT_CHUNK: &[u8] = b"mt-content-chunk";
     pub const CONTENT_MANIFEST: &[u8] = b"mt-content-manifest";
     pub const PROFILE: &[u8] = b"mt-profile";
     pub const ENCRYPTION_KEY: &[u8] = b"mt-encryption-key";
     pub const APP_ENCRYPTION_KEY: &[u8] = b"mt-app-encryption-key";
     pub const PREKEYS: &[u8] = b"mt-prekeys";
-    // libp2p Ed25519 transport identity per M8 cross-machine networking.
-    // Derived из master_seed для recoverable identities (Mode A); в Mode B
-    // ephemeral Ed25519 секрет хранится напрямую в identity.bin.
+    // libp2p PeerId (транспортная адресация M8 cross-machine). Ed25519 навязан
+    // libp2p-машинерией PeerId (ML-DSA не стандартный libp2p key type), как BEP44
+    // навязывает Ed25519 — scoped-исключение. НЕ несёт крипто-аутентификацию:
+    // подлинность пира постквантовая — ML-DSA-65 подпись transcript в Noise_PQ XX
+    // (mt-noise-pq), DH через ML-KEM-768. Derived из master_seed (Mode A recoverable)
+    // либо ephemeral в identity.bin (Mode B).
     pub const LIBP2P_TRANSPORT_KEY: &[u8] = b"mt-libp2p-transport-key";
     pub const TUNNEL_ONLINE: &[u8] = b"mt-tunnel-online";
     pub const TUNNEL_MESH: &[u8] = b"mt-tunnel-mesh";
@@ -86,6 +88,8 @@ pub mod domain {
     // P2P-сеть: op-домены challenge-response владения (регистрация / fetch инбокса).
     pub const OVERLAY_REG: &[u8] = b"mt-reg";
     pub const OVERLAY_FETCH: &[u8] = b"mt-fetch";
+    // TLS-Exporter label для channel-binding challenge-response (RFC 8446 §7.5) — не hash-domain.
+    pub const OVERLAY_CHANNEL_LABEL: &[u8] = b"mt-overlay-channel";
     pub const RECOVERY_FINGERPRINT: &[u8] = b"mt-recovery-fingerprint";
     // Мессенджер-слой (Montana Messenger v0.49). Канонический источник доменных строк
     // identity-binding / auth / истории — клиенты (iOS MontanaDomain, Web) зеркалят отсюда.
