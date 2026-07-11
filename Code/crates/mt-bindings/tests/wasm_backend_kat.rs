@@ -738,30 +738,10 @@ fn safety_number_kat() {
     );
 }
 
-fn content_text(msg_id: &[u8; 16], sent_at: u64, reply_to: &[u8; 16], text: &[u8]) -> Vec<u8> {
-    let mut v = vec![0x01u8];
-    v.extend_from_slice(msg_id);
-    v.extend_from_slice(&sent_at.to_le_bytes());
-    v.extend_from_slice(reply_to);
-    v.extend_from_slice(&(text.len() as u32).to_le_bytes());
-    v.extend_from_slice(text);
-    v
-}
-
-fn content_receipt(ctype: u8, msg_id: &[u8; 16], sent_at: u64, target: &[u8; 16]) -> Vec<u8> {
-    let mut v = vec![ctype];
-    v.extend_from_slice(msg_id);
-    v.extend_from_slice(&sent_at.to_le_bytes());
-    v.extend_from_slice(target);
-    v
-}
+use mt_messenger_e2e::content::{encode_receipt as content_receipt, encode_text as content_text};
 
 fn content_typing(msg_id: &[u8; 16], sent_at: u64, state: u8) -> Vec<u8> {
-    let mut v = vec![0x04u8];
-    v.extend_from_slice(msg_id);
-    v.extend_from_slice(&sent_at.to_le_bytes());
-    v.push(state);
-    v
+    mt_messenger_e2e::content::encode_typing(msg_id, sent_at, state == 1)
 }
 
 /// Этап 9: кодек контента (plaintext храповика) — text / delivery_receipt / typing.

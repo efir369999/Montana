@@ -6,7 +6,9 @@
 //! - `ratchet` — Этап 6: двойной храповик (KEM-храповик), AEAD сообщений.
 //! - `labels`  — Этап 7: слепая доставка, вращающиеся метки очередей.
 //! - `safety`  — Этап 8: сверка отпечатка личности (safety number).
+//! - `content` — Этап 9: кодек Content личного чата 1-на-1.
 
+pub mod content;
 pub mod crypto;
 pub mod handshake;
 pub mod kdf;
