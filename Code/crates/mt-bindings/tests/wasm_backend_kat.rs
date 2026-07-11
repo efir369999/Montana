@@ -764,18 +764,17 @@ fn content_codec_kat() {
 /// Этап 10: канонический байт-layout подписываемого DeviceRegistry (rollback-защита registry_seq).
 #[test]
 fn device_registry_kat() {
-    let mut entry = [0x11u8; 16].to_vec();
-    entry.extend_from_slice(&[0x77u8; 1184]);
-    entry.extend_from_slice(&1000u64.to_le_bytes());
-    entry.push(0x00);
-    assert_eq!(entry.len(), 1209);
-    let mut msg = b"mt-device-registry".to_vec();
-    msg.push(0x00);
-    msg.push(0x02); // format
-    msg.extend_from_slice(&5u64.to_le_bytes()); // registry_seq
-    msg.extend_from_slice(&2000u64.to_le_bytes()); // registry_time
-    msg.extend_from_slice(&1u16.to_le_bytes()); // entry_count
-    msg.extend_from_slice(&entry);
+    use mt_messenger_e2e::device_registry::{
+        encode_entry, registry_sign_message, DeviceEntry, ENTRY_LEN,
+    };
+    let entry = DeviceEntry {
+        device_id: [0x11; 16],
+        device_kem_pub: [0x77; 1184],
+        added_at: 1000,
+        revoked: false,
+    };
+    assert_eq!(encode_entry(&entry).len(), ENTRY_LEN);
+    let msg = registry_sign_message(5, 2000, &[entry]);
     assert_eq!(msg.len(), 1247);
     assert_eq!(
         hex::encode(Sha256::digest(&msg)),

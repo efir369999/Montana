@@ -7,9 +7,11 @@
 //! - `labels`  — Этап 7: слепая доставка, вращающиеся метки очередей.
 //! - `safety`  — Этап 8: сверка отпечатка личности (safety number).
 //! - `content` — Этап 9: кодек Content личного чата 1-на-1.
+//! - `device_registry` — Этап 10: подписанный реестр устройств (мульти-девайс).
 
 pub mod content;
 pub mod crypto;
+pub mod device_registry;
 pub mod handshake;
 pub mod kdf;
 pub mod labels;
