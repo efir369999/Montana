@@ -76,6 +76,40 @@ pub fn verify_registration(
     }
 }
 
+/// Подпись FetchReq (Этап 2): sig = ML-DSA-65(account_key, "mt-fetch"‖0x00‖epoch_tag‖nonce‖channel_hash).
+pub fn sign_fetch(
+    account_sk: &SecretKey,
+    epoch_tag: &[u8; 16],
+    nonce: &Nonce,
+    channel_hash: &ChannelHash,
+) -> Result<Signature, CryptoError> {
+    let msg = challenge_message(
+        mt_codec::domain::OVERLAY_FETCH,
+        epoch_tag,
+        nonce,
+        channel_hash,
+    );
+    sign(account_sk, &msg)
+}
+
+/// Проверка подписи FetchReq против account_pubkey заявителя (владение account_key).
+/// Принадлежность epoch_tag инбоксу B проверяется отдельно (inbox::epoch_tag_belongs).
+pub fn verify_fetch(
+    account_pubkey: &[u8; PUBLIC_KEY_SIZE],
+    epoch_tag: &[u8; 16],
+    nonce: &Nonce,
+    channel_hash: &ChannelHash,
+    sig: &Signature,
+) -> bool {
+    let msg = challenge_message(
+        mt_codec::domain::OVERLAY_FETCH,
+        epoch_tag,
+        nonce,
+        channel_hash,
+    );
+    verify(&PublicKey::from_array(*account_pubkey), &msg, sig)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -90,6 +90,8 @@ pub mod domain {
     // P2P-сеть: op-домены challenge-response владения (регистрация / fetch инбокса).
     pub const OVERLAY_REG: &[u8] = b"mt-reg";
     pub const OVERLAY_FETCH: &[u8] = b"mt-fetch";
+    // P2P Этап 2: вращающийся тег инбокса store-and-forward (из account_id + окна).
+    pub const INBOX_TAG: &[u8] = b"mt-inbox-tag";
     // TLS-Exporter label для channel-binding challenge-response (RFC 8446 §7.5) — не hash-domain.
     pub const OVERLAY_CHANNEL_LABEL: &[u8] = b"mt-overlay-channel";
     pub const RECOVERY_FINGERPRINT: &[u8] = b"mt-recovery-fingerprint";

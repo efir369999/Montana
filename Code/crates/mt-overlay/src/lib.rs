@@ -3,7 +3,10 @@
 
 pub mod challenge;
 pub mod dedup;
+pub mod erasure;
 pub mod frame;
+pub mod inbox;
+pub mod inbox_store;
 pub mod postman;
 pub mod prologue;
 

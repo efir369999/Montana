@@ -72,3 +72,46 @@ fn kat_challenge_message_composition() {
         )
     );
 }
+
+#[test]
+fn kat_epoch_tag() {
+    // Спека Этап 2: epoch_tag = SHA-256("mt-inbox-tag"‖0x00‖account_id‖window_8B_LE)[0..16].
+    let acc: [u8; 32] =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    assert_eq!(
+        hex::encode(mt_overlay::inbox::epoch_tag(&acc, 1000)),
+        "66eeeae23f89c18a60dfc3364c273439"
+    );
+    assert_eq!(
+        hex::encode(mt_overlay::inbox::epoch_tag(&acc, 1001)),
+        "b0461b35d94582dfa82e755cec476746"
+    );
+}
+
+#[test]
+fn kat_deposit_encode() {
+    // Спека Этап 2 Deposit: epoch_tag16‖msg_id16‖ttl(u32 LE)‖shard_index‖shard_total‖ct_len(u32 LE)‖ct.
+    let acc: [u8; 32] =
+        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    let d = mt_overlay::inbox::Deposit {
+        epoch_tag: mt_overlay::inbox::epoch_tag(&acc, 1000),
+        msg_id: [0x22; 16],
+        ttl_windows: 240,
+        shard_index: 1,
+        shard_total: 4,
+        ct: vec![0xCC; 32],
+    };
+    let b = d.to_bytes();
+    assert_eq!(b.len(), 74);
+    assert_eq!(
+        hex::encode(mt_crypto::sha256_raw(&b)),
+        "8ce4f3b0419e23c7514c6a99f612702e6f9035255449c153a3ec71fe6386834e"
+    );
+    assert_eq!(mt_overlay::inbox::Deposit::decode(&b).unwrap(), d);
+}
