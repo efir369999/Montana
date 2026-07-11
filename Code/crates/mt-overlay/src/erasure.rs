@@ -19,7 +19,7 @@ pub fn rs_split(data: &[u8], k: usize, n: usize) -> Result<Vec<Vec<u8>>, Erasure
     if k == 0 || n <= k {
         return Err(ErasureError::BadParams);
     }
-    let shard_len = data.len().div_ceil(k).max(1);
+    let shard_len = ((data.len() + k - 1) / k).max(1);
     let mut shards: Vec<Vec<u8>> = Vec::with_capacity(n);
     for i in 0..k {
         let start = i * shard_len;
@@ -67,7 +67,7 @@ mod tests {
 
     fn padded(data: &[u8], k: usize) -> Vec<u8> {
         let mut d = data.to_vec();
-        let sl = data.len().div_ceil(k).max(1);
+        let sl = ((data.len() + k - 1) / k).max(1);
         d.resize(sl * k, 0);
         d
     }
