@@ -95,6 +95,8 @@ pub fn mlkem_seed_for_role(
     out
 }
 
+// [I-16] admission A-1: деривация seed для libp2p ed25519 transport keypair (admission-
+// обёртка libp2p PeerId, НЕ Montana-identity — та ML-DSA-65). Единый источник ed25519-роли.
 pub fn ed25519_seed_for_role(
     master_seed: &[u8; MASTER_SEED_LEN],
     role: &[u8],

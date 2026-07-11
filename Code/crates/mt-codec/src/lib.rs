@@ -74,7 +74,9 @@ pub mod domain {
     pub const ENCRYPTION_KEY: &[u8] = b"mt-encryption-key";
     pub const APP_ENCRYPTION_KEY: &[u8] = b"mt-app-encryption-key";
     pub const PREKEYS: &[u8] = b"mt-prekeys";
-    // libp2p PeerId (транспортная адресация M8 cross-machine). Ed25519 навязан
+    // [I-16] admission A-1 (Classical-only-as-admission): ed25519 здесь — admission-
+    // обёртка libp2p PeerId, НЕ Montana-security. libp2p PeerId (транспортная
+    // адресация M8 cross-machine). Ed25519 навязан
     // libp2p-машинерией PeerId (ML-DSA не стандартный libp2p key type), как BEP44
     // навязывает Ed25519 — scoped-исключение. НЕ несёт крипто-аутентификацию:
     // подлинность пира постквантовая — ML-DSA-65 подпись transcript в Noise_PQ XX

@@ -9,6 +9,8 @@ use crate::{overlay_addr, OverlayAddr};
 
 pub const NONCE_SIZE: usize = 16;
 pub const CHANNEL_HASH_SIZE: usize = 32;
+// [I-16] admission A-3: channel_hash берётся из QUIC/TLS-1.3 канала (X25519 ECDHE —
+// admission-обёртка RFC 8446); контент постквантовый (Noise_PQ XX + E2E поверх).
 // spec: channel_hash для QUIC/TLS 1.3 = TLS-Exporter(label, "", 32); label — SSOT в mt-codec::domain
 pub use mt_codec::domain::OVERLAY_CHANNEL_LABEL as CHANNEL_EXPORT_LABEL;
 

@@ -73,6 +73,8 @@ pub struct Identity {
 }
 
 impl Identity {
+    /// [I-16] admission A-1: Ed25519 — формальный аргумент SwarmBuilder libp2p,
+    /// НЕ Montana-identity (та — ML-DSA-65 `derive_peer_id`, mt-net-transport).
     /// Построить libp2p Keypair из стораного secret (Ed25519).
     /// Используется для конструирования `libp2p::identity::Keypair` каждый
     /// раз on-demand — Keypair не хранится в struct, чтобы избежать

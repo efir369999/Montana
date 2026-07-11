@@ -70,6 +70,8 @@ where
     Ok(swarm)
 }
 
+/// [I-16] admission A-1: Ed25519 keypair — формальный SwarmBuilder book-keeping, НЕ
+/// Montana-identity (та — ML-DSA-65 `derive_peer_id`; manifest peer_id = ML-DSA).
 /// Build a libp2p Swarm pinned to a specific local Ed25519 transport keypair
 /// (production: derived deterministically from the operator's identity so the
 /// PeerId is reproducible).

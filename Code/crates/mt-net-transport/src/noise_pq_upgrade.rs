@@ -27,6 +27,7 @@ use std::pin::Pin;
 /// Multihash code 0x12 — sha2-256 (libp2p / IPFS standard for peer identifiers).
 const MULTIHASH_CODE_SHA2_256: u64 = 0x12;
 
+/// [I-16]: post-quantum identity — NOT an admission place (contrast A-1 ed25519 Swarm key).
 /// Convert an ML-DSA-65 public key into a libp2p PeerId. The PeerId is the
 /// SHA-256 multihash of the public key bytes — a stable, deterministic
 /// mapping from Montana's post-quantum identity to libp2p's routing identifier.
