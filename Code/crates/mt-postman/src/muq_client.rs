@@ -36,23 +36,12 @@ impl MuqClient {
 
     /// Получатель регистрирует очередь на хосте. Возвращает true при ok.
     pub async fn register_queue(&self, q: &Queue) -> Result<bool, ClientError> {
-        let (mut s, mut r) = self.conn.open_bi().await?;
-        write_fixed(&mut s, &[TAG_QUEUE_REGISTER]).await?;
-        write_fixed(&mut s, &q.to_bytes()).await?;
-        let _ = s.finish();
-        let mut ack = [0u8; 1];
-        read_fixed(&mut r, &mut ack).await?;
-        Ok(ack[0] == OK)
+        muq_register(&self.conn, q).await
     }
 
     /// Отправитель кладёт депозит через entry-proxy (двуххоп; sealed непрозрачен proxy).
     pub async fn deposit_via_proxy(&self, pf: &ProxyForward) -> Result<bool, ClientError> {
-        let (mut s, mut r) = self.conn.open_bi().await?;
-        write_fixed(&mut s, &[TAG_PROXY_FORWARD]).await?;
-        send_frame(&mut s, &pf.to_bytes()).await?;
-        let mut ack = [0u8; 1];
-        read_fixed(&mut r, &mut ack).await?;
-        Ok(ack[0] == OK)
+        muq_deposit(&self.conn, pf).await
     }
 
     /// Получатель выбирает осколки: host шлёт nonce, клиент подписывает recv_key + channel_hash.
@@ -61,24 +50,53 @@ impl MuqClient {
         recv_id: QueueId,
         recv_sk: &SecretKey,
     ) -> Result<QueueResp, ClientError> {
-        let (mut s, mut r) = self.conn.open_bi().await?;
-        write_fixed(&mut s, &[TAG_QUEUE_SUBSCRIBE]).await?;
-
-        let mut nonce = [0u8; 16];
-        read_fixed(&mut r, &mut nonce).await?;
-
-        let mut ch = [0u8; CHANNEL_HASH_SIZE];
-        ch.copy_from_slice(&channel_hash(&self.conn)?);
-        let sig = sign_subscribe(recv_sk, &recv_id, &nonce, &ch)?;
-        let sub = QueueSubscribe {
-            recv_id,
-            nonce,
-            sig: *sig.as_bytes(),
-        };
-        write_fixed(&mut s, &sub.to_bytes()).await?;
-        let _ = s.finish();
-
-        let bytes = recv_frame(&mut r).await?;
-        QueueResp::decode(&bytes).map_err(ClientError::Decode)
+        muq_subscribe(&self.conn, recv_id, recv_sk).await
     }
+}
+
+// --- MUQ-операции над произвольным соединением (переиспользуют Node и MuqClient) ---
+
+pub(crate) async fn muq_register(conn: &Connection, q: &Queue) -> Result<bool, ClientError> {
+    let (mut s, mut r) = conn.open_bi().await?;
+    write_fixed(&mut s, &[TAG_QUEUE_REGISTER]).await?;
+    write_fixed(&mut s, &q.to_bytes()).await?;
+    let _ = s.finish();
+    let mut ack = [0u8; 1];
+    read_fixed(&mut r, &mut ack).await?;
+    Ok(ack[0] == OK)
+}
+
+pub(crate) async fn muq_deposit(conn: &Connection, pf: &ProxyForward) -> Result<bool, ClientError> {
+    let (mut s, mut r) = conn.open_bi().await?;
+    write_fixed(&mut s, &[TAG_PROXY_FORWARD]).await?;
+    send_frame(&mut s, &pf.to_bytes()).await?;
+    let mut ack = [0u8; 1];
+    read_fixed(&mut r, &mut ack).await?;
+    Ok(ack[0] == OK)
+}
+
+pub(crate) async fn muq_subscribe(
+    conn: &Connection,
+    recv_id: QueueId,
+    recv_sk: &SecretKey,
+) -> Result<QueueResp, ClientError> {
+    let (mut s, mut r) = conn.open_bi().await?;
+    write_fixed(&mut s, &[TAG_QUEUE_SUBSCRIBE]).await?;
+
+    let mut nonce = [0u8; 16];
+    read_fixed(&mut r, &mut nonce).await?;
+
+    let mut ch = [0u8; CHANNEL_HASH_SIZE];
+    ch.copy_from_slice(&channel_hash(conn)?);
+    let sig = sign_subscribe(recv_sk, &recv_id, &nonce, &ch)?;
+    let sub = QueueSubscribe {
+        recv_id,
+        nonce,
+        sig: *sig.as_bytes(),
+    };
+    write_fixed(&mut s, &sub.to_bytes()).await?;
+    let _ = s.finish();
+
+    let bytes = recv_frame(&mut r).await?;
+    QueueResp::decode(&bytes).map_err(ClientError::Decode)
 }

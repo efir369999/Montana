@@ -42,7 +42,7 @@ pub enum ServerError {
 }
 
 #[derive(Default)]
-struct Registry {
+pub(crate) struct Registry {
     postman: Postman,
     conns: HashMap<ConnId, Connection>,
     next: ConnId,
@@ -98,7 +98,7 @@ impl PostmanServer {
     }
 }
 
-async fn handle_connection(
+pub(crate) async fn handle_connection(
     conn: Connection,
     reg: Arc<Mutex<Registry>>,
     muq: Arc<MuqState>,
