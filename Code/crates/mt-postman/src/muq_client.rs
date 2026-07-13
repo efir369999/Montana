@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 
 use quinn::{Connection, Endpoint};
 
-use mt_crypto::SecretKey;
+use mt_crypto::{seal_to, MlkemPublicKey, SecretKey};
 use mt_overlay::challenge::CHANNEL_HASH_SIZE;
 use mt_overlay::muq::{
     sign_subscribe, sign_subscribe_relay, ProxyForward, Queue, QueueId, QueueResp, QueueSubscribe,
@@ -111,6 +111,7 @@ pub(crate) async fn muq_subscribe(
 pub(crate) async fn muq_subscribe_via_courier(
     conn: &Connection,
     host_overlay: OverlayAddr,
+    host_kem_pk: &MlkemPublicKey,
     recv_id: QueueId,
     recv_sk: &SecretKey,
 ) -> Result<QueueResp, ClientError> {
@@ -122,9 +123,11 @@ pub(crate) async fn muq_subscribe_via_courier(
         nonce,
         sig: *sig.as_bytes(),
     };
+    // Запечатать QueueSubscribe к ML-KEM ключу хоста — курьер крипто-слеп к recv_id.
+    let sealed = seal_to(host_kem_pk, &sub.to_bytes()).map_err(|_| ClientError::Rejected)?;
     let rp = ReceiveProxy {
         host_addr: host_overlay,
-        sealed: sub.to_bytes(),
+        sealed,
     };
     let (mut s, mut r) = conn.open_bi().await?;
     write_fixed(&mut s, &[TAG_RECEIVE_PROXY]).await?;

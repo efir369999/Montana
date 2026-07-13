@@ -38,6 +38,7 @@ fn build_deposit(
     msg_id: [u8; 16],
     ct: Vec<u8>,
     host_overlay: OverlayAddr,
+    host_kem_pk: &mt_crypto::MlkemPublicKey,
 ) -> ProxyForward {
     let nonce = [0x07u8; 16];
     let sig = sign_deposit(send_sk, &send_id, &msg_id, &nonce).unwrap();
@@ -51,9 +52,10 @@ fn build_deposit(
         ct,
         sig: sig.as_bytes().to_vec(),
     };
+    let sealed = mt_crypto::seal_to(host_kem_pk, &hd.to_bytes()).unwrap();
     ProxyForward {
         host_addr: host_overlay,
-        sealed: hd.to_bytes(),
+        sealed,
     }
 }
 
@@ -96,7 +98,14 @@ async fn node_is_one_entity_host_courier_client() {
     // courier здесь и слушает (релеит чужое), и был бы способен слать своё — одна сущность.
     let msg_id = [0x5Au8; 16];
     let ct = b"one-entity-node-delivery".to_vec();
-    let pf = build_deposit(send_id, &send_sk, msg_id, ct.clone(), host_overlay);
+    let pf = build_deposit(
+        send_id,
+        &send_sk,
+        msg_id,
+        ct.clone(),
+        host_overlay,
+        &host.host_kem_pubkey(),
+    );
     assert!(with_timeout(sender.deposit_via(courier_addr, &pf))
         .await
         .unwrap());
@@ -144,7 +153,14 @@ async fn courier_node_also_hosts_and_sends() {
 
     let msg_id = [0x5Bu8; 16];
     let ct = b"via-courier-b".to_vec();
-    let pf = build_deposit(send_id, &send_sk, msg_id, ct.clone(), a_overlay);
+    let pf = build_deposit(
+        send_id,
+        &send_sk,
+        msg_id,
+        ct.clone(),
+        a_overlay,
+        &a.host_kem_pubkey(),
+    );
     // отправитель = узел b (тот же, что курьер) — единая сущность и релеит, и шлёт своё
     assert!(with_timeout(b.deposit_via(b_addr, &pf)).await.unwrap());
 
@@ -191,7 +207,15 @@ async fn two_hop_retrieval_hides_receiver_from_host() {
     // депозит через курьер №1
     let msg_id = [0x5Au8; 16];
     let ct = b"receiver-hidden-from-host".to_vec();
-    let pf = build_deposit(send_id, &send_sk, msg_id, ct.clone(), host_overlay);
+    let host_kem = host.host_kem_pubkey();
+    let pf = build_deposit(
+        send_id,
+        &send_sk,
+        msg_id,
+        ct.clone(),
+        host_overlay,
+        &host_kem,
+    );
     assert!(with_timeout(peer.deposit_via(dep_courier_addr, &pf))
         .await
         .unwrap());
@@ -200,6 +224,7 @@ async fn two_hop_retrieval_hides_receiver_from_host() {
     let resp = with_timeout(peer.subscribe_via_courier(
         recv_courier_addr,
         host_overlay,
+        &host_kem,
         recv_id,
         &recv_sk,
     ))
@@ -208,4 +233,48 @@ async fn two_hop_retrieval_hides_receiver_from_host() {
     assert_eq!(resp.items.len(), 1, "двуххоп-выборка доставила осколок");
     assert_eq!(resp.items[0].ct, ct);
     assert_eq!(resp.items[0].msg_id, msg_id);
+}
+
+#[tokio::test]
+async fn self_host_absolute_no_courier() {
+    // Абсолют против сговора (вопрос 2): получатель держит очередь на СВОЁМ узле и забирает
+    // ЛОКАЛЬНО — курьеров нет, сговаривать нечего, получателя не видит НИКТО.
+    let me = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let me_addr = me.local_addr().unwrap();
+    {
+        let m = me.clone();
+        tokio::spawn(async move { m.run().await });
+    }
+    let me_overlay: OverlayAddr = [0xA0u8; 32];
+    me.add_courier_route(me_overlay, me_addr);
+
+    let recv_id = [0x71u8; 32];
+    let send_id = [0x51u8; 32];
+    let (q, _recv_sk, send_sk) = make_queue(recv_id, send_id);
+    assert!(with_timeout(me.register_queue_on(me_addr, &q))
+        .await
+        .unwrap());
+
+    let msg_id = [0x5Cu8; 16];
+    let ct = b"self-hosted-nobody-sees".to_vec();
+    let pf = build_deposit(
+        send_id,
+        &send_sk,
+        msg_id,
+        ct.clone(),
+        me_overlay,
+        &me.host_kem_pubkey(),
+    );
+    assert!(with_timeout(me.deposit_via(me_addr, &pf)).await.unwrap());
+
+    // ЛОКАЛЬНАЯ выборка — без курьера, без сети.
+    let resp = me.subscribe_local(&recv_id);
+    assert_eq!(
+        resp.items.len(),
+        1,
+        "self-host: забрал локально, курьеров нет"
+    );
+    assert_eq!(resp.items[0].ct, ct);
+    // повтор пуст (drop-on-delivery)
+    assert!(me.subscribe_local(&recv_id).items.is_empty());
 }

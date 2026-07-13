@@ -501,6 +501,45 @@ pub fn mlkem_decapsulate(
     Ok(MlkemSharedSecret(arr_box))
 }
 
+/// Postquantum sealed-запечатывание к получателю: ML-KEM-768 encapsulate +
+/// ChaCha20-Poly1305 AEAD. Формат: ct(1088) ‖ AEAD(plaintext)+tag(16). Только держатель
+/// ML-KEM secret key расшифрует — курьер/транзит крипто-слеп к содержимому (recv_id и т.п.).
+/// ss свежий на каждый encapsulate → ключ уникален per message → фиксированный nonce=0 безопасен.
+pub fn seal_to(recipient_pk: &MlkemPublicKey, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    use chacha20poly1305::aead::Aead;
+    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
+    let (ct, ss) = mlkem_encapsulate(recipient_pk)?;
+    let cipher =
+        ChaCha20Poly1305::new_from_slice(ss.as_bytes()).map_err(|_| CryptoError::InvalidInput)?;
+    let nonce = Nonce::from_slice(&[0u8; 12]);
+    let aead = cipher
+        .encrypt(nonce, plaintext)
+        .map_err(|_| CryptoError::InvalidInput)?;
+    let mut out = Vec::with_capacity(MLKEM_CIPHERTEXT_SIZE + aead.len());
+    out.extend_from_slice(ct.as_bytes());
+    out.extend_from_slice(&aead);
+    Ok(out)
+}
+
+/// Распечатать sealed (ct ‖ AEAD) держателем ML-KEM secret key. AEAD-тег гарантирует
+/// целостность; неверный ключ / повреждение → Err (крипто-слепота транзита абсолютна).
+pub fn open_from(recipient_sk: &MlkemSecretKey, sealed: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    use chacha20poly1305::aead::Aead;
+    use chacha20poly1305::{ChaCha20Poly1305, KeyInit, Nonce};
+    if sealed.len() < MLKEM_CIPHERTEXT_SIZE + 16 {
+        return Err(CryptoError::InvalidInput);
+    }
+    let ct = MlkemCiphertext::from_slice(&sealed[..MLKEM_CIPHERTEXT_SIZE])
+        .ok_or(CryptoError::InvalidInput)?;
+    let ss = mlkem_decapsulate(recipient_sk, &ct)?;
+    let cipher =
+        ChaCha20Poly1305::new_from_slice(ss.as_bytes()).map_err(|_| CryptoError::InvalidInput)?;
+    let nonce = Nonce::from_slice(&[0u8; 12]);
+    cipher
+        .decrypt(nonce, &sealed[MLKEM_CIPHERTEXT_SIZE..])
+        .map_err(|_| CryptoError::InvalidInput)
+}
+
 #[repr(u16)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum SuiteId {
@@ -580,6 +619,22 @@ pub fn self_test() -> Result<(), CryptoSelfTestError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn seal_open_roundtrip_and_wrong_key_fails() {
+        let (pk, sk) = keypair_from_seed_mlkem(&[0x11u8; MLKEM_SEED_SIZE]).unwrap();
+        let pt = b"recv_id-and-subscribe-secret";
+        let sealed = seal_to(&pk, pt).unwrap();
+        assert!(sealed.len() >= MLKEM_CIPHERTEXT_SIZE + 16);
+        assert_eq!(open_from(&sk, &sealed).unwrap(), pt);
+        // чужой ML-KEM ключ не откроет — курьер/транзит крипто-слеп
+        let (_pk2, sk2) = keypair_from_seed_mlkem(&[0x22u8; MLKEM_SEED_SIZE]).unwrap();
+        assert!(open_from(&sk2, &sealed).is_err());
+        // повреждённый AEAD — тег ловит
+        let mut bad = sealed.clone();
+        *bad.last_mut().unwrap() ^= 1;
+        assert!(open_from(&sk, &bad).is_err());
+    }
+
     use super::*;
 
     #[test]

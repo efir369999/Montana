@@ -34,6 +34,7 @@ fn make_queue(
     (q, recv_sk, send_sk)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_deposit(
     send_id: [u8; 32],
     send_sk: &mt_crypto::SecretKey,
@@ -42,6 +43,7 @@ fn build_deposit(
     shard_total: u8,
     ct: Vec<u8>,
     host_overlay: OverlayAddr,
+    host_kem_pk: &mt_crypto::MlkemPublicKey,
 ) -> ProxyForward {
     let nonce = [0x07u8; 16];
     let sig = sign_deposit(send_sk, &send_id, &msg_id, &nonce).unwrap();
@@ -55,9 +57,10 @@ fn build_deposit(
         ct,
         sig: sig.as_bytes().to_vec(),
     };
+    let sealed = mt_crypto::seal_to(host_kem_pk, &hd.to_bytes()).unwrap();
     ProxyForward {
         host_addr: host_overlay,
-        sealed: hd.to_bytes(),
+        sealed,
     }
 }
 
@@ -70,6 +73,7 @@ async fn offline_delivery_two_hop_deposit() {
     let proxy_addr = proxy.local_addr().unwrap();
     let host_overlay: OverlayAddr = [0xA0u8; 32];
     proxy.muq().add_proxy_route(host_overlay, host_addr);
+    let host_kem = host.muq().host_kem_pubkey();
     tokio::spawn(host.run());
     tokio::spawn(proxy.run());
 
@@ -85,7 +89,16 @@ async fn offline_delivery_two_hop_deposit() {
     // A кладёт депозит через proxy при закрытом B (двуххоп).
     let msg_id = [0x5Au8; 16];
     let ct = b"sealed-e2e-envelope-for-sleeping-B".to_vec();
-    let pf = build_deposit(send_id, &send_sk, msg_id, 0, 1, ct.clone(), host_overlay);
+    let pf = build_deposit(
+        send_id,
+        &send_sk,
+        msg_id,
+        0,
+        1,
+        ct.clone(),
+        host_overlay,
+        &host_kem,
+    );
     let a = with_timeout(MuqClient::connect(proxy_addr)).await.unwrap();
     assert!(with_timeout(a.deposit_via_proxy(&pf)).await.unwrap());
 
@@ -110,6 +123,7 @@ async fn durability_rs_2of3_survives_host_down() {
     let proxy = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
     let proxy_addr = proxy.local_addr().unwrap();
 
+    let mut host_kems = Vec::new();
     for i in 0..3u8 {
         let h = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
         let a = h.local_addr().unwrap();
@@ -117,6 +131,7 @@ async fn durability_rs_2of3_survives_host_down() {
         proxy.muq().add_proxy_route(ov, a);
         hosts_addr.push(a);
         host_overlays.push(ov);
+        host_kems.push(h.muq().host_kem_pubkey());
         tokio::spawn(h.run());
     }
     tokio::spawn(proxy.run());
@@ -146,6 +161,7 @@ async fn durability_rs_2of3_survives_host_down() {
             3,
             shards[i].clone(),
             host_overlays[i],
+            &host_kems[i],
         );
         assert!(with_timeout(a_client.deposit_via_proxy(&pf)).await.unwrap());
     }

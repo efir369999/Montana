@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use quinn::Endpoint;
 
-use mt_crypto::SecretKey;
+use mt_crypto::{MlkemPublicKey, SecretKey};
 use mt_overlay::muq::{ProxyForward, Queue, QueueId, QueueResp};
 use mt_overlay::OverlayAddr;
 
@@ -111,12 +111,27 @@ impl Node {
         &self,
         courier: SocketAddr,
         host_overlay: OverlayAddr,
+        host_kem_pk: &MlkemPublicKey,
         recv_id: QueueId,
         recv_sk: &SecretKey,
     ) -> Result<QueueResp, ClientError> {
         let conn = self.endpoint.connect(courier, STAND_SNI)?.await?;
-        let resp = muq_subscribe_via_courier(&conn, host_overlay, recv_id, recv_sk).await?;
+        let resp =
+            muq_subscribe_via_courier(&conn, host_overlay, host_kem_pk, recv_id, recv_sk).await?;
         conn.close(0u32.into(), b"done");
         Ok(resp)
+    }
+
+    /// SELF-HOST (абсолют против сговора): забрать из СВОЕЙ очереди локально, без курьера
+    /// и без сети. Курьеров нет → сговаривать нечего → получателя не видит НИКТО.
+    pub fn subscribe_local(&self, recv_id: &QueueId) -> QueueResp {
+        QueueResp {
+            items: self.muq.local_drain(recv_id),
+        }
+    }
+
+    /// Публичный ML-KEM ключ хоста — для запечатывания sealed к этому узлу.
+    pub fn host_kem_pubkey(&self) -> MlkemPublicKey {
+        self.muq.host_kem_pubkey()
     }
 }

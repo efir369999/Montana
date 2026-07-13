@@ -11,7 +11,10 @@ use std::sync::{Arc, Mutex};
 
 use quinn::{Connection, Endpoint};
 
-use mt_crypto::{Signature, SIGNATURE_SIZE};
+use mt_crypto::{
+    keypair_from_seed_mlkem, open_from, MlkemPublicKey, MlkemSecretKey, Signature, MLKEM_SEED_SIZE,
+    SIGNATURE_SIZE,
+};
 use mt_overlay::challenge::{Nonce, CHANNEL_HASH_SIZE, NONCE_SIZE};
 use mt_overlay::muq::{
     HostDeposit, ProxyForward, Queue, QueueId, QueueItem, QueueResp, QueueSubscribe, ReceiveProxy,
@@ -41,14 +44,23 @@ pub struct MuqState {
     proxy_routes: Mutex<HashMap<OverlayAddr, SocketAddr>>,
     /// Текущее окно для TTL депозита. Стенд: фиксировано; деплой подставит floor(unix/60).
     window: u64,
+    /// ML-KEM keypair хоста: клиент запечатывает sealed к host_kem_pk, только host откроет.
+    /// Курьер крипто-слеп к содержимому sealed (recv_id/депозит) — вопрос анонимности закрыт.
+    host_kem_pk: MlkemPublicKey,
+    host_kem_sk: MlkemSecretKey,
 }
 
 impl Default for MuqState {
     fn default() -> Self {
+        let mut seed = [0u8; MLKEM_SEED_SIZE];
+        getrandom::getrandom(&mut seed).expect("OS CSPRNG");
+        let (host_kem_pk, host_kem_sk) = keypair_from_seed_mlkem(&seed).expect("ML-KEM keygen");
         Self {
             host: Mutex::new(QueueHost::new()),
             proxy_routes: Mutex::new(HashMap::new()),
             window: 0,
+            host_kem_pk,
+            host_kem_sk,
         }
     }
 }
@@ -61,6 +73,21 @@ impl MuqState {
     /// Proxy-роль: сопоставить overlay-адрес queue-host его физическому адресу (конфиг стенда).
     pub fn add_proxy_route(&self, host_overlay: OverlayAddr, addr: SocketAddr) {
         self.proxy_routes.lock().unwrap().insert(host_overlay, addr);
+    }
+
+    /// Публичный ML-KEM ключ хоста — клиент запечатывает sealed к нему (курьер крипто-слеп).
+    pub fn host_kem_pubkey(&self) -> MlkemPublicKey {
+        MlkemPublicKey::from_array(*self.host_kem_pk.as_bytes())
+    }
+
+    /// Локальный дренаж своей очереди (self-host, БЕЗ курьера) — абсолют против сговора.
+    pub fn local_drain(&self, recv_id: &QueueId) -> Vec<QueueItem> {
+        let mut host = self.host.lock().unwrap();
+        let items = host.buffer_of(recv_id);
+        for it in &items {
+            host.drop_delivered(recv_id, &it.msg_id);
+        }
+        items
     }
 
     /// Число осколков в буфере очереди (наблюдаемость/тесты).
@@ -135,16 +162,19 @@ async fn handle_deposit(
     mut recv: quinn::RecvStream,
     state: &Arc<MuqState>,
 ) -> Result<(), WireError> {
-    let bytes = recv_frame(&mut recv).await?;
-    let ack = match HostDeposit::decode(&bytes) {
-        Ok(hd) => {
+    let sealed = recv_frame(&mut recv).await?;
+    let ack = match open_from(&state.host_kem_sk, &sealed)
+        .ok()
+        .and_then(|b| HostDeposit::decode(&b).ok())
+    {
+        Some(hd) => {
             let w = state.window;
             match state.host.lock().unwrap().deposit(&hd, w) {
                 Ok(()) => OK,
                 Err(_) => ERR,
             }
         },
-        Err(_) => ERR,
+        None => ERR,
     };
     write_fixed(&mut send, &[ack]).await?;
     let _ = send.finish();
@@ -320,10 +350,13 @@ async fn handle_relay_subscribe(
     mut recv: quinn::RecvStream,
     state: &Arc<MuqState>,
 ) -> Result<(), WireError> {
-    let bytes = recv_frame(&mut recv).await?;
-    let sub = match QueueSubscribe::decode(&bytes) {
-        Ok(s) => s,
-        Err(_) => {
+    let sealed = recv_frame(&mut recv).await?;
+    let sub = match open_from(&state.host_kem_sk, &sealed)
+        .ok()
+        .and_then(|b| QueueSubscribe::decode(&b).ok())
+    {
+        Some(s) => s,
+        None => {
             let _ = send_frame(&mut send, &QueueResp { items: vec![] }.to_bytes()).await;
             return Ok(());
         },
