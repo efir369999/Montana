@@ -4,6 +4,7 @@
 use quinn::{RecvStream, SendStream};
 use thiserror::Error;
 
+use mt_codec::domain::OVERLAY_CHANNEL_LABEL;
 use mt_overlay::frame::MAX_PAYLOAD_LEN;
 
 /// Верхний предел на один OverlayFrame по проводу: header 86 B + payload cap + запас.
@@ -47,14 +48,13 @@ pub async fn recv_frame(s: &mut RecvStream) -> Result<Vec<u8>, WireError> {
     Ok(s.read_to_end(MAX_FRAME_WIRE).await?)
 }
 
-/// Метка TLS-Exporter для channel_hash (спека 0.8.1: RFC 8446 §7.5 / RFC 9266-паттерн).
-pub const CHANNEL_EXPORTER_LABEL: &[u8] = b"mt-overlay-channel";
-
-/// channel_hash соединения = TLS-Exporter("mt-overlay-channel", "", 32).
-/// Обе стороны QUIC выводят одинаковые 32 B → привязка RegProof к каналу (R4).
+/// channel_hash соединения = TLS-Exporter(OVERLAY_CHANNEL_LABEL, "", 32).
+/// Метка — SSOT из mt_codec::domain (не дублируется literal-ом; [C-1]/[I-10]).
+/// Обе стороны QUIC выводят одинаковые 32 B → привязка RegProof к каналу (R4);
+/// спека 0.8.1 (RFC 8446 §7.5 / RFC 9266-паттерн).
 pub fn channel_hash(conn: &quinn::Connection) -> Result<[u8; 32], WireError> {
     let mut ch = [0u8; 32];
-    conn.export_keying_material(&mut ch, CHANNEL_EXPORTER_LABEL, b"")
+    conn.export_keying_material(&mut ch, OVERLAY_CHANNEL_LABEL, b"")
         .map_err(|_| WireError::Export)?;
     Ok(ch)
 }
