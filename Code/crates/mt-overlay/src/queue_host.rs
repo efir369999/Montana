@@ -2,11 +2,12 @@
 //! осколков, двуххоп-депозит, выборка. Off-chain ([P2P-1]). Механика TTL/drop
 //! наследует Этап-2-store, ключ буфера = recv_id.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use mt_crypto::Signature;
 
 use crate::challenge::ChannelHash;
+use crate::dedup::DedupWindow;
 use crate::frame::{MsgId, MAX_PAYLOAD_LEN};
 use crate::muq::{
     verify_deposit, verify_subscribe, HostDeposit, Queue, QueueId, QueueItem, RELAY_CHANNEL_MARKER,
@@ -38,10 +39,10 @@ pub enum SubscribeError {
 
 #[derive(Default)]
 pub struct QueueHost {
-    queues: HashMap<QueueId, Queue>,            // recv_id → Queue
-    send_route: HashMap<QueueId, QueueId>,      // send_id → recv_id
-    buffer: HashMap<QueueId, Vec<StoredShard>>, // recv_id → осколки
-    seen_sub_nonces: HashMap<QueueId, HashSet<crate::challenge::Nonce>>, // anti-replay relay-выборки
+    queues: HashMap<QueueId, Queue>,                // recv_id → Queue
+    send_route: HashMap<QueueId, QueueId>,          // send_id → recv_id
+    buffer: HashMap<QueueId, Vec<StoredShard>>,     // recv_id → осколки
+    seen_sub_nonces: HashMap<QueueId, DedupWindow>, // anti-replay relay-выборки (bounded окно)
 }
 
 impl QueueHost {
@@ -124,7 +125,7 @@ impl QueueHost {
             .seen_sub_nonces
             .entry(*recv_id)
             .or_default()
-            .insert(*nonce)
+            .check_and_insert(nonce)
         {
             return Err(SubscribeError::Replay);
         }
