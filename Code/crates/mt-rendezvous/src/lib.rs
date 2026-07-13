@@ -18,6 +18,8 @@ pub const PQ_HINT_LEN: usize = 32;
 /// BEP44 verdict: тело `v` ≤ 1000 B.
 pub const MAX_RECORD_BYTES: usize = 1000;
 
+pub mod dht;
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RvError {
     #[error("truncated")]
@@ -28,6 +30,8 @@ pub enum RvError {
     TooLarge(usize),
     #[error("length mismatch")]
     LengthMismatch,
+    #[error("dht: {0}")]
+    Dht(String),
 }
 
 // --- dht_key (ed25519 admission, HKDF-ветка master_seed) ---
@@ -167,6 +171,26 @@ impl RendezvousRecord {
     }
 }
 
+/// Резолв физического адреса из endpoint DHT-записи (замена захардкоженного адреса, Этап 4).
+/// v4 addr = 4B ip ‖ 2B port BE; v6 = 16B ip ‖ 2B port BE. relay-circuit — не сырой SocketAddr.
+pub fn resolve_endpoint(ep: &Endpoint) -> Option<std::net::SocketAddr> {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+    match ep.kind {
+        EP_DIRECT_V4 if ep.addr.len() == 6 => {
+            let ip = Ipv4Addr::new(ep.addr[0], ep.addr[1], ep.addr[2], ep.addr[3]);
+            let port = u16::from_be_bytes([ep.addr[4], ep.addr[5]]);
+            Some(SocketAddr::new(IpAddr::V4(ip), port))
+        },
+        EP_DIRECT_V6 if ep.addr.len() == 18 => {
+            let mut o = [0u8; 16];
+            o.copy_from_slice(&ep.addr[..16]);
+            let port = u16::from_be_bytes([ep.addr[16], ep.addr[17]]);
+            Some(SocketAddr::new(IpAddr::V6(Ipv6Addr::from(o)), port))
+        },
+        _ => None, // relay-circuit / некорректная длина — резолв через оверлей-слой, не сокет
+    }
+}
+
 // --- BEP44 ed25519 подпись (admission-token, [P2P-5]) ---
 
 /// Канонический буфер подписи BEP44 mutable-with-salt: bencoded поля salt/seq/v в
@@ -283,6 +307,38 @@ mod tests {
         // чужой dk
         let dk2 = dht_pubkey(&dht_signing_key(&derive_dht_seed(&[0x99u8; 64])));
         assert!(!verify_record(&dk2, &salt, r.seq, &r, &sig));
+    }
+
+    #[test]
+    fn resolve_endpoint_v4_v6() {
+        let v4 = Endpoint {
+            kind: EP_DIRECT_V4,
+            addr: vec![203, 0, 113, 5, 0x20, 0xFC],
+        };
+        assert_eq!(
+            resolve_endpoint(&v4).unwrap().to_string(),
+            "203.0.113.5:8444"
+        );
+        let mut a6 = vec![0u8; 16];
+        a6[15] = 1;
+        a6.extend_from_slice(&8444u16.to_be_bytes());
+        let v6 = Endpoint {
+            kind: EP_DIRECT_V6,
+            addr: a6,
+        };
+        assert_eq!(resolve_endpoint(&v6).unwrap().to_string(), "[::1]:8444");
+        // relay-circuit не резолвится в сырой сокет
+        assert!(resolve_endpoint(&Endpoint {
+            kind: EP_RELAY_CIRCUIT,
+            addr: vec![1, 2, 3]
+        })
+        .is_none());
+        // некорректная длина
+        assert!(resolve_endpoint(&Endpoint {
+            kind: EP_DIRECT_V4,
+            addr: vec![1, 2]
+        })
+        .is_none());
     }
 
     #[test]
