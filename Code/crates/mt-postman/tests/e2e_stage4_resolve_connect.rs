@@ -67,7 +67,7 @@ fn dht_resolved_address_reaches_live_postman() {
         tokio::spawn(courier.run());
 
         // Адрес приходит ИЗ DHT (blocking get вне реактора), затем резолв.
-        let got = tokio::task::spawn_blocking(move || rv_get.get(&dk, &salt))
+        let got = tokio::task::spawn_blocking(move || rv_get.get(&dk, &salt, 0))
             .await
             .unwrap()
             .expect("DHT-запись найдена");

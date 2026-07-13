@@ -31,6 +31,7 @@ impl RvDht {
         seq: u64,
         record: &RendezvousRecord,
     ) -> Result<(), RvError> {
+        record.validate(seq)?;
         let v = record.to_bytes();
         if v.len() > crate::MAX_RECORD_BYTES {
             return Err(RvError::TooLarge(v.len()));
@@ -43,20 +44,23 @@ impl RvDht {
         Ok(())
     }
 
-    /// Прочитать рандеву-запись из DHT по dk+salt. Возвращает первую валидно
-    /// декодируемую запись (mainline уже проверил BEP44-подпись против dk).
+    /// Прочитать рандеву-запись из DHT по dk+salt. Берёт запись с максимальным seq
+    /// (F-6: устаревшая/подсунутая старая версия не выигрывает — mainline
+    /// get_mutable_most_recent) и отбрасывает истёкшую по valid_until относительно
+    /// now_unix (F-5: стена свежести §593 R2 — мёртвый лист не резолвится). mainline
+    /// уже проверил BEP44-подпись против dk.
     pub fn get(
         &self,
         dk: &[u8; crate::DK_LEN],
         salt: &[u8; crate::SALT_LEN],
+        now_unix: u64,
     ) -> Option<RendezvousRecord> {
-        let items = self.dht.get_mutable(dk, Some(salt), None);
-        for item in items {
-            if let Ok(r) = RendezvousRecord::decode(item.value()) {
-                return Some(r);
-            }
+        let item = self.dht.get_mutable_most_recent(dk, Some(salt))?;
+        let r = RendezvousRecord::decode(item.value()).ok()?;
+        if r.valid_until < now_unix {
+            return None; // истёкшая — refetch/другие пути (R2)
         }
-        None
+        Some(r)
     }
 }
 
@@ -83,7 +87,9 @@ pub fn prepare_batch(
     let dk = dht_pubkey(&sk);
     let mut out = Vec::with_capacity(records.len());
     for (i, rec) in records.iter_mut().enumerate() {
-        let seq = base_seq + i as u64;
+        let seq = base_seq
+            .checked_add(i as u64)
+            .ok_or(RvError::SeqOutOfRange(base_seq))?;
         rec.seq = seq;
         let sig = crate::sign_record(&sk, salt, seq, rec)?;
         out.push(PresignedRecord {

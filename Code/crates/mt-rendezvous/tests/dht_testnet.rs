@@ -49,7 +49,7 @@ fn two_nodes_find_each_other_via_dht_no_hardcoded_addr() {
         .expect("A put в DHT");
 
     // B знает dk (из E2E-сессии) + тот же salt → находит запись через DHT.
-    let got = rv_b.get(&dk, &salt).expect("B нашёл запись через DHT");
+    let got = rv_b.get(&dk, &salt, 0).expect("B нашёл запись через DHT");
     assert_eq!(
         got, record,
         "запись найдена byte-exact, без захардкоженного адреса"
@@ -78,7 +78,7 @@ fn wrong_salt_finds_nothing() {
 
     // другой salt (другая эпоха) → чужой target → ничего
     let other_salt = derive_salt(&[0x33; 32], 8);
-    assert!(rv_b.get(&dk, &other_salt).is_none());
+    assert!(rv_b.get(&dk, &other_salt, 0).is_none());
 }
 
 #[test]
@@ -128,9 +128,60 @@ fn presigned_batch_republished_by_relay_without_secret() {
     rv_relay.put_presigned(&batch[0]).unwrap();
 
     // Читатель находит и резолвит физический адрес ИЗ DHT-записи (не из конфига).
-    let got = rv_reader.get(&dk, &salt).expect("запись найдена");
+    let got = rv_reader.get(&dk, &salt, 0).expect("запись найдена");
     assert_eq!(got.seq, 1);
     assert_eq!(got.overlay_addr, [0xAB; 32]);
     let sock = mt_rendezvous::resolve_endpoint(&got.endpoints[0]).expect("v4 резолв");
     assert_eq!(sock.to_string(), "203.0.113.5:8444");
+}
+
+#[test]
+fn expired_record_filtered_by_valid_until() {
+    // F-5: запись с valid_until в прошлом относительно now → get возвращает None
+    // (стена свежести §593 R2 — мёртвый лист не резолвится).
+    use mt_rendezvous::dht::RvDht;
+    use mt_rendezvous::{
+        derive_dht_seed, derive_salt, dht_pubkey, dht_signing_key, Endpoint, RendezvousRecord,
+        EP_DIRECT_V4,
+    };
+
+    let testnet = Testnet::new(10).unwrap();
+    let rv_a = RvDht::from_dht(
+        Dht::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap(),
+    );
+    let rv_b = RvDht::from_dht(
+        Dht::builder()
+            .bootstrap(&testnet.bootstrap)
+            .build()
+            .unwrap(),
+    );
+
+    let dht_seed = derive_dht_seed(&[0x55u8; 32]);
+    let dk = dht_pubkey(&dht_signing_key(&dht_seed));
+    let salt = derive_salt(&[0x66u8; 32], 3);
+    let rec = RendezvousRecord {
+        overlay_addr: [0x77; 32],
+        endpoints: vec![Endpoint {
+            kind: EP_DIRECT_V4,
+            addr: vec![203, 0, 113, 9, 0x20, 0xFC],
+        }],
+        pq_hint: [0x88; 32],
+        seq: 1,
+        valid_until: 100, // окно валидности до unix=100
+    };
+    rv_a.put(&dht_seed, &salt, 1, &rec).unwrap();
+
+    // now=50 (внутри окна) → находит
+    assert!(
+        rv_b.get(&dk, &salt, 50).is_some(),
+        "внутри valid_until — найдена"
+    );
+    // now=200 (после valid_until) → отброшена
+    assert!(
+        rv_b.get(&dk, &salt, 200).is_none(),
+        "истёкшая — не резолвится (R2)"
+    );
 }

@@ -17,6 +17,12 @@ pub const OVERLAY_ADDR_LEN: usize = 32;
 pub const PQ_HINT_LEN: usize = 32;
 /// BEP44 verdict: тело `v` ≤ 1000 B.
 pub const MAX_RECORD_BYTES: usize = 1000;
+/// ep_count и addr_len — по одному байту (u8): не более 255 (F-1 anti-truncation).
+pub const MAX_ENDPOINTS: usize = 255;
+pub const MAX_ENDPOINT_ADDR: usize = 255;
+/// BEP44 seq — i64 (mainline). Домен seq ограничен i64::MAX, чтобы u64→i64 не заворачивался
+/// в отрицательное и подпись байт-в-байт совпадала с mainline encode_signable (F-3).
+pub const MAX_SEQ: u64 = i64::MAX as u64;
 
 pub mod dht;
 
@@ -30,6 +36,12 @@ pub enum RvError {
     TooLarge(usize),
     #[error("length mismatch")]
     LengthMismatch,
+    #[error("too many endpoints {0} (max 255)")]
+    TooManyEndpoints(usize),
+    #[error("endpoint addr too long {0} (max 255)")]
+    AddrTooLong(usize),
+    #[error("seq {0} exceeds i64::MAX (BEP44)")]
+    SeqOutOfRange(u64),
     #[error("dht: {0}")]
     Dht(String),
 }
@@ -99,6 +111,10 @@ pub struct RendezvousRecord {
 
 impl CanonicalEncode for RendezvousRecord {
     fn encode(&self, buf: &mut Vec<u8>) {
+        debug_assert!(
+            self.endpoints.len() <= MAX_ENDPOINTS,
+            "F-1: ep_count u8 overflow"
+        );
         write_bytes(buf, &self.overlay_addr);
         write_u8(buf, self.endpoints.len() as u8);
         for ep in &self.endpoints {
@@ -113,6 +129,23 @@ impl CanonicalEncode for RendezvousRecord {
 }
 
 impl RendezvousRecord {
+    /// Структурная валидность перед подписью/put: поля влезают в u8-счётчики и seq в i64
+    /// (F-1/F-3). Гарантирует roundtrip decode(encode(x))==x и совпадение с mainline.
+    pub fn validate(&self, seq: u64) -> Result<(), RvError> {
+        if self.endpoints.len() > MAX_ENDPOINTS {
+            return Err(RvError::TooManyEndpoints(self.endpoints.len()));
+        }
+        for ep in &self.endpoints {
+            if ep.addr.len() > MAX_ENDPOINT_ADDR {
+                return Err(RvError::AddrTooLong(ep.addr.len()));
+            }
+        }
+        if seq > MAX_SEQ {
+            return Err(RvError::SeqOutOfRange(seq));
+        }
+        Ok(())
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut b = Vec::new();
         self.encode(&mut b);
@@ -191,6 +224,41 @@ pub fn resolve_endpoint(ep: &Endpoint) -> Option<std::net::SocketAddr> {
     }
 }
 
+/// Глобально-маршрутизируемый unicast? Отсекает loopback / private / link-local /
+/// unspecified / multicast / broadcast. Публичный рандеву-путь обязан фильтровать
+/// адрес из DHT этим предикатом ДО connect (F-2: иначе DHT-запись направляет узел на
+/// внутреннюю сеть жертвы — SSRF). LAN-меш / self-host используют сырой resolve_endpoint.
+pub fn is_global_unicast(addr: &std::net::SocketAddr) -> bool {
+    use std::net::IpAddr;
+    match addr.ip() {
+        IpAddr::V4(v4) => {
+            !(v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+                || v4.octets()[0] == 0)
+        },
+        IpAddr::V6(v6) => {
+            let s = v6.segments();
+            let unique_local = (s[0] & 0xfe00) == 0xfc00; // fc00::/7
+            let link_local = (s[0] & 0xffc0) == 0xfe80; // fe80::/10
+            !(v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || unique_local
+                || link_local)
+        },
+    }
+}
+
+/// Публичный DHT-путь: резолв + SSRF-фильтр (F-2). Возвращает адрес только если он
+/// глобально-маршрутизируем. LAN/self-host — resolve_endpoint без фильтра.
+pub fn resolve_endpoint_public(ep: &Endpoint) -> Option<std::net::SocketAddr> {
+    resolve_endpoint(ep).filter(is_global_unicast)
+}
+
 // --- BEP44 ed25519 подпись (admission-token, [P2P-5]) ---
 
 /// Канонический буфер подписи BEP44 mutable-with-salt: bencoded поля salt/seq/v в
@@ -215,6 +283,7 @@ pub fn sign_record(
     seq: u64,
     record: &RendezvousRecord,
 ) -> Result<Signature, RvError> {
+    record.validate(seq)?;
     let v = record.to_bytes();
     if v.len() > MAX_RECORD_BYTES {
         return Err(RvError::TooLarge(v.len()));
@@ -354,5 +423,96 @@ mod tests {
             hex::encode(target),
             "db1c2182fd6a0029df27462bf2d1cfad598567cb"
         );
+    }
+
+    #[test]
+    fn roundtrip_zero_endpoints_and_truncated_tail() {
+        // F-7: 0 endpoints — граничный roundtrip.
+        let r = RendezvousRecord {
+            overlay_addr: [0x11; 32],
+            endpoints: vec![],
+            pq_hint: [0x22; 32],
+            seq: 0,
+            valid_until: 0,
+        };
+        assert_eq!(RendezvousRecord::decode(&r.to_bytes()).unwrap(), r);
+        // обрезанный хвост → Truncated/LengthMismatch, не паника
+        let b = r.to_bytes();
+        assert!(RendezvousRecord::decode(&b[..b.len() - 1]).is_err());
+        // лишний хвостовой байт → LengthMismatch (каноничность)
+        let mut b2 = r.to_bytes();
+        b2.push(0x00);
+        assert_eq!(RendezvousRecord::decode(&b2), Err(RvError::LengthMismatch));
+    }
+
+    #[test]
+    fn validate_rejects_oversized_and_seq() {
+        // F-1: >255 endpoints
+        let too_many = RendezvousRecord {
+            overlay_addr: [0; 32],
+            endpoints: vec![
+                Endpoint {
+                    kind: EP_DIRECT_V4,
+                    addr: vec![0; 6]
+                };
+                256
+            ],
+            pq_hint: [0; 32],
+            seq: 0,
+            valid_until: 0,
+        };
+        assert!(matches!(
+            too_many.validate(0),
+            Err(RvError::TooManyEndpoints(256))
+        ));
+        // F-1: addr > 255
+        let long_addr = RendezvousRecord {
+            overlay_addr: [0; 32],
+            endpoints: vec![Endpoint {
+                kind: EP_DIRECT_V4,
+                addr: vec![0; 256],
+            }],
+            pq_hint: [0; 32],
+            seq: 0,
+            valid_until: 0,
+        };
+        assert!(matches!(
+            long_addr.validate(0),
+            Err(RvError::AddrTooLong(256))
+        ));
+        // F-3: seq > i64::MAX
+        let ok = RendezvousRecord {
+            overlay_addr: [0; 32],
+            endpoints: vec![],
+            pq_hint: [0; 32],
+            seq: 0,
+            valid_until: 0,
+        };
+        assert!(matches!(
+            ok.validate(MAX_SEQ + 1),
+            Err(RvError::SeqOutOfRange(_))
+        ));
+        assert!(ok.validate(MAX_SEQ).is_ok());
+        // sign_record отвергает oversized до подписи
+        let sk = dht_signing_key(&derive_dht_seed(&[0x42u8; 64]));
+        let salt = derive_salt(&[0x33; 32], 1);
+        assert!(sign_record(&sk, &salt, 0, &too_many).is_err());
+    }
+
+    #[test]
+    fn ssrf_filter_rejects_non_global() {
+        // F-2: loopback/private/link-local не проходят публичный фильтр; global — да.
+        let mk = |a: [u8; 4]| Endpoint {
+            kind: EP_DIRECT_V4,
+            addr: vec![a[0], a[1], a[2], a[3], 0x20, 0xFC],
+        };
+        assert!(resolve_endpoint_public(&mk([127, 0, 0, 1])).is_none()); // loopback
+        assert!(resolve_endpoint_public(&mk([10, 0, 0, 5])).is_none()); // private
+        assert!(resolve_endpoint_public(&mk([192, 168, 1, 1])).is_none()); // private
+        assert!(resolve_endpoint_public(&mk([169, 254, 1, 1])).is_none()); // link-local
+        assert!(resolve_endpoint_public(&mk([0, 0, 0, 0])).is_none()); // unspecified
+        assert!(resolve_endpoint_public(&mk([203, 0, 113, 5])).is_some()); // global
+                                                                           // сырой resolve пропускает loopback (LAN/self-host легитимны)
+        assert!(resolve_endpoint(&mk([127, 0, 0, 1])).is_some());
     }
 }
