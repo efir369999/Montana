@@ -1,0 +1,28 @@
+[package]
+name = "mt-postman"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Плоский QUIC-транспорт почтальона (Montana P2P Network, Этап 1).
+# quinn/rustls/rcgen — те же lock-версии, что тянет боевой mt-net-transport ([C-1] SSOT).
+# Транспортный хоп QUIC-TLS = admission-обёртка A-3 ([I-16]); реальная security —
+# E2E-payload (opaque) + ML-DSA-регистрация. Не consensus state.
+
+[dependencies]
+mt-overlay = { path = "../mt-overlay" }
+mt-crypto = { path = "../mt-crypto" }
+mt-state = { path = "../mt-state" }
+mt-codec = { path = "../mt-codec" }
+
+quinn = { version = "=0.11.9", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rustls = { version = "=0.23.40", default-features = false, features = ["ring", "std"] }
+rcgen = "=0.13.2"
+tokio = { version = "=1.44.2", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+thiserror = "=1.0.69"
+getrandom = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "=1.44.2", features = ["rt-multi-thread", "macros", "time", "sync", "test-util"] }
