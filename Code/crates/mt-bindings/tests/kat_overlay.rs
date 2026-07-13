@@ -96,6 +96,27 @@ fn kat_hostdeposit_encode() {
 }
 
 #[test]
+fn kat_queue_encode() {
+    // Спека Этап 2 §413: recv_id32‖send_id32‖recv_pubkey1952‖send_pubkey1952(0×1952=unsecured)
+    // ‖rotation_epoch(u64 LE)‖quota(u32 LE) = 3980 B. Oracle: python hashlib.sha256.
+    let q = mt_overlay::muq::Queue {
+        recv_id: [0x71; 32],
+        send_id: [0x51; 32],
+        recv_pubkey: [0x11; mt_crypto::PUBLIC_KEY_SIZE],
+        send_pubkey: None,
+        rotation_epoch: 1000,
+        quota: 64,
+    };
+    let b = q.to_bytes();
+    assert_eq!(b.len(), 3980);
+    assert_eq!(
+        hex::encode(mt_crypto::sha256_raw(&b)),
+        "213c3affa278918554afcab21582f0234850a51c88a861a59a3fd3ad6ca4dd67"
+    );
+    assert_eq!(mt_overlay::muq::Queue::decode(&b).unwrap(), q);
+}
+
+#[test]
 fn kat_queue_subscribe_composition() {
     // Спека Этап 2 (MUQ): подпись выборки над "mt-queue-sub"‖0x00‖recv_id‖nonce‖channel_hash.
     let msg = mt_overlay::challenge::challenge_message(

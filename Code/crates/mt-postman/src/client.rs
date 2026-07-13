@@ -37,6 +37,8 @@ pub enum ClientError {
     Crypto(#[from] mt_crypto::CryptoError),
     #[error("malformed challenge from postman")]
     MalformedChallenge,
+    #[error("decode: {0:?}")]
+    Decode(mt_overlay::frame::FrameError),
     #[error("postman rejected registration")]
     Rejected,
 }

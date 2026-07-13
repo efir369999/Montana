@@ -12,6 +12,9 @@ use crate::frame::{FrameError, MsgId, MAX_PAYLOAD_LEN, MSG_ID_SIZE};
 pub const QUEUE_ID_SIZE: usize = 32;
 pub type QueueId = [u8; QUEUE_ID_SIZE]; // send_id либо recv_id
 
+// recv_id 32 + send_id 32 + recv_pubkey 1952 + send_pubkey 1952 + rotation_epoch 8 + quota 4
+pub const QUEUE_WIRE_SIZE: usize = QUEUE_ID_SIZE * 2 + PUBLIC_KEY_SIZE * 2 + 8 + 4;
+
 /// Объект очереди на хосте (off-chain [P2P-1]). recv_id/send_id независимы и случайны.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Queue {
@@ -35,6 +38,71 @@ impl Queue {
         let mut send_id = [0u8; QUEUE_ID_SIZE];
         getrandom::getrandom(&mut recv_id).map_err(|_| FrameError::Truncated)?;
         getrandom::getrandom(&mut send_id).map_err(|_| FrameError::Truncated)?;
+        Ok(Self {
+            recv_id,
+            send_id,
+            recv_pubkey,
+            send_pubkey,
+            rotation_epoch,
+            quota,
+        })
+    }
+}
+
+impl Queue {
+    /// Wire-сериализация для регистрации очереди на хосте (byte-exact §413).
+    /// send_pubkey None → 0×1952 (unsecured-очередь).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(QUEUE_WIRE_SIZE);
+        b.extend_from_slice(&self.recv_id);
+        b.extend_from_slice(&self.send_id);
+        b.extend_from_slice(&self.recv_pubkey);
+        match &self.send_pubkey {
+            Some(pk) => b.extend_from_slice(pk),
+            None => b.extend_from_slice(&[0u8; PUBLIC_KEY_SIZE]),
+        }
+        b.extend_from_slice(&self.rotation_epoch.to_le_bytes());
+        b.extend_from_slice(&self.quota.to_le_bytes());
+        b
+    }
+
+    pub fn decode(input: &[u8]) -> Result<Self, FrameError> {
+        if input.len() != QUEUE_WIRE_SIZE {
+            return Err(FrameError::Truncated);
+        }
+        let mut o = 0;
+        let mut recv_id = [0u8; QUEUE_ID_SIZE];
+        recv_id.copy_from_slice(&input[o..o + QUEUE_ID_SIZE]);
+        o += QUEUE_ID_SIZE;
+        let mut send_id = [0u8; QUEUE_ID_SIZE];
+        send_id.copy_from_slice(&input[o..o + QUEUE_ID_SIZE]);
+        o += QUEUE_ID_SIZE;
+        let mut recv_pubkey = [0u8; PUBLIC_KEY_SIZE];
+        recv_pubkey.copy_from_slice(&input[o..o + PUBLIC_KEY_SIZE]);
+        o += PUBLIC_KEY_SIZE;
+        let mut spk = [0u8; PUBLIC_KEY_SIZE];
+        spk.copy_from_slice(&input[o..o + PUBLIC_KEY_SIZE]);
+        o += PUBLIC_KEY_SIZE;
+        let send_pubkey = if spk == [0u8; PUBLIC_KEY_SIZE] {
+            None
+        } else {
+            Some(spk)
+        };
+        let rotation_epoch = u64::from_le_bytes(
+            input[o..o + 8]
+                .try_into()
+                .map_err(|_| FrameError::Truncated)?,
+        );
+        o += 8;
+        let quota = u32::from_le_bytes(
+            input[o..o + 4]
+                .try_into()
+                .map_err(|_| FrameError::Truncated)?,
+        );
+        // Инварианты §423: id независимы (минимум recv_id != send_id), rotation_epoch>0, quota>0.
+        if recv_id == send_id || rotation_epoch == 0 || quota == 0 {
+            return Err(FrameError::LengthMismatch);
+        }
         Ok(Self {
             recv_id,
             send_id,
@@ -383,6 +451,35 @@ mod tests {
     fn kp(seed: u8) -> ([u8; PUBLIC_KEY_SIZE], SecretKey) {
         let (pk, sk): (PublicKey, SecretKey) = keypair_from_seed(&[seed; 32]).unwrap();
         (*pk.as_bytes(), sk)
+    }
+
+    #[test]
+    fn queue_wire_roundtrip_secured_unsecured_and_reject_equal_ids() {
+        let (rpk, _) = kp(0x11);
+        let (spk, _) = kp(0x22);
+        for send_pubkey in [Some(spk), None] {
+            let q = Queue {
+                recv_id: [0x71; 32],
+                send_id: [0x51; 32],
+                recv_pubkey: rpk,
+                send_pubkey,
+                rotation_epoch: 1000,
+                quota: 64,
+            };
+            let b = q.to_bytes();
+            assert_eq!(b.len(), QUEUE_WIRE_SIZE);
+            assert_eq!(Queue::decode(&b).unwrap(), q);
+        }
+        // равные recv_id/send_id — malformed (§423 независимость)
+        let bad = Queue {
+            recv_id: [0x71; 32],
+            send_id: [0x71; 32],
+            recv_pubkey: rpk,
+            send_pubkey: None,
+            rotation_epoch: 1000,
+            quota: 64,
+        };
+        assert!(Queue::decode(&bad.to_bytes()).is_err());
     }
 
     #[test]

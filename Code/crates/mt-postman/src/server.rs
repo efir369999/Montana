@@ -15,10 +15,12 @@ use mt_overlay::challenge::{Nonce, NONCE_SIZE};
 use mt_overlay::frame::OverlayFrame;
 use mt_overlay::postman::{ConnId, Postman, Route};
 use mt_overlay::prologue::{
-    decode_reg_hello, decode_reg_proof, encode_reg_challenge, REG_HELLO_SIZE,
+    decode_reg_hello as decode_reg_hello_bytes, decode_reg_proof, encode_reg_challenge,
+    REG_HELLO_SIZE, REG_VERSION,
 };
 
 use crate::config::{stand_server_config, ConfigError};
+use crate::muq::{handle_muq_connection, MuqState};
 use crate::wire::{channel_hash, read_fixed, recv_frame, send_frame, write_fixed, WireError};
 
 const REG_OK: u8 = 0x01;
@@ -50,6 +52,7 @@ struct Registry {
 pub struct PostmanServer {
     endpoint: Endpoint,
     reg: Arc<Mutex<Registry>>,
+    muq: Arc<MuqState>,
 }
 
 impl PostmanServer {
@@ -59,6 +62,7 @@ impl PostmanServer {
         Ok(Self {
             endpoint,
             reg: Arc::new(Mutex::new(Registry::default())),
+            muq: Arc::new(MuqState::new()),
         })
     }
 
@@ -70,6 +74,11 @@ impl PostmanServer {
         &self.endpoint
     }
 
+    /// MUQ-состояние узла (queue-host + proxy-маршруты, Этап 2).
+    pub fn muq(&self) -> &Arc<MuqState> {
+        &self.muq
+    }
+
     /// Число зарегистрированных живых соединений (для тестов/наблюдаемости).
     pub fn registered_count(&self) -> usize {
         self.reg.lock().unwrap().conns.len()
@@ -79,22 +88,39 @@ impl PostmanServer {
     pub async fn run(self) {
         while let Some(incoming) = self.endpoint.accept().await {
             let reg = self.reg.clone();
+            let muq = self.muq.clone();
             tokio::spawn(async move {
                 if let Ok(conn) = incoming.await {
-                    let _ = handle_connection(conn, reg).await;
+                    let _ = handle_connection(conn, reg, muq).await;
                 }
             });
         }
     }
 }
 
-async fn handle_connection(conn: Connection, reg: Arc<Mutex<Registry>>) -> Result<(), ServerError> {
-    // Шаг 0: рукопожатие по первому bi-потоку (клиент открывает).
+async fn handle_connection(
+    conn: Connection,
+    reg: Arc<Mutex<Registry>>,
+    muq: Arc<MuqState>,
+) -> Result<(), ServerError> {
+    // Первый bi-поток: первый байт различает протокол — 0x01 (RegHello version) = Этап 1
+    // (overlay-регистрация), 0x10..0x13 = MUQ-операция Этапа 2 (без overlay-регистрации).
     let (mut send, mut recv) = conn.accept_bi().await?;
+    let mut tag = [0u8; 1];
+    read_fixed(&mut recv, &mut tag).await?;
 
+    if tag[0] != REG_VERSION {
+        // Этап 2: MUQ-соединение (host/proxy). Не consensus, не overlay-идентичность.
+        handle_muq_connection(conn, tag[0], send, recv, muq).await?;
+        return Ok(());
+    }
+
+    // Этап 1: дочитать pubkey RegHello (version уже прочитан как tag).
     let mut hello = [0u8; REG_HELLO_SIZE];
-    read_fixed(&mut recv, &mut hello).await?;
-    let account_pubkey = decode_reg_hello(&hello).map_err(|_| ServerError::MalformedPrologue)?;
+    hello[0] = tag[0];
+    read_fixed(&mut recv, &mut hello[1..]).await?;
+    let account_pubkey =
+        decode_reg_hello_bytes(&hello).map_err(|_| ServerError::MalformedPrologue)?;
 
     let nonce: Nonce = random_nonce();
     write_fixed(&mut send, &encode_reg_challenge(&nonce)).await?;

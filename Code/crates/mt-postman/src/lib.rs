@@ -8,10 +8,14 @@
 
 pub mod client;
 pub mod config;
+pub mod muq;
+pub mod muq_client;
 pub mod server;
 pub mod wire;
 
 pub use client::{ClientError, PostmanClient};
 pub use config::{stand_client_config, stand_server_config, ConfigError, STAND_SNI};
+pub use muq::{MuqState, TAG_HOST_DEPOSIT};
+pub use muq_client::MuqClient;
 pub use server::{PostmanServer, ServerError};
 pub use wire::WireError;
