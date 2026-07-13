@@ -1,7 +1,6 @@
-//! Running-тест Этапа 2 (MUQ store-and-forward по реальному QUIC): офлайн-доставка через
-//! двуххоп A→proxy→host→буфер (B забирает при открытии) + durability RS(2,3) (B собирает
-//! из 2 хостов = третий выключен). Несвязываемость: host видит эфемерный ключ очереди и
-//! recv_id, НЕ account_id; proxy видит send_id, НЕ recv_id.
+//! Running-тест Этапа 2 (MUQ store-and-forward) под моделью Этапа 3: host НЕ видит
+//! получателя — регистрация И выборка идут через курьер (default non-collusion), прямых
+//! B↔host операций нет. Офлайн-доставка через двуххоп + durability RS(2,3).
 
 use std::time::Duration;
 
@@ -20,7 +19,6 @@ fn make_queue(
     recv_id: [u8; 32],
     send_id: [u8; 32],
 ) -> (Queue, mt_crypto::SecretKey, mt_crypto::SecretKey) {
-    // routing_secret — общий корень сессии (OOB, из PQXDH в реале). Ключи очереди эфемерны (M-1).
     let rs = [0x42u8; 32];
     let ((recv_pk, recv_sk), (send_pk, send_sk)) = derive_queue_keypairs(&rs, 0).unwrap();
     let q = Queue {
@@ -65,30 +63,39 @@ fn build_deposit(
 }
 
 #[tokio::test]
-async fn offline_delivery_two_hop_deposit() {
-    // host (queue-host) + proxy (entry-proxy) на стенде.
+async fn offline_delivery_all_via_couriers_host_never_sees_b() {
+    // host + курьер депозита + курьер выборки (разные). B регистрирует И выбирает через
+    // курьеров — host НЕ видит B ни при регистрации, ни при выборке.
     let host = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
     let host_addr = host.local_addr().unwrap();
-    let proxy = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
-    let proxy_addr = proxy.local_addr().unwrap();
-    let host_overlay: OverlayAddr = [0xA0u8; 32];
-    proxy.muq().add_proxy_route(host_overlay, host_addr);
     let host_kem = host.muq().host_kem_pubkey();
+    let dep_courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let dep_addr = dep_courier.local_addr().unwrap();
+    let recv_courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let recv_addr = recv_courier.local_addr().unwrap();
+    let host_overlay: OverlayAddr = [0xA0u8; 32];
+    dep_courier.muq().add_proxy_route(host_overlay, host_addr);
+    recv_courier.muq().add_proxy_route(host_overlay, host_addr);
     tokio::spawn(host.run());
-    tokio::spawn(proxy.run());
+    tokio::spawn(dep_courier.run());
+    tokio::spawn(recv_courier.run());
 
     let recv_id = [0x71u8; 32];
     let send_id = [0x51u8; 32];
     let (q, recv_sk, send_sk) = make_queue(recv_id, send_id);
 
-    // B регистрирует очередь и уходит офлайн (не подписан).
-    let b_reg = with_timeout(MuqClient::connect(host_addr)).await.unwrap();
-    assert!(with_timeout(b_reg.register_queue(&q)).await.unwrap());
+    // B регистрирует очередь ЧЕРЕЗ курьер выборки (host видит курьера, не B).
+    let b_reg = with_timeout(MuqClient::connect(recv_addr)).await.unwrap();
+    assert!(
+        with_timeout(b_reg.register_via_courier(host_overlay, &host_kem, &q))
+            .await
+            .unwrap()
+    );
     drop(b_reg);
 
-    // A кладёт депозит через proxy при закрытом B (двуххоп).
+    // A кладёт депозит через курьер депозита при закрытом B.
     let msg_id = [0x5Au8; 16];
-    let ct = b"sealed-e2e-envelope-for-sleeping-B".to_vec();
+    let ct = b"sealed-e2e-for-sleeping-B".to_vec();
     let pf = build_deposit(
         send_id,
         &send_sk,
@@ -99,59 +106,69 @@ async fn offline_delivery_two_hop_deposit() {
         host_overlay,
         &host_kem,
     );
-    let a = with_timeout(MuqClient::connect(proxy_addr)).await.unwrap();
+    let a = with_timeout(MuqClient::connect(dep_addr)).await.unwrap();
     assert!(with_timeout(a.deposit_via_proxy(&pf)).await.unwrap());
 
-    // B открывается и выбирает — конверт дошёл, хотя B был офлайн при отправке.
-    let b = with_timeout(MuqClient::connect(host_addr)).await.unwrap();
-    let resp = with_timeout(b.subscribe(recv_id, &recv_sk)).await.unwrap();
-    assert_eq!(resp.items.len(), 1, "осколок должен лежать в буфере");
-    assert_eq!(resp.items[0].ct, ct, "конверт byte-exact");
-    assert_eq!(resp.items[0].msg_id, msg_id);
+    // B выбирает ЧЕРЕЗ курьер выборки — конверт дошёл, host не видел B.
+    let b = with_timeout(MuqClient::connect(recv_addr)).await.unwrap();
+    let resp = with_timeout(b.subscribe_via_courier(host_overlay, &host_kem, recv_id, &recv_sk))
+        .await
+        .unwrap();
+    assert_eq!(resp.items.len(), 1, "осколок в буфере");
+    assert_eq!(resp.items[0].ct, ct);
 
-    // drop-on-delivery: повторная выборка пуста.
-    let b2 = with_timeout(MuqClient::connect(host_addr)).await.unwrap();
-    let resp2 = with_timeout(b2.subscribe(recv_id, &recv_sk)).await.unwrap();
+    // drop-on-delivery
+    let b2 = with_timeout(MuqClient::connect(recv_addr)).await.unwrap();
+    let resp2 = with_timeout(b2.subscribe_via_courier(host_overlay, &host_kem, recv_id, &recv_sk))
+        .await
+        .unwrap();
     assert!(resp2.items.is_empty(), "после выдачи — drop-on-delivery");
 }
 
 #[tokio::test]
-async fn durability_rs_2of3_survives_host_down() {
-    // 3 queue-host + 1 proxy. B собирает из 2 хостов (третий «выключен»).
-    let mut hosts_addr = Vec::new();
+async fn durability_rs_2of3_via_couriers() {
+    // 3 host + 1 курьер (route ко всем). B регистрирует+выбирает через курьер; RS(2,3)
+    // переживает выключение одного хоста.
+    let courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let courier_addr = courier.local_addr().unwrap();
+    let mut host_addrs = Vec::new();
     let mut host_overlays: Vec<OverlayAddr> = Vec::new();
-    let proxy = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
-    let proxy_addr = proxy.local_addr().unwrap();
-
     let mut host_kems = Vec::new();
     for i in 0..3u8 {
         let h = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
         let a = h.local_addr().unwrap();
         let ov: OverlayAddr = [0xC0 + i; 32];
-        proxy.muq().add_proxy_route(ov, a);
-        hosts_addr.push(a);
+        courier.muq().add_proxy_route(ov, a);
+        host_addrs.push(a);
         host_overlays.push(ov);
         host_kems.push(h.muq().host_kem_pubkey());
         tokio::spawn(h.run());
     }
-    tokio::spawn(proxy.run());
+    tokio::spawn(courier.run());
 
     let recv_id = [0x71u8; 32];
     let send_id = [0x51u8; 32];
     let (q, recv_sk, send_sk) = make_queue(recv_id, send_id);
 
-    // B регистрирует ту же логическую очередь на всех трёх хостах.
-    for a in &hosts_addr {
-        let reg = with_timeout(MuqClient::connect(*a)).await.unwrap();
-        assert!(with_timeout(reg.register_queue(&q)).await.unwrap());
+    // B регистрирует ту же очередь на всех трёх хостах через курьер.
+    for i in 0..3usize {
+        let reg = with_timeout(MuqClient::connect(courier_addr))
+            .await
+            .unwrap();
+        assert!(
+            with_timeout(reg.register_via_courier(host_overlays[i], &host_kems[i], &q))
+                .await
+                .unwrap()
+        );
     }
 
-    // A размазывает конверт RS(2,3): 3 осколка, по одному на хост.
+    // A размазывает RS(2,3) по трём хостам через курьер.
     let msg_id = [0x5Au8; 16];
-    let ct = b"a-long-enough-sealed-e2e-envelope-spread-across-three-hosts".to_vec();
+    let ct = b"a-long-enough-sealed-envelope-across-three-hosts".to_vec();
     let shards = rs_split(&ct, 2, 3).unwrap();
-    assert_eq!(shards.len(), 3);
-    let a_client = with_timeout(MuqClient::connect(proxy_addr)).await.unwrap();
+    let a = with_timeout(MuqClient::connect(courier_addr))
+        .await
+        .unwrap();
     for i in 0..3usize {
         let pf = build_deposit(
             send_id,
@@ -163,24 +180,31 @@ async fn durability_rs_2of3_survives_host_down() {
             host_overlays[i],
             &host_kems[i],
         );
-        assert!(with_timeout(a_client.deposit_via_proxy(&pf)).await.unwrap());
+        assert!(with_timeout(a.deposit_via_proxy(&pf)).await.unwrap());
     }
 
-    // B выбирает ТОЛЬКО с host0 и host1 (host2 «выключен» — B к нему не идёт).
+    // B выбирает ТОЛЬКО с host0/host1 (host2 «выключен») через курьер.
     let mut recovered: Vec<Option<Vec<u8>>> = vec![None; 3];
-    for a in hosts_addr.iter().take(2) {
-        let b = with_timeout(MuqClient::connect(*a)).await.unwrap();
-        let resp = with_timeout(b.subscribe(recv_id, &recv_sk)).await.unwrap();
+    for i in 0..2usize {
+        let b = with_timeout(MuqClient::connect(courier_addr))
+            .await
+            .unwrap();
+        let resp = with_timeout(b.subscribe_via_courier(
+            host_overlays[i],
+            &host_kems[i],
+            recv_id,
+            &recv_sk,
+        ))
+        .await
+        .unwrap();
         assert_eq!(resp.items.len(), 1);
         let it = &resp.items[0];
         recovered[it.shard_index as usize] = Some(it.ct.clone());
     }
-
-    // Reed-Solomon восстанавливает из 2 из 3.
     let out = rs_reconstruct(recovered, 2, 3).unwrap();
     assert_eq!(
         &out[..ct.len()],
         &ct[..],
-        "конверт восстановлен из 2 хостов"
+        "восстановлено из 2 хостов через курьер"
     );
 }

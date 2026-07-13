@@ -16,7 +16,9 @@ use mt_overlay::OverlayAddr;
 use crate::client::ClientError;
 use crate::config::{stand_client_config, stand_server_config, STAND_SNI};
 use crate::muq::MuqState;
-use crate::muq_client::{muq_deposit, muq_register, muq_subscribe, muq_subscribe_via_courier};
+use crate::muq_client::{
+    muq_deposit, muq_register, muq_register_via_courier, muq_subscribe_via_courier,
+};
 use crate::server::{handle_connection, Registry, ServerError};
 
 #[derive(Clone)]
@@ -80,6 +82,21 @@ impl Node {
         Ok(ok)
     }
 
+    /// Relay-регистрация очереди на чужом хосте через курьер (host видит курьера, не нас).
+    /// Для своего узла (self-host) — register_queue_on(self_addr) без утечки (свой узел).
+    pub async fn register_via_courier(
+        &self,
+        courier: SocketAddr,
+        host_overlay: OverlayAddr,
+        host_kem_pk: &MlkemPublicKey,
+        q: &Queue,
+    ) -> Result<bool, ClientError> {
+        let conn = self.endpoint.connect(courier, STAND_SNI)?.await?;
+        let ok = muq_register_via_courier(&conn, host_overlay, host_kem_pk, q).await?;
+        conn.close(0u32.into(), b"done");
+        Ok(ok)
+    }
+
     /// Положить депозит через узел-courier (двуххоп; courier не видит recv_id).
     pub async fn deposit_via(
         &self,
@@ -90,19 +107,6 @@ impl Node {
         let ok = muq_deposit(&conn, pf).await?;
         conn.close(0u32.into(), b"done");
         Ok(ok)
-    }
-
-    /// Забрать свои осколки с узла-хоста (recv_key подпись + channel_hash).
-    pub async fn subscribe_from(
-        &self,
-        host: SocketAddr,
-        recv_id: QueueId,
-        recv_sk: &SecretKey,
-    ) -> Result<QueueResp, ClientError> {
-        let conn = self.endpoint.connect(host, STAND_SNI)?.await?;
-        let resp = muq_subscribe(&conn, recv_id, recv_sk).await?;
-        conn.close(0u32.into(), b"done");
-        Ok(resp)
     }
 
     /// Двуххоп-ВЫБОРКА: забрать свои осколки ЧЕРЕЗ узел-courier (host видит курьера, не нас).

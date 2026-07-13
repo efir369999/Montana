@@ -13,30 +13,28 @@ use quinn::{Connection, Endpoint};
 
 use mt_crypto::{
     keypair_from_seed_mlkem, open_from, MlkemPublicKey, MlkemSecretKey, Signature, MLKEM_SEED_SIZE,
-    SIGNATURE_SIZE,
 };
-use mt_overlay::challenge::{Nonce, CHANNEL_HASH_SIZE, NONCE_SIZE};
 use mt_overlay::muq::{
     HostDeposit, ProxyForward, Queue, QueueId, QueueItem, QueueResp, QueueSubscribe, ReceiveProxy,
-    QUEUE_ID_SIZE, QUEUE_WIRE_SIZE,
+    QUEUE_WIRE_SIZE,
 };
 use mt_overlay::queue_host::QueueHost;
 use mt_overlay::OverlayAddr;
 
 use crate::config::stand_client_config;
-use crate::wire::{channel_hash, read_fixed, recv_frame, send_frame, write_fixed, WireError};
+use crate::wire::{read_fixed, recv_frame, send_frame, write_fixed, WireError};
 
 /// Теги MUQ-операций (первый байт bi-потока). REG_VERSION=0x01 — путь Этапа 1.
 pub const TAG_QUEUE_REGISTER: u8 = 0x10;
 pub const TAG_HOST_DEPOSIT: u8 = 0x11;
 pub const TAG_PROXY_FORWARD: u8 = 0x12;
-pub const TAG_QUEUE_SUBSCRIBE: u8 = 0x13;
 pub const TAG_RECEIVE_PROXY: u8 = 0x14; // B → courier (двуххоп-выборка)
 pub const TAG_RELAY_SUBSCRIBE: u8 = 0x15; // courier → host
+pub const TAG_PROXY_REGISTER: u8 = 0x16; // B → courier (relay-регистрация)
+pub const TAG_RELAY_REGISTER: u8 = 0x17; // courier → host
 
 const OK: u8 = 0x01;
 const ERR: u8 = 0x00;
-const SUB_WIRE: usize = QUEUE_ID_SIZE + NONCE_SIZE + SIGNATURE_SIZE;
 
 /// Состояние MUQ-узла: host-таблица очередей + proxy-маршруты (overlay host → физ.адрес стенда).
 pub struct MuqState {
@@ -119,7 +117,7 @@ pub async fn handle_muq_connection(
 }
 
 async fn dispatch(
-    conn: &Connection,
+    _conn: &Connection,
     tag: u8,
     send: quinn::SendStream,
     recv: quinn::RecvStream,
@@ -129,9 +127,10 @@ async fn dispatch(
         TAG_QUEUE_REGISTER => handle_register(send, recv, state).await,
         TAG_HOST_DEPOSIT => handle_deposit(send, recv, state).await,
         TAG_PROXY_FORWARD => handle_proxy_forward(send, recv, state).await,
-        TAG_QUEUE_SUBSCRIBE => handle_subscribe(conn, send, recv, state).await,
         TAG_RECEIVE_PROXY => handle_receive_proxy(send, recv, state).await,
         TAG_RELAY_SUBSCRIBE => handle_relay_subscribe(send, recv, state).await,
+        TAG_PROXY_REGISTER => handle_proxy_register(send, recv, state).await,
+        TAG_RELAY_REGISTER => handle_relay_register(send, recv, state).await,
         _ => Ok(()),
     }
 }
@@ -232,65 +231,6 @@ async fn forward_to_host(host_addr: SocketAddr, sealed: &[u8]) -> Result<(), Wir
     Ok(())
 }
 
-/// Выборка получателем: host шлёт nonce (свежесть), verify подпись против ХРАНИМОГО
-/// recv_pubkey + channel_hash (E-2/F3), отдаёт осколки, drop-on-delivery.
-async fn handle_subscribe(
-    conn: &Connection,
-    mut send: quinn::SendStream,
-    mut recv: quinn::RecvStream,
-    state: &Arc<MuqState>,
-) -> Result<(), WireError> {
-    let nonce: Nonce = random_nonce();
-    write_fixed(&mut send, &nonce).await?;
-
-    let mut buf = [0u8; SUB_WIRE];
-    read_fixed(&mut recv, &mut buf).await?;
-    let sub = match QueueSubscribe::decode(&buf) {
-        Ok(s) => s,
-        Err(_) => {
-            let _ = send_frame(&mut send, &QueueResp { items: vec![] }.to_bytes()).await;
-            return Ok(());
-        },
-    };
-    // nonce challenge должен совпасть с выданным (внутрисоединительная свежесть)
-    if sub.nonce != nonce {
-        let _ = send_frame(&mut send, &QueueResp { items: vec![] }.to_bytes()).await;
-        return Ok(());
-    }
-    let mut ch = [0u8; CHANNEL_HASH_SIZE];
-    ch.copy_from_slice(&channel_hash(conn)?);
-    let sig = Signature::from_array(sub.sig);
-
-    let items: Vec<QueueItem> = {
-        let host = state.host.lock().unwrap();
-        match host.subscribe(&sub.recv_id, &sub.nonce, &ch, &sig) {
-            Ok(shards) => shards
-                .iter()
-                .map(|s| QueueItem {
-                    msg_id: s.msg_id,
-                    shard_index: s.shard_index,
-                    shard_total: s.shard_total,
-                    ct: s.ct.clone(),
-                })
-                .collect(),
-            Err(_) => Vec::new(), // NoQueue/BadSig → пустой ответ (не раскрывать причину)
-        }
-    };
-    let resp = QueueResp {
-        items: items.clone(),
-    };
-    send_frame(&mut send, &resp.to_bytes()).await?;
-
-    // drop-on-delivery (§483): после отдачи осколков очистить доставленные msg_id
-    if !items.is_empty() {
-        let mut host = state.host.lock().unwrap();
-        for it in &items {
-            host.drop_delivered(&sub.recv_id, &it.msg_id);
-        }
-    }
-    Ok(())
-}
-
 /// Courier: принимает ReceiveProxy от получателя, несёт запечатанный QueueSubscribe хосту
 /// (двуххоп-выборка), возвращает QueueResp обратно. Курьер НЕ видит recv_id (sealed непрозрачен).
 async fn handle_receive_proxy(
@@ -380,8 +320,74 @@ async fn handle_relay_subscribe(
     Ok(())
 }
 
-fn random_nonce() -> Nonce {
-    let mut n = [0u8; NONCE_SIZE];
-    getrandom::getrandom(&mut n).expect("OS CSPRNG");
-    n
+/// Courier: relay-регистрация — несёт запечатанный Queue хосту (курьер не видит recv_id).
+async fn handle_proxy_register(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let bytes = recv_frame(&mut recv).await?;
+    let ack = match ProxyForward::decode(&bytes) {
+        Ok(pf) => {
+            let dst = state
+                .proxy_routes
+                .lock()
+                .unwrap()
+                .get(&pf.host_addr)
+                .copied();
+            match dst {
+                Some(addr) => match forward_register_to_host(addr, &pf.sealed).await {
+                    Ok(()) => OK,
+                    Err(_) => ERR,
+                },
+                None => ERR,
+            }
+        },
+        Err(_) => ERR,
+    };
+    write_fixed(&mut send, &[ack]).await?;
+    let _ = send.finish();
+    Ok(())
+}
+
+async fn forward_register_to_host(host_addr: SocketAddr, sealed: &[u8]) -> Result<(), WireError> {
+    let mut endpoint =
+        Endpoint::client("0.0.0.0:0".parse().expect("bind any")).map_err(|_| WireError::Closed)?;
+    endpoint.set_default_client_config(stand_client_config().map_err(|_| WireError::Closed)?);
+    let conn = endpoint
+        .connect(host_addr, crate::config::STAND_SNI)
+        .map_err(|_| WireError::Closed)?
+        .await
+        .map_err(|_| WireError::Closed)?;
+    let (mut s, mut r) = conn.open_bi().await.map_err(|_| WireError::Closed)?;
+    write_fixed(&mut s, &[TAG_RELAY_REGISTER]).await?;
+    send_frame(&mut s, sealed).await?;
+    let mut ack = [0u8; 1];
+    let _ = read_fixed(&mut r, &mut ack).await;
+    conn.close(0u32.into(), b"done");
+    endpoint.wait_idle().await;
+    Ok(())
+}
+
+/// Host: relay-регистрация от курьера — распечатывает Queue (ML-KEM) и регистрирует.
+/// Host видит курьера, НЕ получателя B.
+async fn handle_relay_register(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let sealed = recv_frame(&mut recv).await?;
+    let ack = match open_from(&state.host_kem_sk, &sealed)
+        .ok()
+        .and_then(|b| Queue::decode(&b).ok())
+    {
+        Some(q) => {
+            state.host.lock().unwrap().register_queue(q);
+            OK
+        },
+        None => ERR,
+    };
+    write_fixed(&mut send, &[ack]).await?;
+    let _ = send.finish();
+    Ok(())
 }
