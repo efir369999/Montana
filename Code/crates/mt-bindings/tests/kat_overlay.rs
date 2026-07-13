@@ -74,44 +74,43 @@ fn kat_challenge_message_composition() {
 }
 
 #[test]
-fn kat_epoch_tag() {
-    // Спека Этап 2: epoch_tag = SHA-256("mt-inbox-tag"‖0x00‖account_id‖window_8B_LE)[0..16].
-    let acc: [u8; 32] =
-        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
-            .unwrap()
-            .try_into()
-            .unwrap();
-    assert_eq!(
-        hex::encode(mt_overlay::inbox::epoch_tag(&acc, 1000)),
-        "66eeeae23f89c18a60dfc3364c273439"
-    );
-    assert_eq!(
-        hex::encode(mt_overlay::inbox::epoch_tag(&acc, 1001)),
-        "b0461b35d94582dfa82e755cec476746"
-    );
-}
-
-#[test]
-fn kat_deposit_encode() {
-    // Спека Этап 2 Deposit: epoch_tag16‖msg_id16‖ttl(u32 LE)‖shard_index‖shard_total‖ct_len(u32 LE)‖ct.
-    let acc: [u8; 32] =
-        hex::decode("9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a21")
-            .unwrap()
-            .try_into()
-            .unwrap();
-    let d = mt_overlay::inbox::Deposit {
-        epoch_tag: mt_overlay::inbox::epoch_tag(&acc, 1000),
-        msg_id: [0x22; 16],
+fn kat_hostdeposit_encode() {
+    // Спека Этап 2 (MUQ) HostDeposit: send_id32‖msg_id16‖ttl(u32)‖idx‖total‖nonce16‖ct_len(u32)‖ct‖sig_len(u32)‖sig.
+    let hd = mt_overlay::muq::HostDeposit {
+        send_id: [0xAA; 32],
+        msg_id: [0xBB; 16],
         ttl_windows: 240,
         shard_index: 1,
         shard_total: 4,
+        nonce: [0x07; 16],
         ct: vec![0xCC; 32],
+        sig: Vec::new(),
     };
-    let b = d.to_bytes();
-    assert_eq!(b.len(), 74);
+    let b = hd.to_bytes();
+    assert_eq!(b.len(), 110);
     assert_eq!(
         hex::encode(mt_crypto::sha256_raw(&b)),
-        "8ce4f3b0419e23c7514c6a99f612702e6f9035255449c153a3ec71fe6386834e"
+        "a90a82744c5840bab7edcaa64b2ba9615ca88036f1175d94d90fec6de4c08f4b"
     );
-    assert_eq!(mt_overlay::inbox::Deposit::decode(&b).unwrap(), d);
+    assert_eq!(mt_overlay::muq::HostDeposit::decode(&b).unwrap(), hd);
+}
+
+#[test]
+fn kat_queue_subscribe_composition() {
+    // Спека Этап 2 (MUQ): подпись выборки над "mt-queue-sub"‖0x00‖recv_id‖nonce‖channel_hash.
+    let msg = mt_overlay::challenge::challenge_message(
+        mt_codec::domain::QUEUE_SUB,
+        &[0xAA; 32],
+        &[0x01; 16],
+        &[0x02; 32],
+    );
+    assert_eq!(
+        hex::encode(&msg),
+        concat!(
+            "6d742d71756575652d73756200",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "01010101010101010101010101010101",
+            "0202020202020202020202020202020202020202020202020202020202020202"
+        )
+    );
 }

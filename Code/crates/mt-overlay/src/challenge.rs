@@ -76,52 +76,6 @@ pub fn verify_registration(
     }
 }
 
-/// Подпись FetchReq (Этап 2): sig = ML-DSA-65(account_key, "mt-fetch"‖0x00‖epoch_tag‖nonce‖channel_hash).
-pub fn sign_fetch(
-    account_sk: &SecretKey,
-    epoch_tag: &[u8; 16],
-    nonce: &Nonce,
-    channel_hash: &ChannelHash,
-) -> Result<Signature, CryptoError> {
-    let msg = challenge_message(
-        mt_codec::domain::OVERLAY_FETCH,
-        epoch_tag,
-        nonce,
-        channel_hash,
-    );
-    sign(account_sk, &msg)
-}
-
-/// Проверка FetchReq: подпись владения account_key И (E-2 fix) принадлежность epoch_tag
-/// инбоксу ЗАЯВИТЕЛЯ. Без второй проверки B зафетчил бы чужой инбокс, подписав чужой
-/// epoch_tag — поэтому ownership инкапсулирован здесь, отдельным вызовом забыть невозможно.
-/// `current_window` — текущее окно почтальона; принадлежность проверяется за [W−N_FETCH, W].
-pub fn verify_fetch(
-    account_pubkey: &[u8; PUBLIC_KEY_SIZE],
-    epoch_tag: &[u8; 16],
-    nonce: &Nonce,
-    channel_hash: &ChannelHash,
-    sig: &Signature,
-    current_window: u64,
-) -> bool {
-    let msg = challenge_message(
-        mt_codec::domain::OVERLAY_FETCH,
-        epoch_tag,
-        nonce,
-        channel_hash,
-    );
-    if !verify(&PublicKey::from_array(*account_pubkey), &msg, sig) {
-        return false;
-    }
-    let account_id = derive_account_id(SUITE_MLDSA65, account_pubkey);
-    crate::inbox::epoch_tag_belongs(
-        &account_id,
-        epoch_tag,
-        current_window.saturating_sub(crate::inbox::N_FETCH),
-        current_window,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
