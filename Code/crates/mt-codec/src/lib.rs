@@ -91,8 +91,14 @@ pub mod domain {
     pub const OVERLAY_REG: &[u8] = b"mt-reg";
     pub const OVERLAY_FETCH: &[u8] = b"mt-fetch";
     // P2P Этап 2: вращающийся тег инбокса store-and-forward (из account_id + окна).
+    // (устаревает Montana Unlinkable Queues, но домен сохраняется для истории/совместимости)
     pub const INBOX_TAG: &[u8] = b"mt-inbox-tag";
-    // TLS-Exporter label для channel-binding challenge-response (RFC 8446 §7.5) — не hash-domain.
+    // P2P Этап 2 (MUQ): unlinkable queues — раздельные send_id/recv_id.
+    pub const QUEUE_SEND: &[u8] = b"mt-queue-send"; // secured-депозит (подпись send_key)
+    pub const QUEUE_SUB: &[u8] = b"mt-queue-sub"; // подпись выборки (recv_key)
+    pub const QUEUE_ROT: &[u8] = b"mt-queue-rot"; // согласование ротации в храповике
+    pub const QUEUE_INBOX: &[u8] = b"mt-queue-inbox"; // opt-in первый контакт (отдельно от mt-inbox)
+                                                      // TLS-Exporter label для channel-binding challenge-response (RFC 8446 §7.5) — не hash-domain.
     pub const OVERLAY_CHANNEL_LABEL: &[u8] = b"mt-overlay-channel";
     pub const RECOVERY_FINGERPRINT: &[u8] = b"mt-recovery-fingerprint";
     // Мессенджер-слой (Montana Messenger v0.49). Канонический источник доменных строк

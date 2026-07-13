@@ -7,6 +7,7 @@ pub mod erasure;
 pub mod frame;
 pub mod inbox;
 pub mod inbox_store;
+pub mod muq;
 pub mod postman;
 pub mod prologue;
 
