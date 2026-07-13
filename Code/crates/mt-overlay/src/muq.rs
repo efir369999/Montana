@@ -354,6 +354,27 @@ pub fn verify_deposit(
     mt_crypto::verify(&mt_crypto::PublicKey::from_array(*send_pubkey), &msg, sig)
 }
 
+/// ML-DSA-65 keypair (pubkey, privkey).
+pub type Keypair = (mt_crypto::PublicKey, mt_crypto::SecretKey);
+/// Пара ключей очереди (recv, send).
+pub type QueueKeypairs = (Keypair, Keypair);
+
+/// M-1: эфемерные per-queue ключи аутентификации из routing_secret сессии.
+/// recv_pubkey/send_pubkey НЕ равны account_pubkey — host видит ключ очереди, не кошелёк,
+/// поэтому не выведет account_id и не свяжет очередь с личностью. Обе стороны выводят
+/// детерминированно (routing_secret общий). Первый контакт (нет routing_secret) — CSPRNG.
+pub fn derive_queue_keypairs(
+    routing_secret: &[u8; 32],
+    queue_index: u64,
+) -> Result<QueueKeypairs, mt_crypto::CryptoError> {
+    let qi = queue_index.to_le_bytes();
+    let recv_seed = mt_crypto::hash(mt_codec::domain::QUEUE_RECV, &[routing_secret, &qi]);
+    let send_seed = mt_crypto::hash(mt_codec::domain::QUEUE_SEND, &[routing_secret, &qi]);
+    let recv = mt_crypto::keypair_from_seed(&recv_seed)?;
+    let send = mt_crypto::keypair_from_seed(&send_seed)?;
+    Ok((recv, send))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -444,6 +465,33 @@ mod tests {
         // другой recv_pubkey — не сойдётся
         let (rpk2, _) = kp(0x12);
         assert!(!verify_subscribe(&rpk2, &recv_id, &nonce, &ch, &sig));
+    }
+
+    #[test]
+    fn m1_queue_keys_ephemeral_deterministic_and_distinct() {
+        // M-1: детерминированы из routing_secret, recv≠send, разные queue_index → разные ключи.
+        let rs = [0x42u8; 32];
+        let ((r0pk, _), (s0pk, _)) = derive_queue_keypairs(&rs, 0).unwrap();
+        let ((r0pk_b, _), _) = derive_queue_keypairs(&rs, 0).unwrap();
+        assert_eq!(
+            r0pk.as_bytes(),
+            r0pk_b.as_bytes(),
+            "детерминизм по routing_secret+index"
+        );
+        assert_ne!(
+            r0pk.as_bytes(),
+            s0pk.as_bytes(),
+            "recv_key != send_key (разные домены)"
+        );
+        let ((r1pk, _), _) = derive_queue_keypairs(&rs, 1).unwrap();
+        assert_ne!(
+            r0pk.as_bytes(),
+            r1pk.as_bytes(),
+            "разные queue_index → разные ключи"
+        );
+        // разный routing_secret → разные ключи (несвязываемость между сессиями)
+        let ((r0pk2, _), _) = derive_queue_keypairs(&[0x43u8; 32], 0).unwrap();
+        assert_ne!(r0pk.as_bytes(), r0pk2.as_bytes());
     }
 
     #[test]

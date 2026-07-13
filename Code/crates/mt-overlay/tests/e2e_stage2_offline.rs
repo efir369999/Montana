@@ -5,7 +5,9 @@ use mt_crypto::{keypair_from_seed, PublicKey, SecretKey, PUBLIC_KEY_SIZE};
 use mt_overlay::challenge::{ChannelHash, Nonce};
 use mt_overlay::erasure::{rs_reconstruct, rs_split};
 use mt_overlay::inbox::bucket_len;
-use mt_overlay::muq::{sign_deposit, sign_subscribe, HostDeposit, ProxyForward, Queue};
+use mt_overlay::muq::{
+    derive_queue_keypairs, sign_deposit, sign_subscribe, HostDeposit, ProxyForward, Queue,
+};
 use mt_overlay::queue_host::QueueHost;
 
 fn kp(seed: u8) -> ([u8; PUBLIC_KEY_SIZE], SecretKey) {
@@ -15,9 +17,11 @@ fn kp(seed: u8) -> ([u8; PUBLIC_KEY_SIZE], SecretKey) {
 
 #[test]
 fn e2e_muq_two_hop_deposit_subscribe_reassemble() {
-    // B создаёт очередь на хосте (recv_pubkey), выдаёт A OOB: send_id + send_key.
-    let (rpk, rsk) = kp(0xB2);
-    let (spk, ssk) = kp(0xA1);
+    // M-1: ключи очереди — ЭФЕМЕРНЫЕ per-queue из routing_secret сессии (НЕ account_key),
+    // поэтому host не выведет account_id из recv_pubkey.
+    let routing_secret = [0x42u8; 32]; // корень E2E-сессии A↔B
+    let ((r_pk, rsk), (s_pk, ssk)) = derive_queue_keypairs(&routing_secret, 0).unwrap();
+    let (rpk, spk) = (*r_pk.as_bytes(), *s_pk.as_bytes());
     let mut host = QueueHost::new();
     let q = Queue::generate(rpk, Some(spk), 1000, 64).unwrap();
     let (recv_id, send_id) = (q.recv_id, q.send_id);
