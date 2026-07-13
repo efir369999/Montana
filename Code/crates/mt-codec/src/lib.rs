@@ -99,7 +99,9 @@ pub mod domain {
     pub const QUEUE_SUB: &[u8] = b"mt-queue-sub"; // подпись выборки (recv_key)
     pub const QUEUE_ROT: &[u8] = b"mt-queue-rot"; // согласование ротации в храповике
     pub const QUEUE_INBOX: &[u8] = b"mt-queue-inbox"; // opt-in первый контакт (отдельно от mt-inbox)
-                                                      // TLS-Exporter label для channel-binding challenge-response (RFC 8446 §7.5) — не hash-domain.
+    pub const DHT_KEY: &[u8] = b"mt-dht-key"; // HKDF-ветка ed25519 dht_key (BEP44 admission, [P2P-5]/A-2)
+    pub const RV_SALT: &[u8] = b"mt-rv-salt"; // деривация BEP44 salt рандеву-записи
+                                              // TLS-Exporter label для channel-binding challenge-response (RFC 8446 §7.5) — не hash-domain.
     pub const OVERLAY_CHANNEL_LABEL: &[u8] = b"mt-overlay-channel";
     pub const RECOVERY_FINGERPRINT: &[u8] = b"mt-recovery-fingerprint";
     // Мессенджер-слой (Montana Messenger v0.49). Канонический источник доменных строк

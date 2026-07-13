@@ -1,0 +1,23 @@
+[package]
+name = "mt-rendezvous"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# DHT-рандеву (Montana P2P Network, Этап 4). Byte-exact ядро: dht_key (ed25519 admission
+# A-2 [I-16]), target/salt (BEP44), RendezvousRecord. Mainline DHT-транспорт — отдельный слой.
+# ed25519/SHA1 — ТОЛЬКО admission BEP44 ([P2P-5]); overlay/контент/личность — PQ (Этап 1).
+
+[dependencies]
+mt-codec = { path = "../mt-codec" }
+mt-crypto = { path = "../mt-crypto" }
+mt-mnemonic = { path = "../mt-mnemonic" }
+mt-overlay = { path = "../mt-overlay" }
+ed25519-dalek = "=2.2.0"
+sha1 = "=0.10.6"
+thiserror = "=1.0.69"
+
+[dev-dependencies]
+hex = "0.4"
