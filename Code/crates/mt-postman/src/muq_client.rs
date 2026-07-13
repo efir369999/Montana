@@ -8,11 +8,15 @@ use quinn::{Connection, Endpoint};
 
 use mt_crypto::SecretKey;
 use mt_overlay::challenge::CHANNEL_HASH_SIZE;
-use mt_overlay::muq::{sign_subscribe, ProxyForward, Queue, QueueId, QueueResp, QueueSubscribe};
+use mt_overlay::muq::{
+    sign_subscribe, sign_subscribe_relay, ProxyForward, Queue, QueueId, QueueResp, QueueSubscribe,
+    ReceiveProxy,
+};
+use mt_overlay::OverlayAddr;
 
 use crate::client::ClientError;
 use crate::config::{stand_client_config, STAND_SNI};
-use crate::muq::{TAG_PROXY_FORWARD, TAG_QUEUE_REGISTER, TAG_QUEUE_SUBSCRIBE};
+use crate::muq::{TAG_PROXY_FORWARD, TAG_QUEUE_REGISTER, TAG_QUEUE_SUBSCRIBE, TAG_RECEIVE_PROXY};
 use crate::wire::{channel_hash, read_fixed, recv_frame, send_frame, write_fixed};
 
 const OK: u8 = 0x01;
@@ -97,6 +101,34 @@ pub(crate) async fn muq_subscribe(
     write_fixed(&mut s, &sub.to_bytes()).await?;
     let _ = s.finish();
 
+    let bytes = recv_frame(&mut r).await?;
+    QueueResp::decode(&bytes).map_err(ClientError::Decode)
+}
+
+/// Двуххоп-выборка: получатель забирает через курьер (host видит курьера, не B).
+/// B генерит nonce (host трекает — anti-replay без channel_hash), подписывает recv_key,
+/// запечатывает QueueSubscribe в ReceiveProxy для host (курьер не видит recv_id).
+pub(crate) async fn muq_subscribe_via_courier(
+    conn: &Connection,
+    host_overlay: OverlayAddr,
+    recv_id: QueueId,
+    recv_sk: &SecretKey,
+) -> Result<QueueResp, ClientError> {
+    let mut nonce = [0u8; 16];
+    getrandom::getrandom(&mut nonce).map_err(|_| ClientError::Rejected)?;
+    let sig = sign_subscribe_relay(recv_sk, &recv_id, &nonce)?;
+    let sub = QueueSubscribe {
+        recv_id,
+        nonce,
+        sig: *sig.as_bytes(),
+    };
+    let rp = ReceiveProxy {
+        host_addr: host_overlay,
+        sealed: sub.to_bytes(),
+    };
+    let (mut s, mut r) = conn.open_bi().await?;
+    write_fixed(&mut s, &[TAG_RECEIVE_PROXY]).await?;
+    send_frame(&mut s, &rp.to_bytes()).await?;
     let bytes = recv_frame(&mut r).await?;
     QueueResp::decode(&bytes).map_err(ClientError::Decode)
 }

@@ -158,3 +158,54 @@ async fn courier_node_also_hosts_and_sends() {
     );
     assert_eq!(resp.items[0].ct, ct);
 }
+
+#[tokio::test]
+async fn two_hop_retrieval_hides_receiver_from_host() {
+    // Этап 3 ядро: B забирает ЧЕРЕЗ курьер → host видит курьера, не B. Депозит и выборка
+    // идут через РАЗНЫХ курьеров (non-collusion, модель SimpleX/Flux). Все узлы — Node.
+    let host = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let host_addr = host.local_addr().unwrap();
+    let deposit_courier = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let dep_courier_addr = deposit_courier.local_addr().unwrap();
+    let recv_courier = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let recv_courier_addr = recv_courier.local_addr().unwrap();
+    let peer = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+
+    for n in [&host, &deposit_courier, &recv_courier, &peer] {
+        let n = n.clone();
+        tokio::spawn(async move { n.run().await });
+    }
+
+    let host_overlay: OverlayAddr = [0xA0u8; 32];
+    deposit_courier.add_courier_route(host_overlay, host_addr);
+    recv_courier.add_courier_route(host_overlay, host_addr);
+
+    let recv_id = [0x71u8; 32];
+    let send_id = [0x51u8; 32];
+    let (q, recv_sk, send_sk) = make_queue(recv_id, send_id);
+
+    assert!(with_timeout(peer.register_queue_on(host_addr, &q))
+        .await
+        .unwrap());
+
+    // депозит через курьер №1
+    let msg_id = [0x5Au8; 16];
+    let ct = b"receiver-hidden-from-host".to_vec();
+    let pf = build_deposit(send_id, &send_sk, msg_id, ct.clone(), host_overlay);
+    assert!(with_timeout(peer.deposit_via(dep_courier_addr, &pf))
+        .await
+        .unwrap());
+
+    // ВЫБОРКА через курьер №2 (разный хозяин) — host видит recv_courier, НЕ получателя
+    let resp = with_timeout(peer.subscribe_via_courier(
+        recv_courier_addr,
+        host_overlay,
+        recv_id,
+        &recv_sk,
+    ))
+    .await
+    .unwrap();
+    assert_eq!(resp.items.len(), 1, "двуххоп-выборка доставила осколок");
+    assert_eq!(resp.items[0].ct, ct);
+    assert_eq!(resp.items[0].msg_id, msg_id);
+}

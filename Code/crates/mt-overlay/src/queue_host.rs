@@ -2,13 +2,15 @@
 //! осколков, двуххоп-депозит, выборка. Off-chain ([P2P-1]). Механика TTL/drop
 //! наследует Этап-2-store, ключ буфера = recv_id.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use mt_crypto::Signature;
 
 use crate::challenge::ChannelHash;
 use crate::frame::{MsgId, MAX_PAYLOAD_LEN};
-use crate::muq::{verify_deposit, verify_subscribe, HostDeposit, Queue, QueueId, QueueItem};
+use crate::muq::{
+    verify_deposit, verify_subscribe, HostDeposit, Queue, QueueId, QueueItem, RELAY_CHANNEL_MARKER,
+};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct StoredShard {
@@ -31,6 +33,7 @@ pub enum DepositError {
 pub enum SubscribeError {
     NoQueue,
     BadSig, // подпись выборки не прошла (recv_pubkey / channel_hash)
+    Replay, // двуххоп-выборка: nonce уже использован (украденный QueueSubscribe непереносим)
 }
 
 #[derive(Default)]
@@ -38,6 +41,7 @@ pub struct QueueHost {
     queues: HashMap<QueueId, Queue>,            // recv_id → Queue
     send_route: HashMap<QueueId, QueueId>,      // send_id → recv_id
     buffer: HashMap<QueueId, Vec<StoredShard>>, // recv_id → осколки
+    seen_sub_nonces: HashMap<QueueId, HashSet<crate::challenge::Nonce>>, // anti-replay relay-выборки
 }
 
 impl QueueHost {
@@ -98,6 +102,35 @@ impl QueueHost {
         Ok(self.buffer.get(recv_id).map(Vec::as_slice).unwrap_or(&[]))
     }
 
+    /// Двуххоп-выборка через курьер: channel_hash отсутствует (нет прямого канала B↔host),
+    /// поэтому подпись проверяется с RELAY_CHANNEL_MARKER (0×32), а anti-replay несёт
+    /// nonce-tracking per recv_id — украденный QueueSubscribe непереносим (nonce одноразов).
+    /// Возвращает копию осколков (не borrow — вызывающий дропает доставленное отдельно).
+    pub fn subscribe_relay(
+        &mut self,
+        recv_id: &QueueId,
+        nonce: &crate::challenge::Nonce,
+        sig: &Signature,
+    ) -> Result<Vec<QueueItem>, SubscribeError> {
+        let recv_pubkey = self
+            .queues
+            .get(recv_id)
+            .ok_or(SubscribeError::NoQueue)?
+            .recv_pubkey;
+        if !verify_subscribe(&recv_pubkey, recv_id, nonce, &RELAY_CHANNEL_MARKER, sig) {
+            return Err(SubscribeError::BadSig);
+        }
+        if !self
+            .seen_sub_nonces
+            .entry(*recv_id)
+            .or_default()
+            .insert(*nonce)
+        {
+            return Err(SubscribeError::Replay);
+        }
+        Ok(self.buffer_of(recv_id))
+    }
+
     pub fn drop_delivered(&mut self, recv_id: &QueueId, msg_id: &MsgId) {
         if let Some(v) = self.buffer.get_mut(recv_id) {
             v.retain(|s| &s.msg_id != msg_id);
@@ -137,6 +170,31 @@ mod tests {
     fn kp(seed: u8) -> ([u8; PUBLIC_KEY_SIZE], SecretKey) {
         let (pk, sk): (PublicKey, SecretKey) = keypair_from_seed(&[seed; 32]).unwrap();
         (*pk.as_bytes(), sk)
+    }
+
+    #[test]
+    fn relay_subscribe_nonce_replay_rejected() {
+        use crate::muq::sign_subscribe_relay;
+        let (rpk, rsk) = kp(0x11);
+        let mut host = QueueHost::new();
+        host.register_queue(Queue {
+            recv_id: [0x71; 32],
+            send_id: [0x51; 32],
+            recv_pubkey: rpk,
+            send_pubkey: None,
+            rotation_epoch: 1000,
+            quota: 64,
+        });
+        let recv_id = [0x71u8; 32];
+        let nonce = [0x33u8; 16];
+        let sig = sign_subscribe_relay(&rsk, &recv_id, &nonce).unwrap();
+        // первая выборка — ok
+        assert!(host.subscribe_relay(&recv_id, &nonce, &sig).is_ok());
+        // повтор ТОГО ЖЕ nonce — Replay (украденный QueueSubscribe непереносим)
+        assert_eq!(
+            host.subscribe_relay(&recv_id, &nonce, &sig),
+            Err(SubscribeError::Replay)
+        );
     }
 
     #[test]

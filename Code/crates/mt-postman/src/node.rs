@@ -16,7 +16,7 @@ use mt_overlay::OverlayAddr;
 use crate::client::ClientError;
 use crate::config::{stand_client_config, stand_server_config, STAND_SNI};
 use crate::muq::MuqState;
-use crate::muq_client::{muq_deposit, muq_register, muq_subscribe};
+use crate::muq_client::{muq_deposit, muq_register, muq_subscribe, muq_subscribe_via_courier};
 use crate::server::{handle_connection, Registry, ServerError};
 
 #[derive(Clone)]
@@ -101,6 +101,21 @@ impl Node {
     ) -> Result<QueueResp, ClientError> {
         let conn = self.endpoint.connect(host, STAND_SNI)?.await?;
         let resp = muq_subscribe(&conn, recv_id, recv_sk).await?;
+        conn.close(0u32.into(), b"done");
+        Ok(resp)
+    }
+
+    /// Двуххоп-ВЫБОРКА: забрать свои осколки ЧЕРЕЗ узел-courier (host видит курьера, не нас).
+    /// Закрывает получателя от хоста симметрично отправителю (Этап 3).
+    pub async fn subscribe_via_courier(
+        &self,
+        courier: SocketAddr,
+        host_overlay: OverlayAddr,
+        recv_id: QueueId,
+        recv_sk: &SecretKey,
+    ) -> Result<QueueResp, ClientError> {
+        let conn = self.endpoint.connect(courier, STAND_SNI)?.await?;
+        let resp = muq_subscribe_via_courier(&conn, host_overlay, recv_id, recv_sk).await?;
         conn.close(0u32.into(), b"done");
         Ok(resp)
     }

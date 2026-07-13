@@ -14,8 +14,8 @@ use quinn::{Connection, Endpoint};
 use mt_crypto::{Signature, SIGNATURE_SIZE};
 use mt_overlay::challenge::{Nonce, CHANNEL_HASH_SIZE, NONCE_SIZE};
 use mt_overlay::muq::{
-    HostDeposit, ProxyForward, Queue, QueueId, QueueItem, QueueResp, QueueSubscribe, QUEUE_ID_SIZE,
-    QUEUE_WIRE_SIZE,
+    HostDeposit, ProxyForward, Queue, QueueId, QueueItem, QueueResp, QueueSubscribe, ReceiveProxy,
+    QUEUE_ID_SIZE, QUEUE_WIRE_SIZE,
 };
 use mt_overlay::queue_host::QueueHost;
 use mt_overlay::OverlayAddr;
@@ -28,6 +28,8 @@ pub const TAG_QUEUE_REGISTER: u8 = 0x10;
 pub const TAG_HOST_DEPOSIT: u8 = 0x11;
 pub const TAG_PROXY_FORWARD: u8 = 0x12;
 pub const TAG_QUEUE_SUBSCRIBE: u8 = 0x13;
+pub const TAG_RECEIVE_PROXY: u8 = 0x14; // B → courier (двуххоп-выборка)
+pub const TAG_RELAY_SUBSCRIBE: u8 = 0x15; // courier → host
 
 const OK: u8 = 0x01;
 const ERR: u8 = 0x00;
@@ -101,6 +103,8 @@ async fn dispatch(
         TAG_HOST_DEPOSIT => handle_deposit(send, recv, state).await,
         TAG_PROXY_FORWARD => handle_proxy_forward(send, recv, state).await,
         TAG_QUEUE_SUBSCRIBE => handle_subscribe(conn, send, recv, state).await,
+        TAG_RECEIVE_PROXY => handle_receive_proxy(send, recv, state).await,
+        TAG_RELAY_SUBSCRIBE => handle_relay_subscribe(send, recv, state).await,
         _ => Ok(()),
     }
 }
@@ -248,6 +252,92 @@ async fn handle_subscribe(
     send_frame(&mut send, &resp.to_bytes()).await?;
 
     // drop-on-delivery (§483): после отдачи осколков очистить доставленные msg_id
+    if !items.is_empty() {
+        let mut host = state.host.lock().unwrap();
+        for it in &items {
+            host.drop_delivered(&sub.recv_id, &it.msg_id);
+        }
+    }
+    Ok(())
+}
+
+/// Courier: принимает ReceiveProxy от получателя, несёт запечатанный QueueSubscribe хосту
+/// (двуххоп-выборка), возвращает QueueResp обратно. Курьер НЕ видит recv_id (sealed непрозрачен).
+async fn handle_receive_proxy(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let bytes = recv_frame(&mut recv).await?;
+    let resp = match ReceiveProxy::decode(&bytes) {
+        Ok(rp) => {
+            let dst = state
+                .proxy_routes
+                .lock()
+                .unwrap()
+                .get(&rp.host_addr)
+                .copied();
+            match dst {
+                Some(addr) => forward_subscribe_to_host(addr, &rp.sealed)
+                    .await
+                    .unwrap_or_else(|_| QueueResp { items: vec![] }.to_bytes()),
+                None => QueueResp { items: vec![] }.to_bytes(),
+            }
+        },
+        Err(_) => QueueResp { items: vec![] }.to_bytes(),
+    };
+    send_frame(&mut send, &resp).await?;
+    Ok(())
+}
+
+/// Courier открывает соединение к host, шлёт sealed как relay-subscribe, читает QueueResp.
+async fn forward_subscribe_to_host(
+    host_addr: SocketAddr,
+    sealed: &[u8],
+) -> Result<Vec<u8>, WireError> {
+    let mut endpoint =
+        Endpoint::client("0.0.0.0:0".parse().expect("bind any")).map_err(|_| WireError::Closed)?;
+    endpoint.set_default_client_config(stand_client_config().map_err(|_| WireError::Closed)?);
+    let conn = endpoint
+        .connect(host_addr, crate::config::STAND_SNI)
+        .map_err(|_| WireError::Closed)?
+        .await
+        .map_err(|_| WireError::Closed)?;
+    let (mut s, mut r) = conn.open_bi().await.map_err(|_| WireError::Closed)?;
+    write_fixed(&mut s, &[TAG_RELAY_SUBSCRIBE]).await?;
+    send_frame(&mut s, sealed).await?;
+    let resp = recv_frame(&mut r).await?;
+    conn.close(0u32.into(), b"done");
+    endpoint.wait_idle().await;
+    Ok(resp)
+}
+
+/// Host: relay-выборка от курьера. verify_subscribe(RELAY_CHANNEL_MARKER) + nonce-tracking
+/// (anti-replay без channel_hash), отдаёт QueueResp курьеру, drop-on-delivery. Host видит
+/// курьера, НЕ сетевую личность получателя B.
+async fn handle_relay_subscribe(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let bytes = recv_frame(&mut recv).await?;
+    let sub = match QueueSubscribe::decode(&bytes) {
+        Ok(s) => s,
+        Err(_) => {
+            let _ = send_frame(&mut send, &QueueResp { items: vec![] }.to_bytes()).await;
+            return Ok(());
+        },
+    };
+    let sig = Signature::from_array(sub.sig);
+    let items: Vec<QueueItem> = {
+        let mut host = state.host.lock().unwrap();
+        host.subscribe_relay(&sub.recv_id, &sub.nonce, &sig)
+            .unwrap_or_default()
+    };
+    let resp = QueueResp {
+        items: items.clone(),
+    };
+    send_frame(&mut send, &resp.to_bytes()).await?;
     if !items.is_empty() {
         let mut host = state.host.lock().unwrap();
         for it in &items {

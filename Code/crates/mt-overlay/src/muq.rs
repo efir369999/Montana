@@ -6,7 +6,7 @@
 use mt_codec::{write_bytes, write_u16, write_u32, write_u8, CanonicalEncode};
 use mt_crypto::{PUBLIC_KEY_SIZE, SIGNATURE_SIZE};
 
-use crate::challenge::{ChannelHash, Nonce, NONCE_SIZE};
+use crate::challenge::{ChannelHash, Nonce, CHANNEL_HASH_SIZE, NONCE_SIZE};
 use crate::frame::{FrameError, MsgId, MAX_PAYLOAD_LEN, MSG_ID_SIZE};
 
 pub const QUEUE_ID_SIZE: usize = 32;
@@ -244,6 +244,58 @@ impl ProxyForward {
             sealed: input[36..].to_vec(),
         })
     }
+}
+
+/// Двуххоп-ВЫБОРКА: получатель забирает через курьера (симметрично ProxyForward).
+/// Курьер несёт запечатанный QueueSubscribe хосту и возвращает QueueResp, НЕ видя recv_id.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ReceiveProxy {
+    pub host_addr: crate::OverlayAddr,
+    pub sealed: Vec<u8>, // QueueSubscribe, запечатан для host (курьер не расшифрует)
+}
+
+impl ReceiveProxy {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut b = Vec::with_capacity(32 + 4 + self.sealed.len());
+        b.extend_from_slice(&self.host_addr);
+        b.extend_from_slice(&(self.sealed.len() as u32).to_le_bytes());
+        b.extend_from_slice(&self.sealed);
+        b
+    }
+
+    pub fn decode(input: &[u8]) -> Result<Self, FrameError> {
+        if input.len() < 36 {
+            return Err(FrameError::Truncated);
+        }
+        let mut host_addr = [0u8; 32];
+        host_addr.copy_from_slice(&input[..32]);
+        let sealed_len = u32::from_le_bytes(
+            input[32..36]
+                .try_into()
+                .map_err(|_| FrameError::Truncated)?,
+        ) as usize;
+        if input.len() - 36 != sealed_len {
+            return Err(FrameError::LengthMismatch);
+        }
+        Ok(Self {
+            host_addr,
+            sealed: input[36..].to_vec(),
+        })
+    }
+}
+
+/// channel_hash-маркер двуххоп-выборки: нет прямого канала B↔host, поэтому вместо
+/// TLS-Exporter подставляется 0×32. TLS-Exporter даёт случайные 32 B → коллизия с 0×32
+/// исключена; anti-replay несёт nonce-tracking хоста (QueueHost::subscribe_relay).
+pub const RELAY_CHANNEL_MARKER: ChannelHash = [0u8; CHANNEL_HASH_SIZE];
+
+/// Подпись выборки через курьер: sign_subscribe с channel_hash = RELAY_CHANNEL_MARKER.
+pub fn sign_subscribe_relay(
+    recv_sk: &mt_crypto::SecretKey,
+    recv_id: &QueueId,
+    nonce: &Nonce,
+) -> Result<mt_crypto::Signature, mt_crypto::CryptoError> {
+    sign_subscribe(recv_sk, recv_id, nonce, &RELAY_CHANNEL_MARKER)
 }
 
 /// Выборка получателем (прямое соединение B↔host, подпись привязана к каналу — F3/R4).
@@ -505,6 +557,15 @@ mod tests {
             };
             assert_eq!(HostDeposit::decode(&d.to_bytes()).unwrap(), d);
         }
+    }
+
+    #[test]
+    fn receiveproxy_roundtrip() {
+        let rp = ReceiveProxy {
+            host_addr: [0xEE; 32],
+            sealed: vec![0x5A; 3357], // QueueSubscribe размер (32+16+3309)
+        };
+        assert_eq!(ReceiveProxy::decode(&rp.to_bytes()).unwrap(), rp);
     }
 
     #[test]
