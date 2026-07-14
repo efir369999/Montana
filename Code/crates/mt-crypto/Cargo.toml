@@ -12,7 +12,7 @@ testing = []
 [dependencies]
 sha2 = { workspace = true }
 zeroize = { workspace = true }
-libc = "=0.2.169"
+libc = "=0.2.186"
 # ML-KEM sealed-запечатывание (seal_to/open_from) — postquantum end-to-end к получателю.
 chacha20poly1305 = { workspace = true }
 # getrandom — OS CSPRNG для test-only `keypair()`. Размер ~30 KB в production
