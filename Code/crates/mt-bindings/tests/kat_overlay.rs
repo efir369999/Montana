@@ -75,7 +75,8 @@ fn kat_challenge_message_composition() {
 
 #[test]
 fn kat_hostdeposit_encode() {
-    // Спека Этап 2 (MUQ) HostDeposit: send_id32‖msg_id16‖ttl(u32)‖idx‖total‖nonce16‖ct_len(u32)‖ct‖sig_len(u32)‖sig.
+    // Спека Этап 2 (MUQ) §453 HostDeposit: send_id32‖msg_id16‖ttl(u32)‖idx‖total‖nonce16‖
+    // ct_len(u32)‖ct‖sig(SIGNATURE_SIZE фикс, §462; unsecured = 0×SIGNATURE_SIZE).
     let hd = mt_overlay::muq::HostDeposit {
         send_id: [0xAA; 32],
         msg_id: [0xBB; 16],
@@ -84,13 +85,13 @@ fn kat_hostdeposit_encode() {
         shard_total: 4,
         nonce: [0x07; 16],
         ct: vec![0xCC; 32],
-        sig: Vec::new(),
+        sig: [0u8; mt_crypto::SIGNATURE_SIZE],
     };
     let b = hd.to_bytes();
-    assert_eq!(b.len(), 110);
+    assert_eq!(b.len(), 3415); // 74 header + 32 ct + 3309 sig
     assert_eq!(
         hex::encode(mt_crypto::sha256_raw(&b)),
-        "a90a82744c5840bab7edcaa64b2ba9615ca88036f1175d94d90fec6de4c08f4b"
+        "b32fa44be9df3fc19eded51a9534f9103fb4640c3b20878840f90867c8672ffa"
     );
     assert_eq!(mt_overlay::muq::HostDeposit::decode(&b).unwrap(), hd);
 }

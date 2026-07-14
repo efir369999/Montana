@@ -320,7 +320,7 @@ pub unsafe extern "C" fn mt_client_send(
         shard_total: 1,
         nonce,
         ct,
-        sig: sig.as_bytes().to_vec(),
+        sig: *sig.as_bytes(),
     };
     let Ok(sealed) = mt_crypto::seal_to(&kem, &hd.to_bytes()) else {
         return -1;

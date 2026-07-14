@@ -223,7 +223,7 @@ mod tests {
             shard_total: 1,
             nonce,
             ct: vec![0xCC; 64],
-            sig: sig.as_bytes().to_vec(),
+            sig: *sig.as_bytes(),
         };
         host.deposit(&hd, 100).unwrap();
         assert_eq!(host.buffer_of(&[0x71; 32]).len(), 1);
@@ -240,7 +240,7 @@ mod tests {
             shard_total: 1,
             nonce: [0; 16],
             ct: vec![1; 8],
-            sig: Vec::new(),
+            sig: [0u8; mt_crypto::SIGNATURE_SIZE],
         };
         assert_eq!(host.deposit(&hd, 100), Err(DepositError::NoQueue));
     }
@@ -269,7 +269,7 @@ mod tests {
             shard_total: 1,
             nonce,
             ct: vec![1; 8],
-            sig: bad.as_bytes().to_vec(),
+            sig: *bad.as_bytes(),
         };
         assert_eq!(host.deposit(&hd, 100), Err(DepositError::Unauthorized));
     }
@@ -295,7 +295,7 @@ mod tests {
                 shard_total: 1,
                 nonce: [0; 16],
                 ct: vec![i; 8],
-                sig: Vec::new(),
+                sig: [0u8; mt_crypto::SIGNATURE_SIZE],
             };
             host.deposit(&hd, 100).unwrap();
         }
@@ -307,7 +307,7 @@ mod tests {
             shard_total: 1,
             nonce: [0; 16],
             ct: vec![9; 8],
-            sig: Vec::new(),
+            sig: [0u8; mt_crypto::SIGNATURE_SIZE],
         };
         assert_eq!(host.deposit(&over, 100), Err(DepositError::QuotaFull));
         host.prune(111);

@@ -124,7 +124,7 @@ pub struct HostDeposit {
     pub shard_total: u8,
     pub nonce: Nonce,
     pub ct: Vec<u8>,
-    pub sig: Vec<u8>, // ML-DSA-65 send_key (secured) либо пусто (unsecured)
+    pub sig: [u8; SIGNATURE_SIZE], // ML-DSA-65 send_key (secured) либо 0×SIGNATURE_SIZE (unsecured)
 }
 
 // send_id 32 + msg_id 16 + ttl 4 + idx 1 + total 1 + nonce 16 + ct_len 4
@@ -140,14 +140,13 @@ impl CanonicalEncode for HostDeposit {
         write_bytes(buf, &self.nonce);
         write_u32(buf, self.ct.len() as u32);
         write_bytes(buf, &self.ct);
-        write_u32(buf, self.sig.len() as u32);
-        write_bytes(buf, &self.sig);
+        write_bytes(buf, &self.sig); // sig — фикс SIGNATURE_SIZE (§462), без длина-префикса
     }
 }
 
 impl HostDeposit {
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(HD_HEADER + self.ct.len() + self.sig.len());
+        let mut b = Vec::with_capacity(HD_HEADER + self.ct.len() + SIGNATURE_SIZE);
         self.encode(&mut b);
         b
     }
@@ -182,20 +181,17 @@ impl HostDeposit {
                 .map_err(|_| FrameError::Truncated)?,
         ) as usize;
         o += 4;
-        if ct_len > MAX_PAYLOAD_LEN || input.len() < o + ct_len + 4 {
+        if ct_len > MAX_PAYLOAD_LEN || input.len() < o + ct_len + SIGNATURE_SIZE {
             return Err(FrameError::LengthMismatch);
         }
         let ct = input[o..o + ct_len].to_vec();
         o += ct_len;
-        let sig_len = u32::from_le_bytes(
-            input[o..o + 4]
-                .try_into()
-                .map_err(|_| FrameError::Truncated)?,
-        ) as usize;
-        o += 4;
-        if input.len() - o != sig_len {
+        // sig — фиксированные SIGNATURE_SIZE байт (§462; unsecured = 0×SIGNATURE_SIZE)
+        if input.len() - o != SIGNATURE_SIZE {
             return Err(FrameError::LengthMismatch);
         }
+        let mut sig = [0u8; SIGNATURE_SIZE];
+        sig.copy_from_slice(&input[o..o + SIGNATURE_SIZE]);
         Ok(Self {
             send_id,
             msg_id,
@@ -204,7 +200,7 @@ impl HostDeposit {
             shard_total,
             nonce,
             ct,
-            sig: input[o..].to_vec(),
+            sig,
         })
     }
 }

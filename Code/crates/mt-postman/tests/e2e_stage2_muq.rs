@@ -53,7 +53,7 @@ fn build_deposit(
         shard_total,
         nonce,
         ct,
-        sig: sig.as_bytes().to_vec(),
+        sig: *sig.as_bytes(),
     };
     let sealed = mt_crypto::seal_to(host_kem_pk, &hd.to_bytes()).unwrap();
     ProxyForward {

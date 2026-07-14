@@ -44,7 +44,7 @@ fn e2e_muq_two_hop_deposit_subscribe_reassemble() {
             shard_total: 4,
             nonce,
             ct: sh.clone(),
-            sig: sig.as_bytes().to_vec(),
+            sig: *sig.as_bytes(),
         };
         // A → entry-proxy (ProxyForward), proxy → host (sealed HostDeposit).
         let pf_wire = ProxyForward {
