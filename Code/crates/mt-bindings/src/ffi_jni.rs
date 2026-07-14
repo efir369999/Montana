@@ -436,6 +436,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eEncrypt<'local
         Ok(s) => s,
         Err(_) => return null,
     };
+    // длина 64 проверена выше — try_into не паникует
     let seed: [u8; 64] = seed_v.as_slice().try_into().unwrap();
     let msg = match st.encrypt(&plaintext, &seed) {
         Ok(m) => m,
@@ -524,6 +525,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eBuildHandshake
     {
         return null;
     }
+    // все длины проверены выше (return null иначе) — try_into не паникует
     let a_pub: [u8; MLDSA_PUB] = a_pub_v.as_slice().try_into().unwrap();
     let seed: [u8; 32] = seed_v.as_slice().try_into().unwrap();
     let b_pub: [u8; MLDSA_PUB] = b_pub_v.as_slice().try_into().unwrap();
@@ -603,6 +605,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eProcessHandsha
     {
         return null;
     }
+    // все длины проверены выше (return null иначе) — try_into не паникует
     let acc_id: [u8; 32] = acc_v.as_slice().try_into().unwrap();
     let app_pub: [u8; MLKEM_PUB] = app_pub_v.as_slice().try_into().unwrap();
     let spk_pub: [u8; MLKEM_PUB] = spk_pub_v.as_slice().try_into().unwrap();

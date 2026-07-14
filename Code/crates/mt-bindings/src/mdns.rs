@@ -128,3 +128,4 @@ mod tests {
         let _ = n; // в CI/sandbox multicast может быть недоступен — важно, что нет паники
     }
 }
+

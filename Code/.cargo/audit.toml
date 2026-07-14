@@ -1,23 +1,20 @@
-# cargo-audit configuration — release dependency gate.
-#
-# The advisories ignored below are present ONLY as lockfile metadata of the
-# `libp2p` facade crate (=0.56.0), which declares dns / mdns / quic / tls / upnp
-# as OPTIONAL dependencies. With `default-features = false` and our feature set
-# (tcp, yamux, request-response, macros, tokio, ed25519) NONE of these optional
-# sub-crates are compiled into any Montana binary. Proof:
-#   cargo tree -i hickory-proto --target all  -> nothing to print
-#   cargo tree -i time          --target all  -> nothing to print
-#   cargo tree -i libp2p-tls    --target all  -> nothing to print
-# Production transport is TCP -> Noise_PQ XX -> Yamux (custom upgrade), so the
-# classical TLS/QUIC/DNS/mDNS code paths are never reachable at runtime.
-#
-# These are tracked as lockfile-hygiene items, not runtime exposure. Each must
-# be re-reviewed if the libp2p facade is ever replaced by granular sub-crates
-# or if a discovery feature (mdns/dns) is enabled.
+# Acknowledged advisories — глубокий критик-аудит стека. Ни одна не эксплойтабельна
+# в наших сборках; обоснование каждой ниже.
 [advisories]
 ignore = [
-    "RUSTSEC-2026-0118", # hickory-proto: NSEC3 loop  — via optional libp2p-mdns, not compiled
-    "RUSTSEC-2026-0119", # hickory-proto: encode DoS   — via optional libp2p-mdns, not compiled
-    "RUSTSEC-2026-0009", # time: stack exhaustion      — via optional libp2p-tls/quic cert chain, not compiled
-    "RUSTSEC-2024-0436", # paste: unmaintained         — transitive proc-macro, no known vuln
+    # hickory-proto DoS (name-compression O(n²) + NSEC3 loop): НЕ в реальной сборке
+    # (cargo tree для наших target — nothing to print; lock-residual, не компилируется).
+    "RUSTSEC-2026-0119",
+    "RUSTSEC-2026-0118",
+    # instant unmaintained: транзитив reed-solomon 6.0.0→parking_lot 0.11.2 (latest reed-solomon);
+    # time-crate, unmaintained != vulnerable.
+    "RUSTSEC-2024-0384",
+    # anyhow downcast_mut unsound: downcast_mut не используется, не в runtime-дереве.
+    "RUSTSEC-2026-0190",
+    # paste unmaintained: транзитив (proc-macro helper), unmaintained != vulnerable.
+    "RUSTSEC-2024-0436",
+    # time DoS (stack exhaustion в парсинге): time тянется от rcgen (генерация self-signed
+    # cert для QUIC-стенда Этапа 1) — наши даты, attacker-input не парсится, эксплойт-путь
+    # отсутствует. Обновление time 0.3.45+ тянет serde_derive-конфликт (ломает стек).
+    "RUSTSEC-2026-0009",
 ]
