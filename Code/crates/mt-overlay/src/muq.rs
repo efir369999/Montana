@@ -114,7 +114,7 @@ impl Queue {
     }
 }
 
-/// Депозит хосту (внутри ProxyForward, запечатан Noise_PQ XX к host).
+/// Депозит хосту (внутри ProxyForward, запечатан ML-KEM-768 sealed-box к host).
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct HostDeposit {
     pub send_id: QueueId,
@@ -209,7 +209,7 @@ impl HostDeposit {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct ProxyForward {
     pub host_addr: crate::OverlayAddr, // overlay-адрес queue-host
-    pub sealed: Vec<u8>,               // HostDeposit запечатан Noise_PQ XX для host
+    pub sealed: Vec<u8>,               // HostDeposit запечатан ML-KEM-768 sealed-box для host
 }
 
 impl ProxyForward {

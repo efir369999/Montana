@@ -1109,5 +1109,5 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Severity:**        medium (spec↔code divergence on the sealing-primitive name and wire bytes; ML-KEM sealed-box bytes ≠ Noise_PQ XX handshake bytes; a spec-conformant independent host would attempt the wrong open).
 **Closure path:**    spec fix (firewall) — §453/§469 "sealed Noise_PQ XX to host" → "sealed with ML-KEM-768 sealed-box (mt_crypto::seal_to; one-way, async — the sender has no interactive channel with the host)". The code is correct; the spec is the SSOT holder, so this edit requires author confirmation.
 **Closure cost:**    < 1 working day (spec edit + version bump; code unchanged).
-**Status:**          open (needs author decision — spec edit; code already architecturally correct)
-**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14); ML-KEM sealed is correct for the async deposit, §453/§469 wording pending author confirmation
+**Status:**          closed — spec aligned to code in P2P Network v0.14.0 (§453/§469 «Noise_PQ XX» → «ML-KEM-768 sealed-box», mt_crypto::seal_to); code unchanged (already ML-KEM); consistent with fetch §542 and improves [I-7] (one sealed primitive)
+**Acknowledged:**    author approved the spec edit (2026-07-14); firewall — code was correct, spec brought into agreement
