@@ -1097,3 +1097,17 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Closure cost:**    < 1 working day (paged fetch or explicit error code + test).
 **Status:**          open (fetch-path robustness pending)
 **Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
+
+## DEV-053 (open, needs author decision): HostDeposit sealing — spec says Noise_PQ XX, code uses ML-KEM sealed-box
+
+**Crate:**           mt-overlay (muq.rs), mt-postman (muq.rs handle_deposit, muq_client.rs)
+**File:line:**       mt-postman/src/muq.rs:179 (open_from), muq_client.rs:100,132 (seal_to); mt-crypto/src/lib.rs:508,526 (ML-KEM-768 + ChaCha20-Poly1305 sealed-box)
+**Spec section:**    Etap 2 §453/§469 ("sealed Noise_PQ XX to host") vs §472 ("the sender has no direct channel with host — two-hop")
+**Spec quote:**      "HostDeposit { ... sealed Noise_PQ XX to host }"; "the deposit is NOT bound to the connection channel_hash (the sender has no direct channel with host — two-hop)"
+**What the code does:** seal_to/open_from = ML-KEM-768 encapsulate + ChaCha20-Poly1305 sealed-box — a one-way asynchronous seal, NOT a Noise_PQ XX interactive handshake.
+**Analysis:**        Noise_PQ XX is an interactive 3-message handshake; the deposit is asynchronous two-hop and §472 itself states the sender has no direct channel with the host, so Noise XX is inapplicable. ML-KEM sealed-box (the code) is the architecturally correct primitive for async one-way sealing to the host. The spec is internally contradictory (§453 "Noise_PQ XX" vs §472 "no direct channel"). [I-1] holds either way (both post-quantum). Noise_PQ XX remains correct for the hop-by-hop QUIC transport (§7), but not for the end-to-end sealed deposit.
+**Severity:**        medium (spec↔code divergence on the sealing-primitive name and wire bytes; ML-KEM sealed-box bytes ≠ Noise_PQ XX handshake bytes; a spec-conformant independent host would attempt the wrong open).
+**Closure path:**    spec fix (firewall) — §453/§469 "sealed Noise_PQ XX to host" → "sealed with ML-KEM-768 sealed-box (mt_crypto::seal_to; one-way, async — the sender has no interactive channel with the host)". The code is correct; the spec is the SSOT holder, so this edit requires author confirmation.
+**Closure cost:**    < 1 working day (spec edit + version bump; code unchanged).
+**Status:**          open (needs author decision — spec edit; code already architecturally correct)
+**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14); ML-KEM sealed is correct for the async deposit, §453/§469 wording pending author confirmation
