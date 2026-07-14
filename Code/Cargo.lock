@@ -1971,6 +1971,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mt-bootstrap"
+version = "1.2.0"
+dependencies = [
+ "hex",
+ "mainline",
+ "mt-codec",
+ "mt-rendezvous",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "mt-codec"
 version = "1.2.0"
 
