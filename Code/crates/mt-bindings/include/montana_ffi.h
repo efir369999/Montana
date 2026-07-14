@@ -58,7 +58,7 @@
 
 #define MT_ERR_KDF_FAILED -10
 
-#define MT_ERR_ADDRESS_INVALID -10
+#define MT_ERR_ADDRESS_INVALID -13
 
 #define MT_ERR_KEM_FAILED -11
 
@@ -73,6 +73,10 @@
 
 /**
  * Opaque-хэндл клиента (живое QUIC-соединение к почтальону/курьеру).
+ * `pending` — буфер хвоста пакетной выборки: `subscribe_via_courier` — уничтожающий
+ * batch-drain (host отдаёт и дропает ВСЕ элементы очереди разом), поэтому FFI обязан
+ * сохранить весь batch и выдавать по одному, иначе items[1..] теряются (§206 «буфер
+ * никогда не теряет сообщение»).
  */
 typedef struct MtClient MtClient;
 

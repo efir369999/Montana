@@ -24,7 +24,7 @@ extern "C" {
 #define MT_ERR_SIGN_FAILED                -7
 #define MT_ERR_VERIFY_FAILED              -8
 #define MT_ERR_BUFFER_TOO_SMALL           -9
-#define MT_ERR_ADDRESS_INVALID           -10
+#define MT_ERR_ADDRESS_INVALID           -13
 #define MT_ERR_KEM_FAILED                -11
 #define MT_ERR_REPLAY                    -12
 #define MT_ERR_PANIC                    -100
