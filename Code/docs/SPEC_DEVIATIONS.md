@@ -1045,3 +1045,55 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Closure cost:**    < 1 working day (mechanical removal + registry/test update in mt-net).
 **Status:**          open (spec reconciled in Network spec; mt-net cleanup pending)
 **Acknowledged:**    author asked to reconcile the network spec to the messenger and fix (2026-07-06); recorded per that decision
+
+## DEV-049 (open, acknowledged): MUQ durability gaps — drop-on-send, single-shard, no padding, inert TTL
+
+**Crate:**           mt-overlay (queue_host.rs, muq.rs, inbox.rs, erasure.rs), mt-postman (muq.rs, muq_client.rs)
+**File:line:**       mt-postman/src/muq.rs:333-338 (drop_delivered after send, not on B ack); mt-bindings/src/network.rs (deposit shard_total=1); mt-overlay/src/inbox.rs (bucket_len test-only); mt-postman/src/muq.rs:46,184 (window=0, prune not wired)
+**Spec section:**    Etap 2 (MUQ) §488 (drop-on-delivery on confirmation), §201/§508 (erasure RS(k,n) across k hosts), §490 (padding to bucket inside AEAD), §198 (buffer with TTL)
+**Spec quote:**      "By confirmation — drop-on-delivery"; "buffer spread m-of-k across k hosts, key = recv_id"; "padding inside AEAD"
+**What the code does:** (a) host drops shards immediately after writing QueueResp to the courier (no end-to-end B acknowledgement) → if the courier→B leg fails, shards are gone (violates §526 "buffer never loses a message"); (b) deposit is a single shard to one host (shard_total=1), erasure RS(k,n) exists (erasure.rs) but is used only in tests → one host offline = message unreachable; (c) padding-to-bucket (inbox.rs bucket_len) is test-only → shard length leaks to the host; (d) window is hardcoded 0 and QueueHost::prune is never called from Node::run → TTL never fires on a live node.
+**Severity:**        medium (off-chain [P2P-1] durability/metadata gaps; live single-host relay path delivers, but no multi-host durability, no length hiding, no TTL eviction). Not a consensus-fork bug.
+**Closure path:**    (a) drop-on-delivery keyed to E2E delivery-receipt R1 (§593) rather than courier write; (b) wire RS(k,n) fan-out (prod RS(2,4)) across k hosts at deposit, reconstruct m-of-k at fetch; (c) apply bucket padding (§490) in deposit_via_proxy before seal; (d) derive window from floor(unix/60) (labels::window_index) and call prune each window from Node::run.
+**Closure cost:**    > 1 working day (spans deposit fan-out, receipt-gated drop, padding, TTL timer — a durability milestone).
+**Status:**          open (spec-ahead-of-code; single-host live path works, durability/metadata hardening pending)
+**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's request for a stage-by-stage + full-stack critic pass
+
+## DEV-050 (open, acknowledged): MUQ anti-DoS gaps — unauthenticated registration, eager DedupWindow, relay-subscribe replay
+
+**Crate:**           mt-overlay (queue_host.rs, dedup.rs), mt-postman (muq_client.rs, muq.rs)
+**File:line:**       mt-overlay/src/queue_host.rs:54-57 (register_queue: bare insert, no ownership/quota); mt-overlay/src/dedup.rs:23-27 (with_capacity(4096) ≈160KB per recv_id); mt-postman/src/muq_client.rs:123 (client-generated subscribe nonce); mt-overlay/src/muq.rs (RELAY_CHANNEL_MARKER=0×32, no channel_hash on relay path)
+**Spec section:**    Etap 2 §492 (send_key anti-spam), §478 (nonce issued by host), R4 (channel_hash binding); [I-15] (time-based scarcity for anti-spam)
+**Spec quote:**      "nonce ... issued by the host before the request (freshness)"; anti-spam via send_key + buffer quota
+**What the code does:** (a) register_queue accepts any Queue without ownership proof and with no cap on the number of queues; prune never removes empty queues / send_route / seen_sub_nonces → a peer registering K queues (its own valid recv_keys, free) drives ~K·160KB of seen_sub_nonces (eager DedupWindow prealloc, ×32 amplifier) → node-DoS; (b) relay-subscribe replay: nonce is client-generated (not host-issued per §478), anti-replay is a volatile 4096-entry window (not persistent) and the default non-collusion relay path drops channel_hash (marker 0×32) → a captured ReceiveProxy blob replays after window eviction or host restart; (c) re-registration is last-writer-wins on recv_pubkey (hijack if recv_id leaks).
+**Severity:**        medium (off-chain node-DoS + relay-path replay weaker than the direct path's channel_hash binding; not a consensus bug).
+**Closure path:**    (a) time-based registration barrier per [I-15] (one registration per identity per window) + lazy DedupWindow (grow on demand, cap total) + prune empty queues; (b) host-issued subscribe nonce (§478) + persistent dedup or channel_hash on the relay path; (c) proof-of-ownership on re-registration (sign against the prior recv_pubkey).
+**Closure cost:**    > 1 working day (registration accounting + nonce protocol + dedup redesign).
+**Status:**          open (spec anti-spam is deposit-side; registration/subscribe hardening pending)
+**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
+
+## DEV-051 (open, acknowledged): rendezvous PQ-binding — overlay_addr↔account_id verify and self-host gate missing
+
+**Crate:**           mt-rendezvous (lib.rs verify_record), mt-postman (node.rs)
+**File:line:**       mt-rendezvous/src/lib.rs:316-329 (verify_record checks only ed25519 admission sig); mt-postman/src/node.rs:74-83 (register_queue_on accepts any host)
+**Spec section:**    Etap 4 §595 (subscriber verifies overlay_addr against SHA-256("mt-overlay"||0x00||account_id)); Etap 3 §534 (direct registration only to own node)
+**Spec quote:**      "overlay_addr in the record the subscriber verifies against SHA-256(\"mt-overlay\"||0x00||account_id of the friend) ... a forged overlay address is caught immediately"
+**What the code does:** (a) verify_record validates only the ed25519 BEP44 admission signature; there is no helper that checks record.overlay_addr == mt_overlay::overlay_addr(friend_account_id), and no consumer performs it (the [P2P-5] argument "ed25519 is only a DoS-redirect, identity is PQ" rests on this first-line check, which is absent → a forged ed25519 record's overlay_addr is accepted, leaving only the second line R1 receipt); (b) Node::register_queue_on takes any host without a "this is my node" gate, so direct registration to a foreign host (which reveals the registrant's network identity) is not fenced off, contrary to the non-collusion default.
+**Severity:**        medium (PQ-binding first line absent; redirect stops being "DoS-only" until the overlay↔account_id check is wired). Off-chain.
+**Closure path:**    (a) add a verify helper `record.overlay_addr == mt_overlay::overlay_addr(friend_account_id)` and call it in every RendezvousRecord consumer (make the binding un-forgettable per lesson E-2); (b) gate Node::register_queue_on to self-host only (direct registration to own node).
+**Closure cost:**    < 1 working day (verify helper + consumer wiring + self-host guard).
+**Status:**          open (spec defines the binding; consumer-side verify pending)
+**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
+
+## DEV-052 (open, acknowledged): silent empty QueueResp when the fetch frame exceeds the wire limit
+
+**Crate:**           mt-postman (wire.rs, muq.rs)
+**File:line:**       mt-postman/src/wire.rs:11,47-49 (MAX_FRAME_WIRE = MAX_PAYLOAD_LEN + 4096); mt-postman/src/muq.rs:255-279 (handle_receive_proxy maps any forward error to empty QueueResp)
+**Spec section:**    Etap 2 §490 (padding buckets up to 1 MiB, quota up to u32); [C-2.1] corollary (no silent failure on the critical path)
+**Spec quote:**      "no silent failure on the critical path" ([C-2.1] corollary)
+**What the code does:** MAX_PAYLOAD_LEN is 2 MiB per single shard; a full QueueResp is the sum of all buffered shards (up to quota) and can exceed 2 MiB. recv_frame (read_to_end(MAX_FRAME_WIRE)) then errors TooLong, and handle_receive_proxy maps any forward_subscribe_to_host error to QueueResp{items:vec![]} silently → B receives an empty response and cannot distinguish "no mail" from "delivery broke", and the queue becomes undrainable via the relay path.
+**Severity:**        medium (silent-failure on the fetch critical path; queue can wedge). Off-chain.
+**Closure path:**    batched/paged fetch (return shards in frame-sized pages with a continuation cursor) OR an explicit "response too large, N bytes" error code distinct from the empty-queue case; never map the oversize error to an empty result.
+**Closure cost:**    < 1 working day (paged fetch or explicit error code + test).
+**Status:**          open (fetch-path robustness pending)
+**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
