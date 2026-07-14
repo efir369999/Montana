@@ -404,7 +404,10 @@ pub fn bootstrap_targets(
         }
     }
     if let Some(qr) = qr {
-        if let Some(a) = qr.current_endpoint(now_unix) {
+        // qr приходит из недоверенного deep-link montana://b/ — фильтруем через
+        // SSRF-предикат (C-6: иначе direct-v6 на внутренний адрес → узел дозвонится
+        // во внутреннюю сеть). Физический LAN-обмен идёт mDNS-путём Этапа 6, не сюда.
+        if let Some(a) = qr.current_endpoint_public(now_unix) {
             push(a, &mut out);
         }
     }
@@ -646,14 +649,18 @@ mod tests {
                 },
             ],
         };
-        let q = sample_qr(); // direct-v6 [::1]:8444, expires 2_000_000
+        let q = sample_qr(); // direct-v6 [::1]:8444 (loopback — недоверенный QR)
         let targets = bootstrap_targets(Some(&q), &cache, &embedded, 1_000_000);
-        // порядок: кэш → QR → embedded (без дубля)
-        assert_eq!(targets.len(), 3);
-        assert_eq!(targets[0].to_string(), "10.0.0.1:1"); // кэш первым
-        assert_eq!(targets[1].to_string(), "[::1]:8444"); // QR
-        assert_eq!(targets[2].to_string(), "203.0.113.9:2"); // embedded
-                                                             // протухший QR выпадает
+        // C-6: QR-endpoint [::1] (loopback из недоверенного deep-link) отфильтрован
+        // SSRF-предикатом; доверенные кэш + embedded остаются.
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].to_string(), "10.0.0.1:1"); // кэш (доверенный, не фильтруется)
+        assert_eq!(targets[1].to_string(), "203.0.113.9:2"); // embedded
+        assert!(
+            !targets.iter().any(|t| t.to_string() == "[::1]:8444"),
+            "loopback QR не попадает в targets (SSRF)"
+        );
+        // протухший QR тоже выпадает
         let targets2 = bootstrap_targets(Some(&q), &cache, &embedded, 3_000_000);
         assert_eq!(targets2.len(), 2);
     }
