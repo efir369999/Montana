@@ -81,7 +81,11 @@ impl PostmanServer {
 
     /// Число зарегистрированных живых соединений (для тестов/наблюдаемости).
     pub fn registered_count(&self) -> usize {
-        self.reg.lock().unwrap().conns.len()
+        self.reg
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .conns
+            .len()
     }
 
     /// Accept-цикл: на каждое соединение — независимый таск (handshake → routing).
@@ -134,7 +138,7 @@ pub(crate) async fn handle_connection(
 
     // register сам делает verify_registration (подпись + привязка account_pubkey↔addr).
     let conn_id = {
-        let mut g = reg.lock().unwrap();
+        let mut g = reg.lock().unwrap_or_else(|p| p.into_inner());
         let id = g.next;
         match g.postman.register(id, &account_pubkey, &nonce, &ch, &sig) {
             Some(_addr) => {
@@ -152,7 +156,7 @@ pub(crate) async fn handle_connection(
     let result = routing_loop(&conn, conn_id, &reg).await;
 
     {
-        let mut g = reg.lock().unwrap();
+        let mut g = reg.lock().unwrap_or_else(|p| p.into_inner());
         g.postman.deregister(conn_id);
         g.conns.remove(&conn_id);
     }
@@ -184,12 +188,17 @@ async fn routing_loop(
         };
 
         let route = {
-            let g = reg.lock().unwrap();
+            let g = reg.lock().unwrap_or_else(|p| p.into_inner());
             g.postman.route(conn_id, frame)
         };
         match route {
             Route::Deliver { conn: dst, frame } | Route::AckToSender { conn: dst, frame } => {
-                let target = reg.lock().unwrap().conns.get(&dst).cloned();
+                let target = reg
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .conns
+                    .get(&dst)
+                    .cloned();
                 if let Some(c) = target {
                     if let Ok(mut s) = c.open_uni().await {
                         let _ = send_frame(&mut s, &frame.to_bytes()).await;

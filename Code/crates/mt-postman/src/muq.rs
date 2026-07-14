@@ -37,6 +37,9 @@ const OK: u8 = 0x01;
 const ERR: u8 = 0x00;
 
 /// Состояние MUQ-узла: host-таблица очередей + proxy-маршруты (overlay host → физ.адрес стенда).
+// V-1: замки восстанавливаются из poison (unwrap_or_else into_inner) — паника одного
+// обработчика не отравляет весь узел-почтальон, обслуживающий многих. Мутации под
+// замками простые (insert/get/buffer), частичного неконсистентного состояния не создают.
 pub struct MuqState {
     host: Mutex<QueueHost>,
     proxy_routes: Mutex<HashMap<OverlayAddr, SocketAddr>>,
@@ -70,7 +73,10 @@ impl MuqState {
 
     /// Proxy-роль: сопоставить overlay-адрес queue-host его физическому адресу (конфиг стенда).
     pub fn add_proxy_route(&self, host_overlay: OverlayAddr, addr: SocketAddr) {
-        self.proxy_routes.lock().unwrap().insert(host_overlay, addr);
+        self.proxy_routes
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(host_overlay, addr);
     }
 
     /// Публичный ML-KEM ключ хоста — клиент запечатывает sealed к нему (курьер крипто-слеп).
@@ -80,7 +86,7 @@ impl MuqState {
 
     /// Локальный дренаж своей очереди (self-host, БЕЗ курьера) — абсолют против сговора.
     pub fn local_drain(&self, recv_id: &QueueId) -> Vec<QueueItem> {
-        let mut host = self.host.lock().unwrap();
+        let mut host = self.host.lock().unwrap_or_else(|p| p.into_inner());
         let items = host.buffer_of(recv_id);
         for it in &items {
             host.drop_delivered(recv_id, &it.msg_id);
@@ -90,7 +96,11 @@ impl MuqState {
 
     /// Число осколков в буфере очереди (наблюдаемость/тесты).
     pub fn buffer_len(&self, recv_id: &QueueId) -> usize {
-        self.host.lock().unwrap().buffer_of(recv_id).len()
+        self.host
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .buffer_of(recv_id)
+            .len()
     }
 }
 
@@ -145,7 +155,11 @@ async fn handle_register(
     read_fixed(&mut recv, &mut buf).await?;
     let ack = match Queue::decode(&buf) {
         Ok(q) => {
-            state.host.lock().unwrap().register_queue(q);
+            state
+                .host
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .register_queue(q);
             OK
         },
         Err(_) => ERR,
@@ -168,7 +182,12 @@ async fn handle_deposit(
     {
         Some(hd) => {
             let w = state.window;
-            match state.host.lock().unwrap().deposit(&hd, w) {
+            match state
+                .host
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .deposit(&hd, w)
+            {
                 Ok(()) => OK,
                 Err(_) => ERR,
             }
@@ -303,7 +322,7 @@ async fn handle_relay_subscribe(
     };
     let sig = Signature::from_array(sub.sig);
     let items: Vec<QueueItem> = {
-        let mut host = state.host.lock().unwrap();
+        let mut host = state.host.lock().unwrap_or_else(|p| p.into_inner());
         host.subscribe_relay(&sub.recv_id, &sub.nonce, &sig)
             .unwrap_or_default()
     };
@@ -312,7 +331,7 @@ async fn handle_relay_subscribe(
     };
     send_frame(&mut send, &resp.to_bytes()).await?;
     if !items.is_empty() {
-        let mut host = state.host.lock().unwrap();
+        let mut host = state.host.lock().unwrap_or_else(|p| p.into_inner());
         for it in &items {
             host.drop_delivered(&sub.recv_id, &it.msg_id);
         }
@@ -382,7 +401,11 @@ async fn handle_relay_register(
         .and_then(|b| Queue::decode(&b).ok())
     {
         Some(q) => {
-            state.host.lock().unwrap().register_queue(q);
+            state
+                .host
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .register_queue(q);
             OK
         },
         None => ERR,

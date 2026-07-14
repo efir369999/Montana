@@ -91,12 +91,14 @@ pub fn prepare_batch(
             .checked_add(i as u64)
             .ok_or(RvError::SeqOutOfRange(base_seq))?;
         rec.seq = seq;
-        let sig = crate::sign_record(&sk, salt, seq, rec)?;
+        rec.validate(seq)?;
+        let v = rec.to_bytes(); // O-1: кодируем ровно один раз (подпись + value)
+        let sig = crate::sign_bep44(&sk, salt, seq, &v)?;
         out.push(PresignedRecord {
             dk,
             salt: *salt,
             seq,
-            value: rec.to_bytes(),
+            value: v,
             sig: sig.to_bytes(),
         });
     }

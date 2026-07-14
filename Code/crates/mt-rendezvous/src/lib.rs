@@ -13,7 +13,7 @@ pub const DHT_SEED_LEN: usize = 32;
 pub const DK_LEN: usize = 32; // ed25519 pubkey
 pub const SALT_LEN: usize = 20;
 pub const TARGET_LEN: usize = 20; // SHA1
-pub const OVERLAY_ADDR_LEN: usize = 32;
+pub const OVERLAY_ADDR_LEN: usize = mt_crypto::HASH_SIZE; // S-3: overlay_addr — SHA-256, SSOT
 pub const PQ_HINT_LEN: usize = 32;
 /// BEP44 verdict: тело `v` ≤ 1000 B.
 pub const MAX_RECORD_BYTES: usize = 1000;
@@ -293,10 +293,21 @@ pub fn sign_record(
 ) -> Result<Signature, RvError> {
     record.validate(seq)?;
     let v = record.to_bytes();
+    sign_bep44(sk, salt, seq, &v)
+}
+
+/// Низкоуровневая подпись готового тела v (SSOT подписи; sign_record и prepare_batch
+/// используют её, чтобы кодировать запись ровно один раз — O-1).
+pub(crate) fn sign_bep44(
+    sk: &SigningKey,
+    salt: &[u8; SALT_LEN],
+    seq: u64,
+    v: &[u8],
+) -> Result<Signature, RvError> {
     if v.len() > MAX_RECORD_BYTES {
         return Err(RvError::TooLarge(v.len()));
     }
-    Ok(sk.sign(&bep44_sign_buffer(salt, seq, &v)))
+    Ok(sk.sign(&bep44_sign_buffer(salt, seq, v)))
 }
 
 /// Проверить рандеву-запись против dk (admission-token; НЕ гарантия PQ-целостности).

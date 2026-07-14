@@ -14,6 +14,7 @@ repository = "https://github.com/montana-protocol/montana"
 sha2 = { version = "=0.10.9", default-features = false }
 zeroize = { version = "=1.8.1", default-features = false }
 getrandom = { version = "=0.2.15", default-features = false }
+chacha20poly1305 = "=0.10.1"
 
 [profile.release]
 opt-level = 3

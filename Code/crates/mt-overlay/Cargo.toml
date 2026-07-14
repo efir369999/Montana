@@ -12,7 +12,7 @@ description = "Montana P2P Network — оверлей-адресация и тр
 mt-codec = { path = "../mt-codec" }
 mt-crypto = { path = "../mt-crypto" }
 mt-state = { path = "../mt-state" }
-reed-solomon-erasure = "6"
+reed-solomon-erasure = "=6.0.0"
 getrandom = { workspace = true }
 
 [dev-dependencies]
