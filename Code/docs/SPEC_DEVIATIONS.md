@@ -1098,7 +1098,7 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Status:**          open (fetch-path robustness pending)
 **Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
 
-## DEV-053 (open, needs author decision): HostDeposit sealing — spec says Noise_PQ XX, code uses ML-KEM sealed-box
+## DEV-053 (closed): HostDeposit sealing — spec aligned to code (Noise_PQ XX → ML-KEM sealed-box, v0.14.0)
 
 **Crate:**           mt-overlay (muq.rs), mt-postman (muq.rs handle_deposit, muq_client.rs)
 **File:line:**       mt-postman/src/muq.rs:179 (open_from), muq_client.rs:100,132 (seal_to); mt-crypto/src/lib.rs:508,526 (ML-KEM-768 + ChaCha20-Poly1305 sealed-box)

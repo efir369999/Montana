@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn hostdeposit_roundtrip_secured_and_unsecured() {
-        for sig in [vec![0x03; SIGNATURE_SIZE], Vec::new()] {
+        for sig in [[0x03u8; SIGNATURE_SIZE], [0u8; SIGNATURE_SIZE]] {
             let d = HostDeposit {
                 send_id: [0xAA; 32],
                 msg_id: [0xBB; 16],
