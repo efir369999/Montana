@@ -11,3 +11,4 @@ thiserror = "=1.0.69"
 
 [dev-dependencies]
 hex = "=0.4.3"
+mt-overlay = { path = "../mt-overlay" } # dev-only: SSOT-сверка RECV_ID_LEN == QUEUE_ID_SIZE

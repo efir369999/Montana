@@ -211,7 +211,7 @@ async fn handle_proxy_forward(
             let dst = state
                 .proxy_routes
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|p| p.into_inner())
                 .get(&pf.host_addr)
                 .copied();
             match dst {
@@ -263,7 +263,7 @@ async fn handle_receive_proxy(
             let dst = state
                 .proxy_routes
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|p| p.into_inner())
                 .get(&rp.host_addr)
                 .copied();
             match dst {
@@ -351,7 +351,7 @@ async fn handle_proxy_register(
             let dst = state
                 .proxy_routes
                 .lock()
-                .unwrap()
+                .unwrap_or_else(|p| p.into_inner())
                 .get(&pf.host_addr)
                 .copied();
             match dst {

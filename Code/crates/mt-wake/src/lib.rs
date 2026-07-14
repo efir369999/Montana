@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 use mt_crypto::HASH_SIZE;
 use thiserror::Error;
 
-/// recv_id очереди (Этап 2, mt-postman QueueId) — 32 B.
+/// recv_id очереди (Этап 2, mt-postman QueueId) — 32 B. Численно = HASH_SIZE;
+/// семантически = QueueId (случайный id, не хеш). SSOT-дрейф ловит dev-тест ниже.
 pub const RECV_ID_LEN: usize = HASH_SIZE;
 /// account_id — публичный идентификатор личности (SSOT mt-state::derive_account_id) — 32 B.
 pub const ACCOUNT_ID_LEN: usize = HASH_SIZE;
@@ -182,6 +183,13 @@ pub fn select_rung(live_tunnel: bool, ibeacon_home: bool, unlock_sync: bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recv_id_len_matches_canonical_queue_id() {
+        // SSOT: RECV_ID_LEN семантически = QueueId (Этап 2). mt-wake крипто-only (не
+        // зависит от mt-overlay в проде), поэтому дрейф ловится dev-тестом, не use.
+        assert_eq!(RECV_ID_LEN, mt_overlay::muq::QUEUE_ID_SIZE);
+    }
 
     #[test]
     fn wake_inline_kat() {
