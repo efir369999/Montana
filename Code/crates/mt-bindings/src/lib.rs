@@ -15,6 +15,8 @@ use sha2::{Digest as _, Sha256};
 pub mod mdns;
 #[cfg(all(not(target_arch = "wasm32"), feature = "network"))]
 pub mod network;
+#[cfg(all(not(target_arch = "wasm32"), feature = "network"))]
+pub mod rendezvous;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffi_c;

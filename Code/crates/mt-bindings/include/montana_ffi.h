@@ -236,6 +236,66 @@ uintptr_t mt_client_recv(const MtClient *client,
                          uint8_t *out,
                          uintptr_t out_cap);
 
+/**
+ * Тип deep-link montana://: 0 = bootstrap-payload (montana://b/...), 1 = wallet-адрес
+ * (montana://mt...), -1 = ошибка разбора.
+ *
+ * # Safety
+ * `link` — валидный C-string.
+ */
+int32_t mt_deeplink_kind(const char *link);
+
+/**
+ * Для montana://<mt-address>: пишет адрес кошелька (ASCII) в `out`, возвращает длину
+ * (0 если не address / буфер мал / ошибка).
+ *
+ * # Safety
+ * `link` — C-string; `out` — ≥ `out_cap` байт.
+ */
+uintptr_t mt_deeplink_address(const char *link,
+                              uint8_t *out,
+                              uintptr_t out_cap);
+
+/**
+ * Для montana://b/<payload>: декодирует QRBootstrap, пишет current_endpoint
+ * (SSRF-фильтрован, "host:port" ASCII) в `out`; возвращает длину (0 если протух /
+ * внутренний адрес / не bootstrap / ошибка).
+ *
+ * # Safety
+ * `link` — C-string; `out` — ≥ `out_cap` байт.
+ */
+uintptr_t mt_deeplink_bootstrap_endpoint(const char *link,
+                                         uint64_t now_unix,
+                                         uint8_t *out,
+                                         uintptr_t out_cap);
+
+/**
+ * Подключение к Mainline DHT (публичные bootstrap-ноды BitTorrent). Освобождается
+ * `mt_rvdht_free`. null при ошибке.
+ */
+RvDht *mt_rvdht_client(void);
+
+/**
+ * # Safety
+ * `dht` — указатель от `mt_rvdht_client` (не использованный после free) или null.
+ */
+void mt_rvdht_free(RvDht *dht);
+
+/**
+ * Резолвит рандеву-запись друга по `dk`(32)+`salt`(20) из DHT, пишет первый
+ * глобально-маршрутизируемый endpoint (SSRF-фильтрован, "host:port") в `out`;
+ * возвращает длину (0 если записи нет / протухла / только внутренние адреса / ошибка).
+ *
+ * # Safety
+ * `dht` валиден; `dk` — ≥32 B; `salt` — ≥20 B; `out` — ≥ `out_cap` байт.
+ */
+uintptr_t mt_rvdht_resolve(const RvDht *dht,
+                           const uint8_t *dk,
+                           const uint8_t *salt,
+                           uint64_t now_unix,
+                           uint8_t *out,
+                           uintptr_t out_cap);
+
 uint32_t mt_abi_version(void);
 
 int mt_mnemonic_to_master_seed(const char *mnemonic_utf8, uint8_t *out_master_seed);
