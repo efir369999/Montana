@@ -16,6 +16,11 @@ pub const DK_LEN: usize = mt_rendezvous::DK_LEN;
 
 pub const IP_V4: u8 = 0x04;
 pub const IP_V6: u8 = 0x06;
+/// Минимум байт на seed (ip_kind 1 + v4 ip 4 + port 2) — sanity перед alloc (G-1).
+const MIN_SEED_BYTES: usize = 7;
+/// Верхняя граница длины deep-link (QRBootstrap ≤298 B → base64url ≤398 + схема);
+/// защита от гигантской ссылки до разбора (G-1 defense-in-depth).
+pub const MAX_DEEP_LINK_LEN: usize = 2048;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum BootstrapError {
@@ -239,6 +244,9 @@ impl QRBootstrap {
 
 /// Разобрать montana:// ссылку. montana://b/<...> → Bootstrap; montana://<mt-address> → Address.
 pub fn parse_deep_link(s: &str) -> Result<DeepLink, BootstrapError> {
+    if s.len() > MAX_DEEP_LINK_LEN {
+        return Err(BootstrapError::DeepLink("too long"));
+    }
     let rest = s
         .strip_prefix(DEEP_LINK_SCHEME)
         .ok_or(BootstrapError::DeepLink("scheme != montana://"))?;
@@ -256,6 +264,9 @@ pub fn parse_deep_link(s: &str) -> Result<DeepLink, BootstrapError> {
 }
 
 // --- SeedList (byte-exact, §622) + кэш узнанных узлов ---
+// Версионирование: без version-байта намеренно. Отгружается в бинарнике и обновляется
+// вместе с ним (обе стороны синхронно-версионны через bump); QRBootstrap версионирован
+// отдельно, так как долгоживущ и межверсионен (QR/ссылка от друга старому клиенту).
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Seed {
@@ -326,6 +337,10 @@ impl SeedList {
             return Err(BootstrapError::Truncated);
         }
         let count = u16::from_le_bytes([input[0], input[1]]) as usize;
+        // G-1: не резервировать память под счётчик, не подкреплённый данными.
+        if input.len() - 2 < count * MIN_SEED_BYTES {
+            return Err(BootstrapError::Truncated);
+        }
         let mut o = 2;
         let mut seeds = Vec::with_capacity(count);
         for _ in 0..count {
@@ -641,6 +656,19 @@ mod tests {
                                                              // протухший QR выпадает
         let targets2 = bootstrap_targets(Some(&q), &cache, &embedded, 3_000_000);
         assert_eq!(targets2.len(), 2);
+    }
+
+    #[test]
+    fn g1_rejects_amplification_and_oversized_link() {
+        // G-1: count=65535 при 2 байтах данных → Truncated ДО резервирования памяти.
+        let evil = 65535u16.to_le_bytes().to_vec();
+        assert_eq!(SeedList::decode(&evil), Err(BootstrapError::Truncated));
+        // гигантский deep-link отвергается по длине
+        let huge = format!("montana://b/{}", "A".repeat(MAX_DEEP_LINK_LEN));
+        assert!(matches!(
+            parse_deep_link(&huge),
+            Err(BootstrapError::DeepLink(_))
+        ));
     }
 
     #[test]

@@ -89,6 +89,9 @@ pub fn derive_target(dk: &[u8; DK_LEN], salt: &[u8; SALT_LEN]) -> [u8; TARGET_LE
 }
 
 // --- RendezvousRecord (тело BEP44 v, byte-exact) ---
+// Версионирование: без version-байта намеренно. Запись эфемерна (valid_until — короткое
+// окно), обе стороны синхронно-версионны через bump протокола; долгоживущий межверсионный
+// носитель (QRBootstrap) версионируется отдельно. Смена формата = bump, не runtime-negotiation.
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Endpoint {
@@ -164,6 +167,11 @@ impl RendezvousRecord {
         o += OVERLAY_ADDR_LEN;
         let ep_count = input[o] as usize;
         o += 1;
+        // G-1: каждый endpoint ≥2 B (kind+addr_len) — не резервировать память под
+        // счётчик, не подкреплённый данными (amplification-DoS).
+        if input.len() - o < ep_count * 2 {
+            return Err(RvError::Truncated);
+        }
         let mut endpoints = Vec::with_capacity(ep_count);
         for _ in 0..ep_count {
             if input.len() < o + 2 {
@@ -422,6 +430,16 @@ mod tests {
         assert_eq!(
             hex::encode(target),
             "db1c2182fd6a0029df27462bf2d1cfad598567cb"
+        );
+    }
+
+    #[test]
+    fn record_byte_layout_kat_oracle() {
+        // G-3: independent python-oracle (struct-concat) — cross-client byte-exact.
+        let r = sample();
+        assert_eq!(
+            hex::encode(r.to_bytes()),
+            "abababababababababababababababababababababababababababababababab02010301020302100a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0acdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd2a0000000000000040420f0000000000"
         );
     }
 
