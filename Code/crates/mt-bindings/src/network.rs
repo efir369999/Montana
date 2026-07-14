@@ -8,15 +8,16 @@
 //! передачи и использования из любого потока. Одновременные вызовы на ОДНОМ хэндле
 //! допустимы (Sync), но порядок операций между потоками не гарантирован.
 
+use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
 use std::net::SocketAddr;
 use std::os::raw::c_char;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use zeroize::Zeroize;
 
 use mt_crypto::{MlkemPublicKey, SecretKey, SECRET_KEY_SIZE};
-use mt_overlay::muq::{sign_deposit, HostDeposit, ProxyForward, Queue};
+use mt_overlay::muq::{sign_deposit, HostDeposit, ProxyForward, Queue, QueueItem};
 use mt_postman::{MuqClient, MuqState, PostmanServer};
 
 fn rt() -> Option<&'static tokio::runtime::Runtime> {
@@ -166,8 +167,13 @@ pub unsafe extern "C" fn mt_postman_kem_pubkey(
 }
 
 /// Opaque-хэндл клиента (живое QUIC-соединение к почтальону/курьеру).
+/// `pending` — буфер хвоста пакетной выборки: `subscribe_via_courier` — уничтожающий
+/// batch-drain (host отдаёт и дропает ВСЕ элементы очереди разом), поэтому FFI обязан
+/// сохранить весь batch и выдавать по одному, иначе items[1..] теряются (§206 «буфер
+/// никогда не теряет сообщение»).
 pub struct MtClient {
     inner: MuqClient,
+    pending: Mutex<VecDeque<QueueItem>>,
 }
 
 /// Подключиться к почтальону по адресу `addr` (host:port). Возвращает хэндл или null.
@@ -183,7 +189,10 @@ pub unsafe extern "C" fn mt_client_connect(addr: *const c_char) -> *mut MtClient
         return std::ptr::null_mut();
     };
     match ffi_catch(|| rt.block_on(MuqClient::connect(a))) {
-        Some(Ok(inner)) => Box::into_raw(Box::new(MtClient { inner })),
+        Some(Ok(inner)) => Box::into_raw(Box::new(MtClient {
+            inner,
+            pending: Mutex::new(VecDeque::new()),
+        })),
         _ => std::ptr::null_mut(),
     }
 }
@@ -273,6 +282,7 @@ pub unsafe extern "C" fn mt_client_send(
         || host_overlay.is_null()
         || host_kem.is_null()
         || send_id.is_null()
+        || msg_id.is_null()
         || msg.is_null()
     {
         return -1;
@@ -343,7 +353,27 @@ pub unsafe extern "C" fn mt_client_recv(
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    if client.is_null() || host_overlay.is_null() || host_kem.is_null() || recv_id.is_null() {
+    if client.is_null() || out.is_null() {
+        return 0;
+    }
+    // Б3: сначала отдаём из буфера хвоста прошлой пакетной выборки — items[1..] не теряются.
+    // Возврат: 0 = очередь пуста; need > out_cap = буфер мал (элемент сохранён, перевыдели
+    // out_cap ≥ need и повтори); need ≤ out_cap = записано need байт.
+    {
+        let mut pending = (*client).pending.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(item) = pending.front() {
+            let need = item.ct.len();
+            if need > out_cap {
+                return need;
+            }
+            std::ptr::copy_nonoverlapping(item.ct.as_ptr(), out, need);
+            pending.pop_front();
+            return need;
+        }
+    }
+    // Буфер пуст — тянем новую пачку через курьер (уничтожающий batch-drain хоста:
+    // host отдаёт и дропает ВСЕ элементы разом, поэтому сохраняем весь batch).
+    if host_overlay.is_null() || host_kem.is_null() || recv_id.is_null() {
         return 0;
     }
     let Some(rt) = rt() else {
@@ -369,14 +399,21 @@ pub unsafe extern "C" fn mt_client_recv(
     }) else {
         return 0;
     };
-    let Some(item) = resp.items.first() else {
-        return 0;
-    };
-    if out.is_null() || item.ct.len() > out_cap {
+    if resp.items.is_empty() {
         return 0;
     }
-    std::ptr::copy_nonoverlapping(item.ct.as_ptr(), out, item.ct.len());
-    item.ct.len()
+    let mut pending = (*client).pending.lock().unwrap_or_else(|p| p.into_inner());
+    pending.extend(resp.items);
+    let Some(item) = pending.front() else {
+        return 0;
+    };
+    let need = item.ct.len();
+    if need > out_cap {
+        return need;
+    }
+    std::ptr::copy_nonoverlapping(item.ct.as_ptr(), out, need);
+    pending.pop_front();
+    need
 }
 
 impl MtPostman {
@@ -566,6 +603,122 @@ mod tests {
             )
         };
         assert_eq!(&out[..n], msg, "B получил сообщение A через FFI-мост");
+
+        unsafe {
+            mt_client_free(a);
+            mt_client_free(b);
+            mt_client_free(b2);
+            mt_postman_stop(host);
+            mt_postman_stop(courier);
+        }
+    }
+
+    #[test]
+    fn ffi_recv_preserves_full_batch() {
+        // Б3-регрессия: A шлёт 3, B забирает 3 — items[1..] не теряются (§206). До fix
+        // host дропал ВЕСЬ batch, а FFI возвращал только первый → #2/#3 терялись.
+        use mt_overlay::muq::{derive_queue_keypairs, Queue};
+        let loop0 = CString::new("127.0.0.1:0").unwrap();
+        let host = unsafe { mt_postman_start(loop0.as_ptr(), std::ptr::null_mut(), 0) };
+        let courier = unsafe { mt_postman_start(loop0.as_ptr(), std::ptr::null_mut(), 0) };
+        let host_port = unsafe { mt_postman_port(host) };
+        let courier_port = unsafe { mt_postman_port(courier) };
+        let host_overlay = [0xA0u8; 32];
+        let host_addr = CString::new(format!("127.0.0.1:{host_port}")).unwrap();
+        unsafe { mt_postman_add_route(courier, host_overlay.as_ptr(), host_addr.as_ptr()) };
+        let mut kem = [0u8; 1184];
+        unsafe { mt_postman_kem_pubkey(host, kem.as_mut_ptr(), kem.len()) };
+        let courier_addr = CString::new(format!("127.0.0.1:{courier_port}")).unwrap();
+
+        let ((recv_pk, recv_sk), (send_pk, send_sk)) =
+            derive_queue_keypairs(&[0x99u8; 32], 0).unwrap();
+        let recv_id = [0x73u8; 32];
+        let send_id = [0x53u8; 32];
+        let q = Queue {
+            recv_id,
+            send_id,
+            recv_pubkey: *recv_pk.as_bytes(),
+            send_pubkey: Some(*send_pk.as_bytes()),
+            rotation_epoch: 1000,
+            quota: 64,
+        };
+        let qb = q.to_bytes();
+        let b = unsafe { mt_client_connect(courier_addr.as_ptr()) };
+        assert_eq!(
+            unsafe {
+                mt_client_register(
+                    b,
+                    host_overlay.as_ptr(),
+                    kem.as_ptr(),
+                    qb.as_ptr(),
+                    qb.len(),
+                )
+            },
+            0
+        );
+
+        // A шлёт 3 сообщения (разные msg_id + контент)
+        let a = unsafe { mt_client_connect(courier_addr.as_ptr()) };
+        let msgs: [&[u8]; 3] = [b"soobshenie odin", b"soobshenie dva.", b"soobshenie tri!"];
+        for (i, m) in msgs.iter().enumerate() {
+            let msg_id = [i as u8; 16];
+            let rc = unsafe {
+                mt_client_send(
+                    a,
+                    host_overlay.as_ptr(),
+                    kem.as_ptr(),
+                    send_id.as_ptr(),
+                    send_sk.as_bytes().as_ptr(),
+                    msg_id.as_ptr(),
+                    m.as_ptr(),
+                    m.len(),
+                )
+            };
+            assert_eq!(rc, 0, "A отправил #{i}");
+        }
+
+        // B забирает — ВСЕ 3 (регрессия: до fix получал только #1)
+        let b2 = unsafe { mt_client_connect(courier_addr.as_ptr()) };
+        let mut got: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
+        for _ in 0..3 {
+            let mut out = [0u8; 256];
+            let n = unsafe {
+                mt_client_recv(
+                    b2,
+                    host_overlay.as_ptr(),
+                    kem.as_ptr(),
+                    recv_id.as_ptr(),
+                    recv_sk.as_bytes().as_ptr(),
+                    out.as_mut_ptr(),
+                    out.len(),
+                )
+            };
+            assert!(n > 0, "получен непустой конверт");
+            got.insert(out[..n].to_vec());
+        }
+        assert_eq!(
+            got.len(),
+            3,
+            "все 3 сообщения получены, ни одно не потеряно"
+        );
+        for m in msgs {
+            assert!(got.contains(&m.to_vec()), "batch содержит сообщение");
+        }
+
+        // 4-й recv — очередь опустошена
+        let mut out = [0u8; 256];
+        let n = unsafe {
+            mt_client_recv(
+                b2,
+                host_overlay.as_ptr(),
+                kem.as_ptr(),
+                recv_id.as_ptr(),
+                recv_sk.as_bytes().as_ptr(),
+                out.as_mut_ptr(),
+                out.len(),
+            )
+        };
+        assert_eq!(n, 0, "очередь пуста после выборки всех");
 
         unsafe {
             mt_client_free(a);
