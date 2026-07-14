@@ -33,6 +33,8 @@ pub enum BootstrapError {
     EpTooLong(usize),
     #[error("base64url: {0}")]
     Base64(&'static str),
+    #[error("deep-link: {0}")]
+    DeepLink(&'static str),
 }
 
 // --- base64url (URL_SAFE_NO_PAD, вручную — без внешнего крейта [I-7]) ---
@@ -207,6 +209,50 @@ impl QRBootstrap {
         self.current_endpoint(now_unix)
             .filter(mt_rendezvous::is_global_unicast)
     }
+}
+
+// --- Deep-link montana:// (вариант A, §613) ---
+
+pub const DEEP_LINK_SCHEME: &str = "montana://";
+
+/// Разобранная ссылка-приглашение. Bootstrap несёт QRBootstrap в себе (офлайн);
+/// Address — публичный адрес кошелька друга (личность = mt-адрес, не фейк-@-домен),
+/// резолвится вызывающим: mt-address → account_id → overlay_addr → DHT-рандеву (Этап 4).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum DeepLink {
+    Bootstrap(QRBootstrap),
+    Address(String), // "mt" ‖ base58(account_id ‖ checksum)
+}
+
+// Bitcoin base58 (без 0 O I l).
+fn is_base58_char(c: u8) -> bool {
+    matches!(c, b'1'..=b'9' | b'A'..=b'H' | b'J'..=b'N' | b'P'..=b'Z' | b'a'..=b'k' | b'm'..=b'z')
+}
+
+impl QRBootstrap {
+    /// Кликабельная ссылка-приглашение montana://b/<base64url(QRBootstrap)> — payload
+    /// идентичен QR, схема не резолвится через DNS (данные внутри ссылки).
+    pub fn to_deep_link(&self) -> String {
+        format!("{}b/{}", DEEP_LINK_SCHEME, self.to_qr())
+    }
+}
+
+/// Разобрать montana:// ссылку. montana://b/<...> → Bootstrap; montana://<mt-address> → Address.
+pub fn parse_deep_link(s: &str) -> Result<DeepLink, BootstrapError> {
+    let rest = s
+        .strip_prefix(DEEP_LINK_SCHEME)
+        .ok_or(BootstrapError::DeepLink("scheme != montana://"))?;
+    if let Some(payload) = rest.strip_prefix("b/") {
+        return Ok(DeepLink::Bootstrap(QRBootstrap::from_qr(payload)?));
+    }
+    // montana://<mt-address>: mt-префикс + непустое base58-тело
+    if let Some(body) = rest.strip_prefix("mt") {
+        if !body.is_empty() && body.bytes().all(is_base58_char) {
+            return Ok(DeepLink::Address(rest.to_string()));
+        }
+        return Err(BootstrapError::DeepLink("malformed mt-address"));
+    }
+    Err(BootstrapError::DeepLink("unknown deep-link body"))
 }
 
 // --- SeedList (byte-exact, §622) + кэш узнанных узлов ---
@@ -595,5 +641,34 @@ mod tests {
                                                              // протухший QR выпадает
         let targets2 = bootstrap_targets(Some(&q), &cache, &embedded, 3_000_000);
         assert_eq!(targets2.len(), 2);
+    }
+
+    #[test]
+    fn deep_link_bootstrap_roundtrip() {
+        let q = sample_qr();
+        let link = q.to_deep_link();
+        assert!(link.starts_with("montana://b/"));
+        assert_eq!(parse_deep_link(&link).unwrap(), DeepLink::Bootstrap(q));
+    }
+
+    #[test]
+    fn deep_link_address_and_rejects() {
+        // montana://<mt-address> → Address (личность = кошелёк)
+        let addr = "mt1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2";
+        assert_eq!(
+            parse_deep_link(&format!("montana://{addr}")).unwrap(),
+            DeepLink::Address(addr.to_string())
+        );
+        // чужая схема
+        assert!(matches!(
+            parse_deep_link("https://evil/x"),
+            Err(BootstrapError::DeepLink(_))
+        ));
+        // mt-адрес с недопустимым символом base58 (0 O I l)
+        assert!(parse_deep_link("montana://mt0OIl").is_err());
+        // пустое тело
+        assert!(parse_deep_link("montana://").is_err());
+        // не mt и не b/
+        assert!(parse_deep_link("montana://xyz").is_err());
     }
 }

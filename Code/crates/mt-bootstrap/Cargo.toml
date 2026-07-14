@@ -12,3 +12,5 @@ thiserror = "=1.0.69"
 [dev-dependencies]
 hex = "=0.4.3"
 mainline = "=6.0.1"
+mt-bindings = { path = "../mt-bindings" }
+mt-overlay = { path = "../mt-overlay" }

@@ -1976,7 +1976,9 @@ version = "1.2.0"
 dependencies = [
  "hex",
  "mainline",
+ "mt-bindings",
  "mt-codec",
+ "mt-overlay",
  "mt-rendezvous",
  "thiserror 1.0.69",
 ]
