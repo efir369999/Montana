@@ -21,13 +21,13 @@ mt-messenger-e2e = { path = "../mt-messenger-e2e" }
 mt-crypto     = { path = "../mt-crypto" }
 mt-state      = { path = "../mt-state" }
 mt-account    = { path = "../mt-account" }
-mt-postman    = { path = "../mt-postman" }
-mt-rendezvous = { path = "../mt-rendezvous" }
-mt-bootstrap  = { path = "../mt-bootstrap" }
-mt-overlay    = { path = "../mt-overlay" }
-tokio         = { version = "=1.44.2", features = ["rt-multi-thread"] }
-getrandom     = { workspace = true }
-mdns-sd       = "=0.20.1"
+mt-postman    = { path = "../mt-postman", optional = true }
+mt-rendezvous = { path = "../mt-rendezvous", optional = true }
+mt-bootstrap  = { path = "../mt-bootstrap", optional = true }
+mt-overlay    = { path = "../mt-overlay", optional = true }
+tokio         = { version = "=1.44.2", features = ["rt-multi-thread"], optional = true }
+getrandom     = { workspace = true, optional = true }
+mdns-sd       = { version = "=0.20.1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }
@@ -40,6 +40,7 @@ jni = { version = "0.21", default-features = false }
 
 [features]
 default = []
+network = ["dep:mt-postman", "dep:mt-rendezvous", "dep:mt-bootstrap", "dep:mt-overlay", "dep:tokio", "dep:mdns-sd", "dep:getrandom"]
 wasm = ["dep:wasm-bindgen"]
 
 [dev-dependencies]
