@@ -237,26 +237,37 @@ pub fn resolve_endpoint(ep: &Endpoint) -> Option<std::net::SocketAddr> {
 /// адрес из DHT этим предикатом ДО connect (F-2: иначе DHT-запись направляет узел на
 /// внутреннюю сеть жертвы — SSRF). LAN-меш / self-host используют сырой resolve_endpoint.
 pub fn is_global_unicast(addr: &std::net::SocketAddr) -> bool {
-    use std::net::IpAddr;
+    use std::net::{IpAddr, Ipv4Addr};
+    fn v4_global(v4: &Ipv4Addr) -> bool {
+        let o = v4.octets();
+        !(v4.is_loopback()
+            || v4.is_private()
+            || v4.is_link_local()
+            || v4.is_unspecified()
+            || v4.is_multicast()
+            || v4.is_broadcast()
+            || o[0] == 0
+            || (o[0] == 100 && (o[1] & 0xc0) == 0x40)) // 100.64.0.0/10 CGNAT (RFC 6598)
+    }
     match addr.ip() {
-        IpAddr::V4(v4) => {
-            !(v4.is_loopback()
-                || v4.is_private()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_multicast()
-                || v4.is_broadcast()
-                || v4.octets()[0] == 0)
-        },
+        IpAddr::V4(v4) => v4_global(&v4),
         IpAddr::V6(v6) => {
+            // IPv4-mapped (::ffff:x.x.x.x): ОС маршрутизирует на встроенный v4, поэтому
+            // фильтруем по v4-правилам — иначе ::ffff:127.0.0.1 / ::ffff:169.254.169.254
+            // обходят SSRF-фильтр (is_loopback матчит лишь ::1).
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return v4_global(&v4);
+            }
             let s = v6.segments();
             let unique_local = (s[0] & 0xfe00) == 0xfc00; // fc00::/7
             let link_local = (s[0] & 0xffc0) == 0xfe80; // fe80::/10
+            let doc = s[0] == 0x2001 && s[1] == 0x0db8; // 2001:db8::/32 (RFC 3849)
             !(v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_multicast()
                 || unique_local
-                || link_local)
+                || link_local
+                || doc)
         },
     }
 }
@@ -541,7 +552,25 @@ mod tests {
         assert!(resolve_endpoint_public(&mk([169, 254, 1, 1])).is_none()); // link-local
         assert!(resolve_endpoint_public(&mk([0, 0, 0, 0])).is_none()); // unspecified
         assert!(resolve_endpoint_public(&mk([203, 0, 113, 5])).is_some()); // global
-                                                                           // сырой resolve пропускает loopback (LAN/self-host легитимны)
+        assert!(resolve_endpoint_public(&mk([100, 64, 0, 1])).is_none()); // CGNAT 100.64/10
+                                                                          // IPv4-mapped IPv6 (::ffff:x.x.x.x) обходил фильтр — теперь по встроенному v4
+        let mk6 = |ip: [u8; 16]| Endpoint {
+            kind: EP_DIRECT_V6,
+            addr: {
+                let mut v = ip.to_vec();
+                v.extend_from_slice(&[0x20, 0xFC]);
+                v
+            },
+        };
+        let mapped = |v4: [u8; 4]| {
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, v4[0], v4[1], v4[2], v4[3],
+            ]
+        };
+        assert!(resolve_endpoint_public(&mk6(mapped([127, 0, 0, 1]))).is_none()); // ::ffff:loopback
+        assert!(resolve_endpoint_public(&mk6(mapped([169, 254, 169, 254]))).is_none()); // ::ffff:metadata
+        assert!(resolve_endpoint_public(&mk6(mapped([10, 0, 0, 5]))).is_none()); // ::ffff:private
+                                                                                 // сырой resolve пропускает loopback (LAN/self-host легитимны)
         assert!(resolve_endpoint(&mk([127, 0, 0, 1])).is_some());
     }
 }
