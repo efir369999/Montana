@@ -476,4 +476,93 @@ int mt_e2e_party_code(const uint8_t *id,
 int mt_e2e_call_key(const uint8_t *call_seed,
                     uint8_t *out);
 
+/**
+ * Кодирует WakeInline (recv_id 32 + window 8 LE) в `out` (40 B). true при успехе.
+ *
+ * # Safety
+ * `recv_id` — валиден и ≥32 B; `out` — валиден и ≥40 B.
+ */
+bool mt_wake_inline_encode(const uint8_t *recv_id, uint64_t window, uint8_t *out);
+
+/**
+ * Декодирует WakeInline из `input` (len B). При успехе пишет recv_id (32) + window.
+ *
+ * # Safety
+ * `input` — валиден и ≥`len` B; `out_recv_id` — ≥32 B; `out_window` — валиден.
+ */
+bool mt_wake_inline_decode(const uint8_t *input,
+                           uintptr_t len,
+                           uint8_t *out_recv_id,
+                           uint64_t *out_window);
+
+/**
+ * Кодирует WakeHandle (wake_handle 16 + window 8 LE) в `out` (24 B). true при успехе.
+ *
+ * # Safety
+ * `handle` — валиден и ≥16 B; `out` — валиден и ≥24 B.
+ */
+bool mt_wake_handle_encode(const uint8_t *handle,
+                           uint64_t window,
+                           uint8_t *out);
+
+/**
+ * Декодирует WakeHandle из `input` (len B). При успехе пишет wake_handle (16) + window.
+ *
+ * # Safety
+ * `input` — валиден и ≥`len` B; `out_handle` — ≥16 B; `out_window` — валиден.
+ */
+bool mt_wake_handle_decode(const uint8_t *input,
+                           uintptr_t len,
+                           uint8_t *out_handle,
+                           uint64_t *out_window);
+
+/**
+ * Арбитр ступеней: возврат — номер ступени 1–4 (высшая суверенность первой).
+ */
+uint8_t mt_wake_select_rung(bool live_tunnel,
+                            bool ibeacon_home,
+                            bool unlock_sync);
+
+/**
+ * Создаёт реестр account_id↔wake_handle (для телефона-почтальона). Освобождается
+ * `mt_wake_registry_free`.
+ */
+WakeRegistry *mt_wake_registry_new(void);
+
+/**
+ * # Safety
+ * `reg` — указатель от `mt_wake_registry_new` (не использованный после free) или null.
+ */
+void mt_wake_registry_free(WakeRegistry *reg);
+
+/**
+ * Регистрирует account_id (32 B), пишет 16 B wake_handle. Идемпотентна. true при успехе.
+ *
+ * # Safety
+ * `reg` валиден; `account_id` — ≥32 B; `out_handle` — ≥16 B.
+ */
+bool mt_wake_register(WakeRegistry *reg,
+                      const uint8_t *account_id,
+                      uint8_t *out_handle);
+
+/**
+ * Ищет wake_handle по account_id. true если найден (пишет out_handle), иначе false.
+ *
+ * # Safety
+ * `reg` валиден; `account_id` — ≥32 B; `out_handle` — ≥16 B.
+ */
+bool mt_wake_handle_of(const WakeRegistry *reg,
+                       const uint8_t *account_id,
+                       uint8_t *out_handle);
+
+/**
+ * Резолвит account_id по wake_handle (почтальон, ступень 4). true если найден.
+ *
+ * # Safety
+ * `reg` валиден; `handle` — ≥16 B; `out_account` — ≥32 B.
+ */
+bool mt_wake_account_of(const WakeRegistry *reg,
+                        const uint8_t *handle,
+                        uint8_t *out_account);
+
 #endif  /* MONTANA_FFI_H */

@@ -22,6 +22,9 @@ pub mod ffi_c;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ffi_e2e;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod wake;
+
 #[cfg(target_arch = "wasm32")]
 mod ffi_wasm;
 
