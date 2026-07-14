@@ -11,6 +11,7 @@ pub mod config;
 pub mod muq;
 pub mod muq_client;
 pub mod node;
+pub mod path;
 pub mod server;
 pub mod wire;
 
