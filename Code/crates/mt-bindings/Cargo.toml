@@ -21,6 +21,11 @@ mt-messenger-e2e = { path = "../mt-messenger-e2e" }
 mt-crypto     = { path = "../mt-crypto" }
 mt-state      = { path = "../mt-state" }
 mt-account    = { path = "../mt-account" }
+mt-postman    = { path = "../mt-postman" }
+mt-rendezvous = { path = "../mt-rendezvous" }
+mt-bootstrap  = { path = "../mt-bootstrap" }
+mt-overlay    = { path = "../mt-overlay" }
+tokio         = { version = "=1.44.2", features = ["rt-multi-thread"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = { version = "0.2", optional = true }
