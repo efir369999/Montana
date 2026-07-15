@@ -416,6 +416,37 @@ pub unsafe extern "C" fn mt_client_recv(
     need
 }
 
+/// Подтвердить приём (DEV-049(a) §593): хост дропает буфер очереди recv_id. 0 = успех.
+///
+/// # Safety
+/// `client` валиден; `host_overlay`→32; `host_kem`→1184; `recv_id`→32.
+#[no_mangle]
+pub unsafe extern "C" fn mt_client_ack(
+    client: *const MtClient,
+    host_overlay: *const u8,
+    host_kem: *const u8,
+    recv_id: *const u8,
+) -> i32 {
+    if client.is_null() || host_overlay.is_null() || host_kem.is_null() || recv_id.is_null() {
+        return -1;
+    }
+    let Some(rt) = rt() else {
+        return -1;
+    };
+    let mut overlay = [0u8; 32];
+    std::ptr::copy_nonoverlapping(host_overlay, overlay.as_mut_ptr(), 32);
+    let kem_slice = std::slice::from_raw_parts(host_kem, mt_crypto::MLKEM_PUBLIC_KEY_SIZE);
+    let Some(kem) = MlkemPublicKey::from_slice(kem_slice) else {
+        return -1;
+    };
+    let mut rid = [0u8; 32];
+    std::ptr::copy_nonoverlapping(recv_id, rid.as_mut_ptr(), 32);
+    match ffi_catch(|| rt.block_on((*client).inner.ack_via_courier(overlay, &kem, rid))) {
+        Some(Ok(true)) => 0,
+        _ => -1,
+    }
+}
+
 impl MtPostman {
     pub(crate) fn muq(&self) -> &Arc<MuqState> {
         &self.muq
@@ -705,6 +736,11 @@ mod tests {
             assert!(got.contains(m), "batch содержит сообщение");
         }
 
+        // DEV-049(a): подтверждаем приём — хост дропает буфер очереди
+        assert_eq!(
+            unsafe { mt_client_ack(b2, host_overlay.as_ptr(), kem.as_ptr(), recv_id.as_ptr()) },
+            0
+        );
         // 4-й recv — очередь опустошена
         let mut out = [0u8; 256];
         let n = unsafe {

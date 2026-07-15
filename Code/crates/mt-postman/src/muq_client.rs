@@ -18,7 +18,10 @@ use mt_overlay::OverlayAddr;
 
 use crate::client::ClientError;
 use crate::config::{stand_client_config, STAND_SNI};
-use crate::muq::{TAG_PROXY_FORWARD, TAG_PROXY_REGISTER, TAG_QUEUE_REGISTER, TAG_RECEIVE_PROXY};
+use crate::muq::{
+    TAG_PROXY_FORWARD, TAG_PROXY_REGISTER, TAG_QUEUE_REGISTER, TAG_RECEIVE_ACK, TAG_RECEIVE_NONCE,
+    TAG_RECEIVE_PROXY,
+};
 use crate::wire::{read_fixed, recv_frame, send_frame, write_fixed};
 
 const OK: u8 = 0x01;
@@ -69,6 +72,16 @@ impl MuqClient {
         recv_sk: &SecretKey,
     ) -> Result<QueueResp, ClientError> {
         muq_subscribe_via_courier(&self.conn, host_overlay, host_kem_pk, recv_id, recv_sk).await
+    }
+
+    /// DEV-049(a) §593: подтвердить приём — хост дропает буфер очереди (drop-on-ack).
+    pub async fn ack_via_courier(
+        &self,
+        host_overlay: OverlayAddr,
+        host_kem_pk: &MlkemPublicKey,
+        recv_id: QueueId,
+    ) -> Result<bool, ClientError> {
+        muq_ack_via_courier(&self.conn, host_overlay, host_kem_pk, recv_id).await
     }
 
     /// DEV-049(b) §201/§508: RS(k,n) фан-аут — дробит `ct` на `n` осколков и депонирует
@@ -195,6 +208,46 @@ pub(crate) async fn muq_register_via_courier(
 /// Двуххоп-выборка: получатель забирает через курьер (host видит курьера, не B).
 /// B генерит nonce (host трекает — anti-replay без channel_hash), подписывает recv_key,
 /// запечатывает QueueSubscribe в ReceiveProxy для host (курьер не видит recv_id).
+/// DEV-050(c) §478: получатель запрашивает у хоста (через курьер) свежий host-issued
+/// nonce для recv_id перед выборкой. Курьер крипто-слеп (sealed recv_id к ML-KEM хоста).
+pub(crate) async fn muq_request_nonce_via_courier(
+    conn: &Connection,
+    host_overlay: OverlayAddr,
+    host_kem_pk: &MlkemPublicKey,
+    recv_id: QueueId,
+) -> Result<[u8; NONCE_SIZE], ClientError> {
+    let sealed = seal_to(host_kem_pk, &recv_id).map_err(|_| ClientError::Rejected)?;
+    let pf = ProxyForward {
+        host_addr: host_overlay,
+        sealed,
+    };
+    let (mut s, mut r) = conn.open_bi().await?;
+    write_fixed(&mut s, &[TAG_RECEIVE_NONCE]).await?;
+    send_frame(&mut s, &pf.to_bytes()).await?;
+    let mut nonce = [0u8; NONCE_SIZE];
+    read_fixed(&mut r, &mut nonce).await?;
+    Ok(nonce)
+}
+
+pub(crate) async fn muq_ack_via_courier(
+    conn: &Connection,
+    host_overlay: OverlayAddr,
+    host_kem_pk: &MlkemPublicKey,
+    recv_id: QueueId,
+) -> Result<bool, ClientError> {
+    let sealed = seal_to(host_kem_pk, &recv_id).map_err(|_| ClientError::Rejected)?;
+    let pf = ProxyForward {
+        host_addr: host_overlay,
+        sealed,
+    };
+    let (mut s, mut r) = conn.open_bi().await?;
+    write_fixed(&mut s, &[TAG_RECEIVE_ACK]).await?;
+    send_frame(&mut s, &pf.to_bytes()).await?;
+    let mut ack = [0u8; 1];
+    read_fixed(&mut r, &mut ack).await?;
+    Ok(ack[0] == crate::muq::ack_ok())
+}
+
 pub(crate) async fn muq_subscribe_via_courier(
     conn: &Connection,
     host_overlay: OverlayAddr,
@@ -202,8 +255,10 @@ pub(crate) async fn muq_subscribe_via_courier(
     recv_id: QueueId,
     recv_sk: &SecretKey,
 ) -> Result<QueueResp, ClientError> {
-    let mut nonce = [0u8; 16];
-    getrandom::getrandom(&mut nonce).map_err(|_| ClientError::Rejected)?;
+    // DEV-050(c) §478: сначала запрашиваем host-issued nonce (через курьер), затем
+    // подписываем выборку им. Украденный QueueSubscribe непереносим (nonce одноразов, выдан
+    // именно этому запросу).
+    let nonce = muq_request_nonce_via_courier(conn, host_overlay, host_kem_pk, recv_id).await?;
     let sig = sign_subscribe_relay(recv_sk, &recv_id, &nonce)?;
     let sub = QueueSubscribe {
         recv_id,

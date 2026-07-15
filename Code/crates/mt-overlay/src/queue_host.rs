@@ -2,12 +2,11 @@
 //! осколков, двуххоп-депозит, выборка. Off-chain ([P2P-1]). Механика TTL/drop
 //! наследует Этап-2-store, ключ буфера = recv_id.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use mt_crypto::Signature;
 
 use crate::challenge::ChannelHash;
-use crate::dedup::DedupWindow;
 use crate::frame::{MsgId, MAX_PAYLOAD_LEN};
 use crate::muq::{
     verify_deposit, verify_subscribe, HostDeposit, Queue, QueueId, QueueItem, RELAY_CHANNEL_MARKER,
@@ -44,17 +43,30 @@ pub const MAX_REGISTRATIONS_PER_WINDOW: u32 = 1024;
 
 #[derive(Default)]
 pub struct QueueHost {
-    queues: HashMap<QueueId, Queue>,                // recv_id → Queue
-    send_route: HashMap<QueueId, QueueId>,          // send_id → recv_id
-    buffer: HashMap<QueueId, Vec<StoredShard>>,     // recv_id → осколки
-    seen_sub_nonces: HashMap<QueueId, DedupWindow>, // anti-replay relay-выборки (bounded окно)
-    reg_window: u64,                                // DEV-050(a): текущее окно счётчика регистраций
-    reg_count: u32,                                 // DEV-050(a): регистраций в reg_window
+    queues: HashMap<QueueId, Queue>,            // recv_id → Queue
+    send_route: HashMap<QueueId, QueueId>,      // send_id → recv_id
+    buffer: HashMap<QueueId, Vec<StoredShard>>, // recv_id → осколки
+    issued_nonces: HashMap<QueueId, HashSet<crate::challenge::Nonce>>, // DEV-050(c) §478: nonce выданные хостом (host-issued, одноразовые)
+    reg_window: u64, // DEV-050(a): текущее окно счётчика регистраций
+    reg_count: u32,  // DEV-050(a): регистраций в reg_window
 }
 
 impl QueueHost {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// DEV-050(c) §478: хост выдаёт свежий nonce для выборки (перед QueueSubscribe).
+    /// Одноразовый — снимается при subscribe_relay. Заменяет client-generated nonce +
+    /// volatile-dedup: украденный QueueSubscribe непереносим (nonce не выдавался этому запросу).
+    pub fn issue_nonce(&mut self, recv_id: &QueueId) -> crate::challenge::Nonce {
+        let mut nonce = [0u8; crate::challenge::NONCE_SIZE];
+        getrandom::getrandom(&mut nonce).expect("OS CSPRNG");
+        self.issued_nonces
+            .entry(*recv_id)
+            .or_default()
+            .insert(nonce);
+        nonce
     }
 
     /// Хост создаёт очередь (recv_id/send_id независимы; получатель прислал recv_pubkey).
@@ -148,15 +160,24 @@ impl QueueHost {
         if !verify_subscribe(&recv_pubkey, recv_id, nonce, &RELAY_CHANNEL_MARKER, sig) {
             return Err(SubscribeError::BadSig);
         }
-        if !self
-            .seen_sub_nonces
-            .entry(*recv_id)
-            .or_default()
-            .check_and_insert(nonce)
-        {
+        // DEV-050(c) §478: nonce должен быть ВЫДАН хостом (issue_nonce) и снимается
+        // одноразово — украденный/переигранный QueueSubscribe с не-выданным nonce отвергается.
+        let issued = self
+            .issued_nonces
+            .get_mut(recv_id)
+            .map(|set| set.remove(nonce))
+            .unwrap_or(false);
+        if !issued {
             return Err(SubscribeError::Replay);
         }
         Ok(self.buffer_of(recv_id))
+    }
+
+    /// DEV-049(a) §593: получатель подтвердил приём (E2E delivery-receipt) — хост
+    /// удаляет весь буфер очереди. Drop происходит ТОЛЬКО по подтверждению B, не по
+    /// отправке курьеру (транзит переживает падение курьер→B).
+    pub fn ack_drain(&mut self, recv_id: &QueueId) {
+        self.buffer.remove(recv_id);
     }
 
     pub fn drop_delivered(&mut self, recv_id: &QueueId, msg_id: &MsgId) {
@@ -237,13 +258,21 @@ mod tests {
             0,
         );
         let recv_id = [0x71u8; 32];
-        let nonce = [0x33u8; 16];
+        // DEV-050(c) §478: nonce выдан хостом (host-issued), не клиентом
+        let nonce = host.issue_nonce(&recv_id);
         let sig = sign_subscribe_relay(&rsk, &recv_id, &nonce).unwrap();
-        // первая выборка — ok
+        // первая выборка — ok (nonce был выдан хостом, снимается одноразово)
         assert!(host.subscribe_relay(&recv_id, &nonce, &sig).is_ok());
-        // повтор ТОГО ЖЕ nonce — Replay (украденный QueueSubscribe непереносим)
+        // повтор ТОГО ЖЕ nonce — Replay (host-issued nonce одноразов, уже снят)
         assert_eq!(
             host.subscribe_relay(&recv_id, &nonce, &sig),
+            Err(SubscribeError::Replay)
+        );
+        // не-выданный хостом nonce отвергается (украденный/сфабрикованный непереносим)
+        let forged = [0x99u8; 16];
+        let fsig = sign_subscribe_relay(&rsk, &recv_id, &forged).unwrap();
+        assert_eq!(
+            host.subscribe_relay(&recv_id, &forged, &fsig),
             Err(SubscribeError::Replay)
         );
     }

@@ -25,6 +25,10 @@ use crate::config::stand_client_config;
 use crate::wire::{read_fixed, recv_frame, send_frame, write_fixed, WireError};
 
 /// Теги MUQ-операций (первый байт bi-потока). REG_VERSION=0x01 — путь Этапа 1.
+pub(crate) fn ack_ok() -> u8 {
+    OK
+}
+
 pub const TAG_QUEUE_REGISTER: u8 = 0x10;
 pub const TAG_HOST_DEPOSIT: u8 = 0x11;
 pub const TAG_PROXY_FORWARD: u8 = 0x12;
@@ -32,6 +36,10 @@ pub const TAG_RECEIVE_PROXY: u8 = 0x14; // B → courier (двуххоп-выб�
 pub const TAG_RELAY_SUBSCRIBE: u8 = 0x15; // courier → host
 pub const TAG_PROXY_REGISTER: u8 = 0x16; // B → courier (relay-регистрация)
 pub const TAG_RELAY_REGISTER: u8 = 0x17; // courier → host
+pub const TAG_RECEIVE_NONCE: u8 = 0x18; // B → courier: запрос host-issued nonce (§478)
+pub const TAG_RELAY_NONCE: u8 = 0x19; // courier → host: forward sealed recv_id, вернуть nonce
+pub const TAG_RECEIVE_ACK: u8 = 0x1A; // B → courier: подтверждение приёма (§593)
+pub const TAG_RELAY_ACK: u8 = 0x1B; // courier → host: forward sealed recv_id, drop buffer
 
 const OK: u8 = 0x01;
 const ERR: u8 = 0x00;
@@ -147,6 +155,10 @@ async fn dispatch(
         TAG_RELAY_SUBSCRIBE => handle_relay_subscribe(send, recv, state).await,
         TAG_PROXY_REGISTER => handle_proxy_register(send, recv, state).await,
         TAG_RELAY_REGISTER => handle_relay_register(send, recv, state).await,
+        TAG_RECEIVE_NONCE => handle_receive_nonce(send, recv, state).await,
+        TAG_RELAY_NONCE => handle_relay_nonce(send, recv, state).await,
+        TAG_RECEIVE_ACK => handle_receive_ack(send, recv, state).await,
+        TAG_RELAY_ACK => handle_relay_ack(send, recv, state).await,
         _ => Ok(()),
     }
 }
@@ -320,6 +332,143 @@ async fn forward_subscribe_to_host(
     Ok(resp)
 }
 
+/// DEV-050(c) §478: courier форвардит запрос nonce хосту и возвращает 16-байтный
+/// host-issued nonce получателю. Курьер крипто-слеп (sealed recv_id).
+async fn handle_receive_nonce(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let bytes = recv_frame(&mut recv).await?;
+    let pf = ProxyForward::decode(&bytes).map_err(|_| WireError::Closed)?;
+    let dst = state
+        .proxy_routes
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&pf.host_addr)
+        .copied();
+    let Some(addr) = dst else {
+        return Err(WireError::Closed);
+    };
+    let nonce = forward_nonce_to_host(addr, &pf.sealed).await?;
+    write_fixed(&mut send, &nonce).await?;
+    let _ = send.finish();
+    Ok(())
+}
+
+/// DEV-050(c): host открывает sealed recv_id и выдаёт свежий одноразовый nonce (issue_nonce).
+async fn handle_relay_nonce(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let sealed = recv_frame(&mut recv).await?;
+    let nonce = match open_from(&state.host_kem_sk, &sealed) {
+        Ok(b) if b.len() == 32 => {
+            let mut rid = [0u8; 32];
+            rid.copy_from_slice(&b);
+            state
+                .host
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .issue_nonce(&rid)
+        },
+        _ => [0u8; 16], // ошибка → нулевой nonce (subscribe отвергнет: не выдан)
+    };
+    write_fixed(&mut send, &nonce).await?;
+    let _ = send.finish();
+    Ok(())
+}
+
+async fn forward_nonce_to_host(
+    host_addr: SocketAddr,
+    sealed: &[u8],
+) -> Result<[u8; 16], WireError> {
+    let mut endpoint =
+        Endpoint::client("0.0.0.0:0".parse().expect("bind any")).map_err(|_| WireError::Closed)?;
+    endpoint.set_default_client_config(stand_client_config().map_err(|_| WireError::Closed)?);
+    let conn = endpoint
+        .connect(host_addr, crate::config::STAND_SNI)
+        .map_err(|_| WireError::Closed)?
+        .await
+        .map_err(|_| WireError::Closed)?;
+    let (mut s, mut r) = conn.open_bi().await.map_err(|_| WireError::Closed)?;
+    write_fixed(&mut s, &[TAG_RELAY_NONCE]).await?;
+    send_frame(&mut s, sealed).await?;
+    let mut nonce = [0u8; 16];
+    read_fixed(&mut r, &mut nonce).await?;
+    conn.close(0u32.into(), b"done");
+    endpoint.wait_idle().await;
+    Ok(nonce)
+}
+
+/// DEV-049(a) §593: courier форвардит подтверждение приёма хосту (drop-on-ack).
+async fn handle_receive_ack(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let bytes = recv_frame(&mut recv).await?;
+    let pf = ProxyForward::decode(&bytes).map_err(|_| WireError::Closed)?;
+    let dst = state
+        .proxy_routes
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&pf.host_addr)
+        .copied();
+    let Some(addr) = dst else {
+        return Err(WireError::Closed);
+    };
+    let ok = forward_ack_to_host(addr, &pf.sealed).await?;
+    write_fixed(&mut send, &[ok]).await?;
+    let _ = send.finish();
+    Ok(())
+}
+
+/// Host: подтверждение приёма — открывает sealed recv_id и дропает буфер очереди.
+async fn handle_relay_ack(
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let sealed = recv_frame(&mut recv).await?;
+    let ack = match open_from(&state.host_kem_sk, &sealed) {
+        Ok(b) if b.len() == 32 => {
+            let mut rid = [0u8; 32];
+            rid.copy_from_slice(&b);
+            state
+                .host
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .ack_drain(&rid);
+            OK
+        },
+        _ => ERR,
+    };
+    write_fixed(&mut send, &[ack]).await?;
+    let _ = send.finish();
+    Ok(())
+}
+
+async fn forward_ack_to_host(host_addr: SocketAddr, sealed: &[u8]) -> Result<u8, WireError> {
+    let mut endpoint =
+        Endpoint::client("0.0.0.0:0".parse().expect("bind any")).map_err(|_| WireError::Closed)?;
+    endpoint.set_default_client_config(stand_client_config().map_err(|_| WireError::Closed)?);
+    let conn = endpoint
+        .connect(host_addr, crate::config::STAND_SNI)
+        .map_err(|_| WireError::Closed)?
+        .await
+        .map_err(|_| WireError::Closed)?;
+    let (mut s, mut r) = conn.open_bi().await.map_err(|_| WireError::Closed)?;
+    write_fixed(&mut s, &[TAG_RELAY_ACK]).await?;
+    send_frame(&mut s, sealed).await?;
+    let mut ack = [0u8; 1];
+    read_fixed(&mut r, &mut ack).await?;
+    conn.close(0u32.into(), b"done");
+    endpoint.wait_idle().await;
+    Ok(ack[0])
+}
+
 /// Host: relay-выборка от курьера. verify_subscribe(RELAY_CHANNEL_MARKER) + nonce-tracking
 /// (anti-replay без channel_hash), отдаёт QueueResp курьеру, drop-on-delivery. Host видит
 /// курьера, НЕ сетевую личность получателя B.
@@ -349,12 +498,8 @@ async fn handle_relay_subscribe(
         items: items.clone(),
     };
     send_frame(&mut send, &resp.to_bytes()).await?;
-    if !items.is_empty() {
-        let mut host = state.host.lock().unwrap_or_else(|p| p.into_inner());
-        for it in &items {
-            host.drop_delivered(&sub.recv_id, &it.msg_id);
-        }
-    }
+    // DEV-049(a) §593: НЕ дропаем здесь — буфер держится до E2E-подтверждения B
+    // (mt_client_ack → ack_drain). Транзит переживает падение плеча курьер→B.
     Ok(())
 }
 
