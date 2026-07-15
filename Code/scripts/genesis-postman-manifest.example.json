@@ -1,0 +1,18 @@
+{
+  "network": "montana",
+  "purpose": "MUQ-bootstrap: клиент находит genesis-почтальона (relay/queue-host) для доставки. Отличается от genesis-manifest.json (consensus-пиры libp2p M8).",
+  "postmen": [
+    {
+      "label": "lauterbourg",
+      "addr": "REPLACE_IP:8445",
+      "host_kem_pk_hex": "REPLACE_HOST_KEM_PK_HEX (1184 B ML-KEM-768, печатается postman-server при старте)"
+    }
+  ],
+  "client_flow": [
+    "1. Читает postmen[].addr + host_kem_pk_hex",
+    "2. mt_client_connect(addr)",
+    "3. mt_client_register(host_overlay, host_kem_pk, queue) — регистрирует очередь",
+    "4. Отправитель: mt_client_send(host_overlay, host_kem_pk, send_id, msg) → sealed к host_kem_pk",
+    "5. Получатель: mt_client_recv(host_overlay, host_kem_pk, recv_id, recv_sk) → mt_client_ack после приёма"
+  ]
+}
