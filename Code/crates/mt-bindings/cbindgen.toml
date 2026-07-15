@@ -7,3 +7,6 @@ style = "type"
 
 [export]
 prefix = ""
+
+# size_t (не uintptr_t) — Swift импортирует как Int, единый тип с mt_bindings.h
+usize_is_size_t = true

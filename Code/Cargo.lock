@@ -2013,6 +2013,7 @@ dependencies = [
  "mt-postman",
  "mt-rendezvous",
  "mt-state",
+ "mt-wake",
  "sha2 0.10.9",
  "tokio",
  "wasm-bindgen",
@@ -2288,6 +2289,17 @@ dependencies = [
  "mt-genesis",
  "mt-state",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "mt-wake"
+version = "1.2.0"
+dependencies = [
+ "getrandom 0.2.15",
+ "hex",
+ "mt-crypto",
+ "mt-overlay",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

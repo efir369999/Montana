@@ -44,8 +44,15 @@ async fn main() {
     let addr = server.local_addr().expect("local addr");
     let host_kem_pk = server.muq().host_kem_pubkey();
 
+    // Одиночный genesis-почтальон = courier+host: self-route host_overlay → loopback,
+    // иначе двуххоп-депозит клиента не находит host в proxy_routes.
+    let host_overlay = mt_crypto::sha256_raw(&host_kem_pk.as_bytes()[..]);
+    let loopback = SocketAddr::new(std::net::Ipv4Addr::LOCALHOST.into(), addr.port());
+    server.muq().add_proxy_route(host_overlay, loopback);
+
     println!("Montana postman listening: {addr}");
     println!("host_kem_pk: {}", hex(host_kem_pk.as_bytes()));
+    println!("host_overlay: {}", hex(&host_overlay));
     println!("identity seed: {seed_path} (persist — не терять)");
     server.run().await;
 }

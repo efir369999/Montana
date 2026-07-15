@@ -92,6 +92,16 @@ typedef struct MtMdns MtMdns;
 typedef struct MtPostman MtPostman;
 
 /**
+ * Opaque-хэндл клиента Mainline DHT (рандеву).
+ */
+typedef struct RvDht RvDht;
+
+/**
+ * Opaque-реестр account_id<->wake_handle (телефон-почтальон).
+ */
+typedef struct WakeRegistry WakeRegistry;
+
+/**
  * Анонсировать свой почтальон в локальной сети на порту `port`. Возвращает хэндл
  * (демон держит анонс живым) или null. `instance` — C-string имя экземпляра.
  *
@@ -109,9 +119,9 @@ MtMdns *mt_mdns_advertise(uint16_t port,
  * # Safety
  * `out` — буфер ≥ `out_cap` байт или null.
  */
-uintptr_t mt_mdns_browse(uint32_t timeout_ms,
+size_t mt_mdns_browse(uint32_t timeout_ms,
                          uint8_t *out,
-                         uintptr_t out_cap);
+                         size_t out_cap);
 
 /**
  * Остановить анонс и освободить хэндл.
@@ -131,7 +141,7 @@ void mt_mdns_stop(MtMdns *h);
  */
 MtPostman *mt_postman_start(const char *bind,
                             char *out_addr,
-                            uintptr_t out_cap);
+                            size_t out_cap);
 
 /**
  * Остановить почтальон и освободить хэндл. После вызова `h` невалиден.
@@ -167,9 +177,9 @@ int32_t mt_postman_add_route(const MtPostman *h,
  * # Safety
  * `h` — валидный хэндл; `out` — буфер ≥ `out_cap` байт.
  */
-uintptr_t mt_postman_kem_pubkey(const MtPostman *h,
+size_t mt_postman_kem_pubkey(const MtPostman *h,
                                 uint8_t *out,
-                                uintptr_t out_cap);
+                                size_t out_cap);
 
 /**
  * Подключиться к почтальону по адресу `addr` (host:port). Возвращает хэндл или null.
@@ -191,7 +201,7 @@ int32_t mt_client_register(const MtClient *client,
                            const uint8_t *host_overlay,
                            const uint8_t *host_kem,
                            const uint8_t *queue,
-                           uintptr_t queue_len);
+                           size_t queue_len);
 
 /**
  * Освободить хэндл клиента (закрывает соединение).
@@ -217,7 +227,7 @@ int32_t mt_client_send(const MtClient *client,
                        const uint8_t *send_sk,
                        const uint8_t *msg_id,
                        const uint8_t *msg,
-                       uintptr_t msg_len);
+                       size_t msg_len);
 
 /**
  * Забрать одно сообщение из очереди `recv_id` на хосте `host_overlay` через курьер.
@@ -228,13 +238,13 @@ int32_t mt_client_send(const MtClient *client,
  * `client` валиден; `host_overlay`→32; `host_kem`→1184; `recv_id`→32; `recv_sk`→4032;
  * `out`→`out_cap`.
  */
-uintptr_t mt_client_recv(const MtClient *client,
+size_t mt_client_recv(const MtClient *client,
                          const uint8_t *host_overlay,
                          const uint8_t *host_kem,
                          const uint8_t *recv_id,
                          const uint8_t *recv_sk,
                          uint8_t *out,
-                         uintptr_t out_cap);
+                         size_t out_cap);
 
 /**
  * Подтвердить приём (DEV-049(a) §593): хост дропает буфер очереди recv_id. 0 = успех.
@@ -261,13 +271,13 @@ int32_t mt_client_ack(const MtClient *client,
 int32_t mt_client_send_erasure(const MtClient *client,
                                const uint8_t *host_overlays,
                                const uint8_t *host_kems,
-                               uintptr_t n,
-                               uintptr_t k,
+                               size_t n,
+                               size_t k,
                                const uint8_t *send_id,
                                const uint8_t *send_sk,
                                const uint8_t *msg_id,
                                const uint8_t *msg,
-                               uintptr_t msg_len);
+                               size_t msg_len);
 
 /**
  * DEV-049(b): RS(k,n) multi-host выборка — собирает осколки с `n` хостов и реконструирует
@@ -278,15 +288,15 @@ int32_t mt_client_send_erasure(const MtClient *client,
  * `client` валиден; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `recv_id`→32;
  * `recv_sk`→4032; `out`→`out_cap`.
  */
-uintptr_t mt_client_recv_erasure(const MtClient *client,
+size_t mt_client_recv_erasure(const MtClient *client,
                                  const uint8_t *host_overlays,
                                  const uint8_t *host_kems,
-                                 uintptr_t n,
-                                 uintptr_t k,
+                                 size_t n,
+                                 size_t k,
                                  const uint8_t *recv_id,
                                  const uint8_t *recv_sk,
                                  uint8_t *out,
-                                 uintptr_t out_cap);
+                                 size_t out_cap);
 
 /**
  * Тип deep-link montana://: 0 = bootstrap-payload (montana://b/...), 1 = wallet-адрес
@@ -304,9 +314,9 @@ int32_t mt_deeplink_kind(const char *link);
  * # Safety
  * `link` — C-string; `out` — ≥ `out_cap` байт.
  */
-uintptr_t mt_deeplink_address(const char *link,
+size_t mt_deeplink_address(const char *link,
                               uint8_t *out,
-                              uintptr_t out_cap);
+                              size_t out_cap);
 
 /**
  * Для montana://b/<payload>: декодирует QRBootstrap, пишет current_endpoint
@@ -316,10 +326,10 @@ uintptr_t mt_deeplink_address(const char *link,
  * # Safety
  * `link` — C-string; `out` — ≥ `out_cap` байт.
  */
-uintptr_t mt_deeplink_bootstrap_endpoint(const char *link,
+size_t mt_deeplink_bootstrap_endpoint(const char *link,
                                          uint64_t now_unix,
                                          uint8_t *out,
-                                         uintptr_t out_cap);
+                                         size_t out_cap);
 
 /**
  * Подключение к Mainline DHT (публичные bootstrap-ноды BitTorrent). Освобождается
@@ -342,13 +352,13 @@ void mt_rvdht_free(RvDht *dht);
  * `dht` валиден; `dk` — ≥32 B; `salt` — ≥20 B; `friend_account_id` — ≥32 B или null
  * (null пропускает сверку §595 — не рекомендуется); `out` — ≥ `out_cap` байт.
  */
-uintptr_t mt_rvdht_resolve(const RvDht *dht,
+size_t mt_rvdht_resolve(const RvDht *dht,
                            const uint8_t *dk,
                            const uint8_t *salt,
                            const uint8_t *friend_account_id,
                            uint64_t now_unix,
                            uint8_t *out,
-                           uintptr_t out_cap);
+                           size_t out_cap);
 
 uint32_t mt_abi_version(void);
 
@@ -358,7 +368,7 @@ int mt_mnemonic_to_entropy(const char *mnemonic_utf8, uint8_t *out_entropy);
 
 int mt_mldsa_seed_for_role(const uint8_t *master_seed,
                            const uint8_t *role,
-                           uintptr_t role_len,
+                           size_t role_len,
                            uint8_t *out_seed);
 
 int mt_mldsa_keypair_from_seed(const uint8_t *seed, uint8_t *out_pubkey, uint8_t *out_seckey);
@@ -378,8 +388,8 @@ int mt_account_from_mnemonic(const char *mnemonic_utf8,
  */
 int mt_account_id_to_address(const uint8_t *account_id,
                              uint8_t *out,
-                             uintptr_t out_capacity,
-                             uintptr_t *out_len);
+                             size_t out_capacity,
+                             size_t *out_len);
 
 /**
  * Текстовый адрес "mt…" → account_id (32 байта). Проверяет контрольную сумму.
@@ -387,9 +397,9 @@ int mt_account_id_to_address(const uint8_t *account_id,
 int mt_address_to_account_id(const char *address_utf8,
                              uint8_t *out_account_id);
 
-int mt_sign(const uint8_t *seckey, const uint8_t *msg, uintptr_t msg_len, uint8_t *out_sig);
+int mt_sign(const uint8_t *seckey, const uint8_t *msg, size_t msg_len, uint8_t *out_sig);
 
-int mt_verify(const uint8_t *pubkey, const uint8_t *msg, uintptr_t msg_len, const uint8_t *sig);
+int mt_verify(const uint8_t *pubkey, const uint8_t *msg, size_t msg_len, const uint8_t *sig);
 
 /**
  * 32 байта энтропии → 24-словная мнемоника UTF-8.
@@ -399,15 +409,15 @@ int mt_verify(const uint8_t *pubkey, const uint8_t *msg, uintptr_t msg_len, cons
  */
 int mt_entropy_to_mnemonic(const uint8_t *entropy,
                            uint8_t *out_mnemonic_utf8,
-                           uintptr_t out_capacity,
-                           uintptr_t *out_len);
+                           size_t out_capacity,
+                           size_t *out_len);
 
 /**
  * HKDF-Expand(master_seed, role, 64) -> ML-KEM-768 seed (d‖z). Этап 1: app_kem_key.
  */
 int mt_mlkem_seed_for_role(const uint8_t *master_seed,
                            const uint8_t *role,
-                           uintptr_t role_len,
+                           size_t role_len,
                            uint8_t *out_seed);
 
 /**
@@ -446,7 +456,7 @@ int mt_history_key(const uint8_t *entropy,
  * `ptr`/`len` — ровно то, что вернула mt_e2e_* через out-параметры; вызывать однократно.
  */
 void mt_e2e_free(uint8_t *ptr,
-                 uintptr_t len);
+                 size_t len);
 
 /**
  * RatchetEncrypt через непрозрачный блоб сессии. Возвращает новый блоб сессии + сообщение.
@@ -455,14 +465,14 @@ void mt_e2e_free(uint8_t *ptr,
  * Все указатели валидны на свою длину; `rng_seed` — 64 байта; out-указатели ненулевые.
  */
 int mt_e2e_encrypt(const uint8_t *session,
-                   uintptr_t session_len,
+                   size_t session_len,
                    const uint8_t *pt,
-                   uintptr_t pt_len,
+                   size_t pt_len,
                    const uint8_t *rng_seed,
                    uint8_t **out_session,
-                   uintptr_t *out_session_len,
+                   size_t *out_session_len,
                    uint8_t **out_msg,
-                   uintptr_t *out_msg_len);
+                   size_t *out_msg_len);
 
 /**
  * RatchetDecrypt через непрозрачный блоб сессии. Возвращает новый блоб + открытый текст.
@@ -471,13 +481,13 @@ int mt_e2e_encrypt(const uint8_t *session,
  * Все указатели валидны на свою длину; out-указатели ненулевые.
  */
 int mt_e2e_decrypt(const uint8_t *session,
-                   uintptr_t session_len,
+                   size_t session_len,
                    const uint8_t *msg,
-                   uintptr_t msg_len,
+                   size_t msg_len,
                    uint8_t **out_session,
-                   uintptr_t *out_session_len,
+                   size_t *out_session_len,
                    uint8_t **out_pt,
-                   uintptr_t *out_pt_len);
+                   size_t *out_pt_len);
 
 /**
  * Сторона Алисы: рукопожатие + инициализация сессии. Возвращает InitialHandshake
@@ -498,9 +508,9 @@ int mt_e2e_build_handshake(const uint8_t *alice_account_pub,
                            const uint8_t *eph_seed,
                            uint64_t send_time,
                            uint8_t **out_hs,
-                           uintptr_t *out_hs_len,
+                           size_t *out_hs_len,
                            uint8_t **out_session,
-                           uintptr_t *out_session_len);
+                           size_t *out_session_len);
 
 /**
  * Сторона Боба: обработка рукопожатия + инициализация сессии получателя.
@@ -509,7 +519,7 @@ int mt_e2e_build_handshake(const uint8_t *alice_account_pub,
  * Все ключевые указатели валидны на размеры спеки; opk_* читаются лишь при opk_flag=1.
  */
 int mt_e2e_process_handshake(const uint8_t *hs,
-                             uintptr_t hs_len,
+                             size_t hs_len,
                              const uint8_t *bob_account_id,
                              const uint8_t *bob_app_kem_pub,
                              const uint8_t *bob_app_kem_sk,
@@ -521,7 +531,7 @@ int mt_e2e_process_handshake(const uint8_t *hs,
                              uint64_t now,
                              uint64_t accept_skew,
                              uint8_t **out_session,
-                             uintptr_t *out_session_len);
+                             size_t *out_session_len);
 
 /**
  * Запечатать медиа-блоб: sealed_blob = nonce || Seal(blob_key, nonce, input, AD=mt-media).
@@ -533,9 +543,9 @@ int mt_e2e_process_handshake(const uint8_t *hs,
 int mt_e2e_seal_blob(const uint8_t *blob_key,
                      const uint8_t *nonce,
                      const uint8_t *input,
-                     uintptr_t input_len,
+                     size_t input_len,
                      uint8_t **out_ptr,
-                     uintptr_t *out_len);
+                     size_t *out_len);
 
 /**
  * blob_id = SHA-256(sealed_blob) -> out32 (32 байта).
@@ -543,7 +553,7 @@ int mt_e2e_seal_blob(const uint8_t *blob_key,
  * # Safety
  * sealed_blob — len байт; out32 — 32 байта.
  */
-int mt_e2e_blob_id(const uint8_t *sealed_blob, uintptr_t len, uint8_t *out32);
+int mt_e2e_blob_id(const uint8_t *sealed_blob, size_t len, uint8_t *out32);
 
 /**
  * Расшифровать блоб -> padded plaintext (owned; усечь до size вызывающему). Ошибка -> MT_ERR_KEM_FAILED.
@@ -553,14 +563,14 @@ int mt_e2e_blob_id(const uint8_t *sealed_blob, uintptr_t len, uint8_t *out32);
  */
 int mt_e2e_open_blob(const uint8_t *blob_key,
                      const uint8_t *sealed_blob,
-                     uintptr_t len,
+                     size_t len,
                      uint8_t **out_ptr,
-                     uintptr_t *out_len);
+                     size_t *out_len);
 
 /**
  * pad_len(n) — целевой размер после паддинга (скрытие размера).
  */
-uintptr_t mt_e2e_pad_len(uintptr_t n);
+size_t mt_e2e_pad_len(size_t n);
 
 /**
  * safety_number(id_A, id_B) → 60 ASCII-цифр (Этап 8). Оба указателя — 32 байта account_id;
@@ -572,7 +582,7 @@ uintptr_t mt_e2e_pad_len(uintptr_t n);
 int mt_e2e_safety_number(const uint8_t *id_a,
                          const uint8_t *id_b,
                          uint8_t **out_ptr,
-                         uintptr_t *out_len);
+                         size_t *out_len);
 
 /**
  * party_code(account_id) → 30 ASCII-цифр (Этап 8). Указатель — 32 байта; выход owned.
@@ -582,7 +592,7 @@ int mt_e2e_safety_number(const uint8_t *id_a,
  */
 int mt_e2e_party_code(const uint8_t *id,
                       uint8_t **out_ptr,
-                      uintptr_t *out_len);
+                      size_t *out_len);
 
 /**
  * call_key/sframe_key (Этап 13, PQ-медиа-слой звонка). `call_seed` — 32 байта (из E2E-сигнала);
@@ -609,7 +619,7 @@ bool mt_wake_inline_encode(const uint8_t *recv_id, uint64_t window, uint8_t *out
  * `input` — валиден и ≥`len` B; `out_recv_id` — ≥32 B; `out_window` — валиден.
  */
 bool mt_wake_inline_decode(const uint8_t *input,
-                           uintptr_t len,
+                           size_t len,
                            uint8_t *out_recv_id,
                            uint64_t *out_window);
 
@@ -630,7 +640,7 @@ bool mt_wake_handle_encode(const uint8_t *handle,
  * `input` — валиден и ≥`len` B; `out_handle` — ≥16 B; `out_window` — валиден.
  */
 bool mt_wake_handle_decode(const uint8_t *input,
-                           uintptr_t len,
+                           size_t len,
                            uint8_t *out_handle,
                            uint64_t *out_window);
 
@@ -682,5 +692,43 @@ bool mt_wake_handle_of(const WakeRegistry *reg,
 bool mt_wake_account_of(const WakeRegistry *reg,
                         const uint8_t *handle,
                         uint8_t *out_account);
+
+/**
+ * Деривация ключей очереди из routing_secret(32)+queue_index — recv/send ML-DSA keypairs.
+ * out_recv_pk[1952] out_recv_sk[4032] out_send_pk[1952] out_send_sk[4032]. 0=успех, -1=ошибка.
+ *
+ * # Safety
+ * routing_secret -> 32 B; out_* — валидные буферы на указанные размеры.
+ */
+int32_t mt_muq_derive_queue_keys(const uint8_t *routing_secret,
+                                 uint64_t queue_index,
+                                 uint8_t *out_recv_pk,
+                                 uint8_t *out_recv_sk,
+                                 uint8_t *out_send_pk,
+                                 uint8_t *out_send_sk);
+
+/**
+ * Сериализация Queue (wire §413) для регистрации. send_pk null = unsecured-очередь.
+ * Возврат: записанные байты (QUEUE_WIRE_SIZE) или 0 при ошибке/малом буфере.
+ *
+ * # Safety
+ * recv_id/send_id/recv_pk -> 32/32/1952; send_pk -> 1952 или null; out -> out_cap байт.
+ */
+size_t mt_muq_queue_serialize(const uint8_t *recv_id,
+                                 const uint8_t *send_id,
+                                 const uint8_t *recv_pk,
+                                 const uint8_t *send_pk,
+                                 uint64_t rotation_epoch,
+                                 uint32_t quota,
+                                 uint8_t *out,
+                                 size_t out_cap);
+
+/**
+ * Случайный QueueId (32 B, OS CSPRNG) — recv_id либо send_id. 0=успех, -1=ошибка.
+ *
+ * # Safety
+ * out — валиден на 32 байта.
+ */
+int32_t mt_muq_gen_queue_id(uint8_t *out);
 
 #endif  /* MONTANA_FFI_H */
