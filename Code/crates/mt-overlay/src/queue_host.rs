@@ -290,7 +290,7 @@ mod tests {
             rotation_epoch: 1000,
             quota: 64,
         };
-        host.register_queue(q);
+        host.register_queue(q, 0);
 
         let nonce = [0x07; 16];
         let sig = sign_deposit(&ssk, &[0x51; 32], &[0x5A; 16], &nonce).unwrap();
@@ -330,14 +330,17 @@ mod tests {
         let (spk, _ssk) = kp(0x22);
         let (_epk, esk) = kp(0x33); // чужак
         let mut host = QueueHost::new();
-        host.register_queue(Queue {
-            recv_id: [0x71; 32],
-            send_id: [0x51; 32],
-            recv_pubkey: rpk,
-            send_pubkey: Some(spk),
-            rotation_epoch: 1000,
-            quota: 64,
-        });
+        host.register_queue(
+            Queue {
+                recv_id: [0x71; 32],
+                send_id: [0x51; 32],
+                recv_pubkey: rpk,
+                send_pubkey: Some(spk),
+                rotation_epoch: 1000,
+                quota: 64,
+            },
+            0,
+        );
         let nonce = [0x07; 16];
         let bad = sign_deposit(&esk, &[0x51; 32], &[0x5A; 16], &nonce).unwrap();
         let hd = HostDeposit {
