@@ -339,6 +339,19 @@ pub fn verify_record(
     vk.verify(&bep44_sign_buffer(salt, seq, &v), sig).is_ok()
 }
 
+/// DEV-051 / §595 [P2P-5] первая линия: сверка привязки рандеву-записи к личности
+/// друга. `overlay_addr` в записи обязан равняться `overlay_addr(account_id друга)`
+/// (account_id известен подписчику из E2E-сессии). Даже при квантовой подделке
+/// ed25519-admission подделка overlay-адреса ловится здесь → редирект остаётся
+/// DoS-классом, не breach личности/контента. Вызывается потребителем RendezvousRecord
+/// ДО доверия overlay_addr; ed25519 verify (verify_record) и эта сверка — независимы.
+pub fn record_binds_account(
+    record: &RendezvousRecord,
+    friend_account_id: &[u8; OVERLAY_ADDR_LEN],
+) -> bool {
+    record.overlay_addr == mt_overlay::overlay_addr(friend_account_id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,5 +585,22 @@ mod tests {
         assert!(resolve_endpoint_public(&mk6(mapped([10, 0, 0, 5]))).is_none()); // ::ffff:private
                                                                                  // сырой resolve пропускает loopback (LAN/self-host легитимны)
         assert!(resolve_endpoint(&mk([127, 0, 0, 1])).is_some());
+    }
+
+    #[test]
+    fn record_binds_account_catches_forgery() {
+        let account_id = [0x42u8; OVERLAY_ADDR_LEN];
+        let record = RendezvousRecord {
+            overlay_addr: mt_overlay::overlay_addr(&account_id),
+            endpoints: vec![],
+            pq_hint: [0u8; PQ_HINT_LEN],
+            seq: 1,
+            valid_until: 1000,
+        };
+        assert!(record_binds_account(&record, &account_id)); // легитимная привязка
+        let mut forged = record.clone();
+        forged.overlay_addr = [0xFFu8; OVERLAY_ADDR_LEN];
+        assert!(!record_binds_account(&forged, &account_id)); // подделка overlay ловится
+        assert!(!record_binds_account(&record, &[0x99u8; OVERLAY_ADDR_LEN])); // чужой account
     }
 }

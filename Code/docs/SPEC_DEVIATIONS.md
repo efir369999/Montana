@@ -1082,8 +1082,8 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Severity:**        medium (PQ-binding first line absent; redirect stops being "DoS-only" until the overlay↔account_id check is wired). Off-chain.
 **Closure path:**    (a) add a verify helper `record.overlay_addr == mt_overlay::overlay_addr(friend_account_id)` and call it in every RendezvousRecord consumer (make the binding un-forgettable per lesson E-2); (b) gate Node::register_queue_on to self-host only (direct registration to own node).
 **Closure cost:**    < 1 working day (verify helper + consumer wiring + self-host guard).
-**Status:**          open (spec defines the binding; consumer-side verify pending)
-**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
+**Status:**          closed — (a) record_binds_account helper (mt-rendezvous) + un-forgettable вызов в FFI mt_rvdht_resolve (friend_account_id, подделка overlay_addr → 0); (b) register_queue_on self-host gate (loopback, §534). Tests: record_binds_account_catches_forgery, e2e_stage3
+**Acknowledged:**    deep critic-audit (2026-07-14); closed per author 'закрывай до конца' (2026-07-15)
 
 ## DEV-052 (open, acknowledged): silent empty QueueResp when the fetch frame exceeds the wire limit
 

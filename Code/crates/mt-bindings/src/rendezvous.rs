@@ -9,7 +9,7 @@ use std::os::raw::c_char;
 
 use mt_bootstrap::{parse_deep_link, DeepLink};
 use mt_rendezvous::dht::RvDht;
-use mt_rendezvous::{resolve_endpoint_public, DK_LEN, SALT_LEN};
+use mt_rendezvous::{record_binds_account, resolve_endpoint_public, DK_LEN, SALT_LEN};
 
 /// # Safety
 /// `link` — валидный C-string (null-terminated) или null.
@@ -118,12 +118,14 @@ pub unsafe extern "C" fn mt_rvdht_free(dht: *mut RvDht) {
 /// возвращает длину (0 если записи нет / протухла / только внутренние адреса / ошибка).
 ///
 /// # Safety
-/// `dht` валиден; `dk` — ≥32 B; `salt` — ≥20 B; `out` — ≥ `out_cap` байт.
+/// `dht` валиден; `dk` — ≥32 B; `salt` — ≥20 B; `friend_account_id` — ≥32 B или null
+/// (null пропускает сверку §595 — не рекомендуется); `out` — ≥ `out_cap` байт.
 #[no_mangle]
 pub unsafe extern "C" fn mt_rvdht_resolve(
     dht: *const RvDht,
     dk: *const u8,
     salt: *const u8,
+    friend_account_id: *const u8,
     now_unix: u64,
     out: *mut u8,
     out_cap: usize,
@@ -138,6 +140,15 @@ pub unsafe extern "C" fn mt_rvdht_resolve(
     let Some(record) = (*dht).get(&dk_a, &salt_a, now_unix) else {
         return 0;
     };
+    // DEV-051 / §595 [P2P-5] первая линия: сверка привязки записи к личности друга
+    // (account_id известен из E2E-сессии). Подделка overlay_addr → 0 (не доверяем).
+    if !friend_account_id.is_null() {
+        let mut acc = [0u8; DK_LEN];
+        std::ptr::copy_nonoverlapping(friend_account_id, acc.as_mut_ptr(), 32);
+        if !record_binds_account(&record, &acc) {
+            return 0;
+        }
+    }
     for ep in &record.endpoints {
         if let Some(addr) = resolve_endpoint_public(ep) {
             return write_addr(addr, out, out_cap);

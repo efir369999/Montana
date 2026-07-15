@@ -37,6 +37,8 @@ pub enum ClientError {
     Crypto(#[from] mt_crypto::CryptoError),
     #[error("malformed challenge from postman")]
     MalformedChallenge,
+    #[error("прямая регистрация на чужом хосте запрещена (§534 self-host only); используй register_via_courier")]
+    ForeignHostRegistration,
     #[error("decode: {0:?}")]
     Decode(mt_overlay::frame::FrameError),
     #[error("postman rejected registration")]

@@ -287,11 +287,13 @@ void mt_rvdht_free(RvDht *dht);
  * возвращает длину (0 если записи нет / протухла / только внутренние адреса / ошибка).
  *
  * # Safety
- * `dht` валиден; `dk` — ≥32 B; `salt` — ≥20 B; `out` — ≥ `out_cap` байт.
+ * `dht` валиден; `dk` — ≥32 B; `salt` — ≥20 B; `friend_account_id` — ≥32 B или null
+ * (null пропускает сверку §595 — не рекомендуется); `out` — ≥ `out_cap` байт.
  */
 uintptr_t mt_rvdht_resolve(const RvDht *dht,
                            const uint8_t *dk,
                            const uint8_t *salt,
+                           const uint8_t *friend_account_id,
                            uint64_t now_unix,
                            uint8_t *out,
                            uintptr_t out_cap);

@@ -76,6 +76,11 @@ impl Node {
         host: SocketAddr,
         q: &Queue,
     ) -> Result<bool, ClientError> {
+        // DEV-051 / §534: прямая регистрация только к своему узлу (self-host = loopback).
+        // На чужом хосте раскрывается сетевая личность → register_via_courier.
+        if !host.ip().is_loopback() {
+            return Err(ClientError::ForeignHostRegistration);
+        }
         let conn = self.endpoint.connect(host, STAND_SNI)?.await?;
         let ok = muq_register(&conn, q).await?;
         conn.close(0u32.into(), b"done");
