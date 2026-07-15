@@ -702,7 +702,7 @@ mod tests {
             "все 3 сообщения получены, ни одно не потеряно"
         );
         for m in msgs {
-            assert!(got.contains(&m.to_vec()), "batch содержит сообщение");
+            assert!(got.contains(m), "batch содержит сообщение");
         }
 
         // 4-й recv — очередь опустошена
