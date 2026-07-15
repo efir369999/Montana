@@ -1,0 +1,51 @@
+//! Standalone MUQ-почтальон (backend always-on relay/queue-host) с persistent ML-KEM
+//! личностью. Аргументы: [bind_addr=0.0.0.0:8445] [seed_path=postman-identity.bin].
+//! Клиенты используют напечатанные bind-адрес и host_kem_pk (hex) для запечатывания.
+
+use std::net::SocketAddr;
+use std::path::Path;
+
+use mt_postman::server::PostmanServer;
+
+fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+fn load_or_generate_seed(path: &Path) -> [u8; mt_crypto::MLKEM_SEED_SIZE] {
+    let mut seed = [0u8; mt_crypto::MLKEM_SEED_SIZE];
+    if let Ok(bytes) = std::fs::read(path) {
+        if bytes.len() == seed.len() {
+            seed.copy_from_slice(&bytes);
+            return seed;
+        }
+    }
+    getrandom::getrandom(&mut seed).expect("OS CSPRNG");
+    std::fs::write(path, seed).expect("persist identity seed");
+    seed
+}
+
+#[tokio::main]
+async fn main() {
+    let bind: SocketAddr = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "0.0.0.0:8445".to_string())
+        .parse()
+        .expect("valid bind addr");
+    let seed_path = std::env::args()
+        .nth(2)
+        .unwrap_or_else(|| "postman-identity.bin".to_string());
+
+    let seed = load_or_generate_seed(Path::new(&seed_path));
+    let server = PostmanServer::bind_with_seed(bind, &seed).expect("bind postman");
+    let addr = server.local_addr().expect("local addr");
+    let host_kem_pk = server.muq().host_kem_pubkey();
+
+    println!("Montana postman listening: {addr}");
+    println!("host_kem_pk: {}", hex(host_kem_pk.as_bytes()));
+    println!("identity seed: {seed_path} (persist — не терять)");
+    server.run().await;
+}

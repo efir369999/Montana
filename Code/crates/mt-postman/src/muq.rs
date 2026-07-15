@@ -85,6 +85,20 @@ impl MuqState {
         Self::default()
     }
 
+    /// Backend-почтальон: детерминированная ML-KEM-личность из persist-seed — клиенты
+    /// знают стабильный host_kem_pk между рестартами (иначе sealed к старому ключу не
+    /// откроется). Seed хранится оператором (postman-identity.bin).
+    pub fn from_seed(seed: &[u8; MLKEM_SEED_SIZE]) -> Self {
+        let (host_kem_pk, host_kem_sk) =
+            keypair_from_seed_mlkem(seed).expect("ML-KEM keygen from seed");
+        Self {
+            host: Mutex::new(QueueHost::new()),
+            proxy_routes: Mutex::new(HashMap::new()),
+            host_kem_pk,
+            host_kem_sk,
+        }
+    }
+
     /// Proxy-роль: сопоставить overlay-адрес queue-host его физическому адресу (конфиг стенда).
     pub fn add_proxy_route(&self, host_overlay: OverlayAddr, addr: SocketAddr) {
         self.proxy_routes

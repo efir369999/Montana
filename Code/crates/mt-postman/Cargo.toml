@@ -28,3 +28,7 @@ getrandom = { workspace = true }
 mt-rendezvous = { path = "../mt-rendezvous" }
 mainline = "=6.0.1"
 tokio = { version = "=1.44.2", features = ["rt-multi-thread", "macros", "time", "sync", "test-util"] }
+
+[[bin]]
+name = "postman-server"
+path = "src/bin/postman-server.rs"

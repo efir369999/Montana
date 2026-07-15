@@ -66,6 +66,19 @@ impl PostmanServer {
         })
     }
 
+    /// Backend-почтальон с persistent ML-KEM-личностью (стабильный host_kem_pk).
+    pub fn bind_with_seed(
+        addr: SocketAddr,
+        seed: &[u8; mt_crypto::MLKEM_SEED_SIZE],
+    ) -> Result<Self, ServerError> {
+        let endpoint = Endpoint::server(stand_server_config()?, addr)?;
+        Ok(Self {
+            endpoint,
+            reg: Arc::new(Mutex::new(Registry::default())),
+            muq: Arc::new(MuqState::from_seed(seed)),
+        })
+    }
+
     pub fn local_addr(&self) -> Result<SocketAddr, ServerError> {
         Ok(self.endpoint.local_addr()?)
     }
