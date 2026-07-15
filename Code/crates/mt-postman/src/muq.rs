@@ -155,12 +155,16 @@ async fn handle_register(
     read_fixed(&mut recv, &mut buf).await?;
     let ack = match Queue::decode(&buf) {
         Ok(q) => {
-            state
+            let accepted = state
                 .host
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .register_queue(q);
-            OK
+            if accepted {
+                OK
+            } else {
+                ERR // DEV-050(d): first-write-wins — hijack (перезапись recv_pubkey) отвергнут
+            }
         },
         Err(_) => ERR,
     };
@@ -399,12 +403,16 @@ async fn handle_relay_register(
         .and_then(|b| Queue::decode(&b).ok())
     {
         Some(q) => {
-            state
+            let accepted = state
                 .host
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .register_queue(q);
-            OK
+            if accepted {
+                OK
+            } else {
+                ERR // DEV-050(d): first-write-wins — hijack (перезапись recv_pubkey) отвергнут
+            }
         },
         None => ERR,
     };

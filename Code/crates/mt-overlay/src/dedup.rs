@@ -21,9 +21,13 @@ impl Default for DedupWindow {
 
 impl DedupWindow {
     pub fn with_capacity(cap: usize) -> Self {
+        // DEV-050(b): lazy — seen/order растут по мере вставки, НЕ eager-prealloc cap
+        // элементов. Иначе каждый первый relay-subscribe новой очереди аллоцировал бы
+        // ~160KB (HashSet+VecDeque на 4096) → node-DoS ×32 amplifier при массовой
+        // регистрации. cap остаётся логическим потолком скользящего окна.
         Self {
-            seen: HashSet::with_capacity(cap),
-            order: VecDeque::with_capacity(cap),
+            seen: HashSet::new(),
+            order: VecDeque::new(),
             cap: cap.max(1),
         }
     }

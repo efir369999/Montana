@@ -51,9 +51,20 @@ impl QueueHost {
     }
 
     /// Хост создаёт очередь (recv_id/send_id независимы; получатель прислал recv_pubkey).
-    pub fn register_queue(&mut self, q: Queue) {
+    pub fn register_queue(&mut self, q: Queue) -> bool {
+        // DEV-050(d): first-write-wins — существующий recv_id не перезаписывается другим
+        // recv_pubkey. Иначе сторона, узнавшая recv_id (лог / скомпрометированный
+        // получатель), перерегистрировала бы очередь на свой recv_pubkey и перехватывала
+        // дренаж. Re-key владельцем (подпись prior key) — отдельный future-opcode; hijack
+        // закрыт запретом молчаливой перезаписи.
+        if let Some(existing) = self.queues.get(&q.recv_id) {
+            if existing.recv_pubkey != q.recv_pubkey {
+                return false;
+            }
+        }
         self.send_route.insert(q.send_id, q.recv_id);
         self.queues.insert(q.recv_id, q);
+        true
     }
 
     /// Двуххоп-депозит: proxy принёс распечатанный HostDeposit. Маршрут send_id→recv_id
@@ -171,6 +182,26 @@ mod tests {
     fn kp(seed: u8) -> ([u8; PUBLIC_KEY_SIZE], SecretKey) {
         let (pk, sk): (PublicKey, SecretKey) = keypair_from_seed(&[seed; 32]).unwrap();
         (*pk.as_bytes(), sk)
+    }
+
+    #[test]
+    fn register_queue_first_write_wins_rejects_hijack() {
+        let (rpk, _) = kp(0x51);
+        let (hijacker_pk, _) = kp(0x52);
+        let mut host = QueueHost::new();
+        let q = Queue {
+            recv_id: [0x71; 32],
+            send_id: [0x81; 32],
+            recv_pubkey: rpk,
+            send_pubkey: None,
+            rotation_epoch: 0,
+            quota: 8,
+        };
+        assert!(host.register_queue(q.clone())); // первая регистрация принята
+        assert!(host.register_queue(q.clone())); // тот же recv_pubkey — идемпотентно ок
+        let mut hijack = q.clone();
+        hijack.recv_pubkey = hijacker_pk;
+        assert!(!host.register_queue(hijack)); // DEV-050(d): hijack отвергнут (first-write-wins)
     }
 
     #[test]

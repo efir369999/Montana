@@ -1069,8 +1069,8 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Severity:**        medium (off-chain node-DoS + relay-path replay weaker than the direct path's channel_hash binding; not a consensus bug).
 **Closure path:**    (a) time-based registration barrier per [I-15] (one registration per identity per window) + lazy DedupWindow (grow on demand, cap total) + prune empty queues; (b) host-issued subscribe nonce (§478) + persistent dedup or channel_hash on the relay path; (c) proof-of-ownership on re-registration (sign against the prior recv_pubkey).
 **Closure cost:**    > 1 working day (registration accounting + nonce protocol + dedup redesign).
-**Status:**          open (spec anti-spam is deposit-side; registration/subscribe hardening pending)
-**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
+**Status:**          partial — closed конструкцией: (b) DedupWindow lazy (HashSet/VecDeque растут по мере вставки, убран ~160KB eager-prealloc на recv_id → снят ×32 node-DoS amplifier); (d) register_queue first-write-wins (существующий recv_id не перезаписывается другим recv_pubkey, handlers → ERR). Narrowed spec-design pending: (a) registration rate-limit [I-15] — требует identity-модели для anon recv_id (случайный id ≠ identity; кандидат — per-connection/per-courier rate-limit); (c) host-issued subscribe nonce §478 — extra round в subscribe-flow либо persistent dedup взамен volatile-окна. (a)+(c) — протокол-redesign > 1 дня, отдельный milestone.
+**Acknowledged:**    deep critic-audit (2026-07-14); (b)+(d) closed per author 'закрывай до конца' (2026-07-15); (a)+(c) narrowed honestly as protocol-redesign
 
 ## DEV-051 (open, acknowledged): rendezvous PQ-binding — overlay_addr↔account_id verify and self-host gate missing
 
