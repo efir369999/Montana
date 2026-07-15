@@ -166,10 +166,10 @@ pub unsafe extern "C" fn mt_postman_kem_pubkey(
 }
 
 /// Opaque-хэндл клиента (живое QUIC-соединение к почтальону/курьеру).
-/// `pending` — буфер хвоста пакетной выборки: `subscribe_via_courier` — уничтожающий
-/// batch-drain (host отдаёт и дропает ВСЕ элементы очереди разом), поэтому FFI обязан
-/// сохранить весь batch и выдавать по одному, иначе items[1..] теряются (§206 «буфер
-/// никогда не теряет сообщение»).
+/// `pending` — буфер хвоста пакетной выборки: `subscribe_via_courier` отдаёт ВЕСЬ батч
+/// очереди разом (peek — не дропает; дроп по `mt_client_ack`, DEV-049(a) drop-on-ack),
+/// поэтому FFI обязан сохранить весь batch и выдавать по одному, иначе items[1..] теряются
+/// (§206 «буфер никогда не теряет сообщение»).
 pub struct MtClient {
     inner: MuqClient,
     pending: Mutex<VecDeque<QueueItem>>,
@@ -370,8 +370,8 @@ pub unsafe extern "C" fn mt_client_recv(
             return need;
         }
     }
-    // Буфер пуст — тянем новую пачку через курьер (уничтожающий batch-drain хоста:
-    // host отдаёт и дропает ВСЕ элементы разом, поэтому сохраняем весь batch).
+    // Буфер пуст — тянем новую пачку через курьер: subscribe отдаёт ВЕСЬ батч разом
+    // (peek — дроп только по mt_client_ack, DEV-049(a)), поэтому сохраняем весь batch.
     if host_overlay.is_null() || host_kem.is_null() || recv_id.is_null() {
         return 0;
     }
