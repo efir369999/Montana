@@ -12,6 +12,32 @@ pub const MAX_SKIP: u32 = 1000;
 pub const MAX_MKSKIPPED: usize = 2000;
 pub const MAX_PLAINTEXT: usize = 1_048_576;
 
+/// DEV-049(c) §490: padding-до-бакета внутри AEAD — скрывает точную длину сообщения.
+/// Маркер 0x80 (ISO/IEC 7816-4) + нули до pad_len; cap на MAX_PLAINTEXT.
+fn pad_message(pt: &[u8]) -> Vec<u8> {
+    let target = crate::media::pad_len(pt.len() + 1)
+        .min(MAX_PLAINTEXT)
+        .max(pt.len() + 1);
+    let mut out = Vec::with_capacity(target);
+    out.extend_from_slice(pt);
+    out.push(0x80);
+    out.resize(target, 0x00);
+    out
+}
+
+fn unpad_message(mut padded: Vec<u8>) -> Result<Vec<u8>, RatchetError> {
+    while let Some(&last) = padded.last() {
+        padded.pop();
+        if last == 0x80 {
+            return Ok(padded);
+        }
+        if last != 0x00 {
+            return Err(RatchetError::BadFormat);
+        }
+    }
+    Err(RatchetError::BadFormat)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum RatchetError {
     BadFormat,
@@ -294,7 +320,8 @@ impl SessionState {
         self.cks = Some(next_cks);
         let (mut enc_key, nonce) = msg_key(&mk);
         let ad = ad_bytes(&self.session_id, self.pn, self.ns, &self.dhs_pub);
-        let body = seal(&enc_key, &nonce, plaintext, &ad);
+        let padded = pad_message(plaintext);
+        let body = seal(&enc_key, &nonce, &padded, &ad);
         mk.zeroize();
         enc_key.zeroize();
 
@@ -368,7 +395,7 @@ impl SessionState {
             let pt = pt.ok_or(RatchetError::Decrypt)?;
             let (_, _, mut used) = self.mkskipped.remove(idx);
             used.zeroize();
-            return Ok(pt);
+            return Ok(unpad_message(pt)?);
         }
 
         let is_kem_step = match &self.dhr {
@@ -442,6 +469,6 @@ impl SessionState {
         while self.mkskipped.len() > MAX_MKSKIPPED {
             self.mkskipped.remove(0);
         }
-        Ok(pt)
+        Ok(unpad_message(pt)?)
     }
 }
