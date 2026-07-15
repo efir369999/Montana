@@ -47,6 +47,19 @@ async fn open_stream(
         .map_err(|_| ClientError::Closed)
 }
 
+/// Node hello: подключиться к узлу, получить его capability (host_kem 1184 + send_id 32).
+/// Отправитель по mDNS находит узел, зовёт hello → депонирует без карты (serverless-автомат).
+pub async fn node_hello(addr: SocketAddr) -> Result<([u8; 1184], [u8; 32]), ClientError> {
+    let connector = tls_connector().map_err(|_| ClientError::Closed)?;
+    let mut st = open_stream(addr, &connector).await?;
+    write_fixed(&mut st, &[crate::muq::TAG_NODE_HELLO]).await?;
+    let mut kem = [0u8; 1184];
+    read_fixed(&mut st, &mut kem).await?;
+    let mut sid = [0u8; 32];
+    read_fixed(&mut st, &mut sid).await?;
+    Ok((kem, sid))
+}
+
 pub struct MuqClient {
     addr: SocketAddr,
     connector: TlsConnector,

@@ -45,6 +45,7 @@ pub const TAG_RECEIVE_NONCE: u8 = 0x18; // B → courier: запрос host-issu
 pub const TAG_RELAY_NONCE: u8 = 0x19; // courier → host: forward sealed recv_id, вернуть nonce
 pub const TAG_RECEIVE_ACK: u8 = 0x1A; // B → courier: подтверждение приёма (§593)
 pub const TAG_RELAY_ACK: u8 = 0x1B; // courier → host: forward sealed recv_id, drop buffer
+pub const TAG_NODE_HELLO: u8 = 0x1C; // sender → node: get capability (host_kem + send_id)
 
 const OK: u8 = 0x01;
 const ERR: u8 = 0x00;
@@ -109,6 +110,11 @@ impl MuqState {
             .insert(host_overlay, addr);
     }
 
+    /// send_id зарегистрированной очереди (self-host: одна) — для hello-обмена.
+    pub fn primary_send_id(&self) -> Option<QueueId> {
+        self.host.lock().unwrap_or_else(|p| p.into_inner()).any_send_id()
+    }
+
     /// Публичный ML-KEM ключ хоста — клиент запечатывает sealed к нему (курьер крипто-слеп).
     pub fn host_kem_pubkey(&self) -> MlkemPublicKey {
         MlkemPublicKey::from_array(*self.host_kem_pk.as_bytes())
@@ -161,6 +167,7 @@ async fn dispatch<S: AsyncRead + AsyncWrite + Unpin>(
         TAG_RELAY_NONCE => handle_relay_nonce(st, state).await,
         TAG_RECEIVE_ACK => handle_receive_ack(st, state).await,
         TAG_RELAY_ACK => handle_relay_ack(st, state).await,
+        TAG_NODE_HELLO => handle_node_hello(st, state).await,
         _ => Ok(()),
     }
 }
@@ -424,6 +431,19 @@ async fn handle_relay_register<S: AsyncRead + AsyncWrite + Unpin>(
         None => ERR,
     };
     write_fixed(st, &[ack]).await?;
+    Ok(())
+}
+
+/// Node hello: отдать capability узла — host_kem (1184) + send_id (32) своей очереди.
+/// Отправитель по mDNS находит узел, коннектится, получает hello → депонирует без карты.
+async fn handle_node_hello<S: AsyncRead + AsyncWrite + Unpin>(
+    st: &mut S,
+    state: &Arc<MuqState>,
+) -> Result<(), WireError> {
+    let kem = state.host_kem_pubkey();
+    let sid = state.primary_send_id().unwrap_or([0u8; 32]);
+    write_fixed(st, kem.as_bytes()).await?;
+    write_fixed(st, &sid).await?;
     Ok(())
 }
 

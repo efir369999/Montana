@@ -244,6 +244,37 @@ pub unsafe extern "C" fn mt_client_register(
     }
 }
 
+/// Node hello (serverless-автомат): подключиться к узлу `addr`, получить его capability —
+/// host_kem (1184 B в out_kem) + send_id (32 B в out_send_id). Отправитель по mDNS находит
+/// узел собеседника и через hello узнаёт куда/чем депонировать, без карты. 0=успех, -1=ошибка.
+///
+/// # Safety
+/// `addr` — C-string; `out_kem` — 1184 B; `out_send_id` — 32 B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_node_hello(
+    addr: *const c_char,
+    out_kem: *mut u8,
+    out_send_id: *mut u8,
+) -> i32 {
+    if addr.is_null() || out_kem.is_null() || out_send_id.is_null() {
+        return -1;
+    }
+    let Some(a) = cstr_to_socketaddr(addr) else {
+        return -1;
+    };
+    let Some(rt) = rt() else {
+        return -1;
+    };
+    match ffi_catch(|| rt.block_on(mt_postman::node_hello(a))) {
+        Some(Ok((kem, sid))) => {
+            std::ptr::copy_nonoverlapping(kem.as_ptr(), out_kem, 1184);
+            std::ptr::copy_nonoverlapping(sid.as_ptr(), out_send_id, 32);
+            0
+        },
+        _ => -1,
+    }
+}
+
 /// Освободить хэндл клиента (закрывает соединение).
 ///
 /// # Safety

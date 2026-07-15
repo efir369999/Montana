@@ -19,7 +19,7 @@ pub mod wire;
 pub use client::{ClientError, PostmanClient};
 pub use config::{stand_client_config, stand_server_config, ConfigError, STAND_SNI};
 pub use muq::{MuqState, TAG_HOST_DEPOSIT};
-pub use muq_client::MuqClient;
+pub use muq_client::{node_hello, MuqClient};
 pub use node::Node;
 pub use server::{PostmanServer, ServerError};
 pub use wire::WireError;

@@ -74,6 +74,11 @@ impl QueueHost {
     }
 
     /// Хост создаёт очередь (recv_id/send_id независимы; получатель прислал recv_pubkey).
+    /// Any registered send_id (self-host: одна очередь) — для hello-обмена capability.
+    pub fn any_send_id(&self) -> Option<QueueId> {
+        self.send_route.keys().next().copied()
+    }
+
     pub fn register_queue(&mut self, q: Queue, current_window: u64) -> bool {
         // DEV-050(a) [I-15]: global registration rate-limit per window (anti-fan-out).
         if current_window != self.reg_window {

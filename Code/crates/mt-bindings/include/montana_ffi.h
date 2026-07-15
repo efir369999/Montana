@@ -731,4 +731,11 @@ size_t mt_muq_queue_serialize(const uint8_t *recv_id,
  */
 int32_t mt_muq_gen_queue_id(uint8_t *out);
 
+/**
+ * Node hello (serverless-автомат): подключиться к узлу addr, получить capability —
+ * host_kem (1184 B в out_kem) + send_id (32 B в out_send_id). Отправитель по mDNS находит
+ * узел собеседника и узнаёт куда депонировать, без карты. 0=успех, -1=ошибка.
+ */
+int32_t mt_node_hello(const char *addr, uint8_t *out_kem, uint8_t *out_send_id);
+
 #endif  /* MONTANA_FFI_H */
