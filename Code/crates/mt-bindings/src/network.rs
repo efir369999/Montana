@@ -74,6 +74,18 @@ pub unsafe extern "C" fn mt_postman_start(
         return std::ptr::null_mut();
     };
     let muq = server.muq().clone();
+
+    // Self-host (спека §534, «SELF-HOST абсолют против сговора»): телефон-узел = courier+host,
+    // self-route host_overlay → loopback → принимает депозит в СВОЮ очередь без центрального
+    // сервера. host_overlay = SHA-256(host_kem_pk) (тот же вывод, что клиент/манифест).
+    {
+        let host_kem = muq.host_kem_pubkey();
+        let overlay = mt_crypto::sha256_raw(&host_kem.as_bytes()[..]);
+        if let Ok(loopback) = format!("127.0.0.1:{}", real_addr.port()).parse() {
+            muq.add_proxy_route(overlay, loopback);
+        }
+    }
+
     let task = rt.spawn(server.run());
 
     // записать реальный адрес в out_addr, если запрошен
