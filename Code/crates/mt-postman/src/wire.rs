@@ -1,60 +1,81 @@
-//! Чтение/запись по QUIC-потоку (Этап 1). Пролог регистрации — фиксированные размеры
-//! (read_exact); OverlayFrame — один uni-поток на фрейм (write_all + finish, read_to_end).
+//! Чтение/запись по TCP+TLS-потоку (Этап 1; спека §152 — «TCP/TLS-443 обязателен»,
+//! операторы режут non-443 UDP). Пролог/фиксированные ответы — read_exact/write_all;
+//! переменные сообщения — длина-префикс u32 BE (TCP не несёт per-stream FIN как QUIC,
+//! граница сообщения — явная длина). Request-response последователен на одном дуплексном
+//! потоке: сторона пишет запрос, затем читает ответ на том же `&mut S`.
 
-use quinn::{RecvStream, SendStream};
 use thiserror::Error;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use mt_codec::domain::OVERLAY_CHANNEL_LABEL;
 use mt_overlay::frame::MAX_PAYLOAD_LEN;
 
-/// Верхний предел на один OverlayFrame по проводу: header 86 B + payload cap + запас.
+/// Верхний предел на одно сообщение по проводу: header + payload cap + запас.
 pub const MAX_FRAME_WIRE: usize = MAX_PAYLOAD_LEN + 4096;
 
 #[derive(Debug, Error)]
 pub enum WireError {
-    #[error("write: {0}")]
-    Write(#[from] quinn::WriteError),
-    #[error("read_exact: {0}")]
-    ReadExact(#[from] quinn::ReadExactError),
-    #[error("read_to_end: {0}")]
-    ReadToEnd(#[from] quinn::ReadToEndError),
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("frame too large: {0}")]
+    TooLarge(usize),
     #[error("stream already closed")]
     Closed,
     #[error("TLS-Exporter (channel_hash) failed")]
     Export,
 }
 
-/// Записать фиксированный блок в persistent bi-поток (пролог), без finish.
-pub async fn write_fixed(s: &mut SendStream, bytes: &[u8]) -> Result<(), WireError> {
+/// Записать фиксированный блок (пролог/тег/фиксированный ответ) + flush.
+pub async fn write_fixed<W: AsyncWrite + Unpin + ?Sized>(
+    s: &mut W,
+    bytes: &[u8],
+) -> Result<(), WireError> {
     s.write_all(bytes).await?;
+    s.flush().await?;
     Ok(())
 }
 
-/// Прочитать ровно `buf.len()` байт из persistent bi-потока (пролог).
-pub async fn read_fixed(s: &mut RecvStream, buf: &mut [u8]) -> Result<(), WireError> {
+/// Прочитать ровно `buf.len()` байт (пролог/фиксированный ответ).
+pub async fn read_fixed<R: AsyncRead + Unpin + ?Sized>(
+    s: &mut R,
+    buf: &mut [u8],
+) -> Result<(), WireError> {
     s.read_exact(buf).await?;
     Ok(())
 }
 
-/// Один uni-поток = один фрейм: записать и закрыть (FIN).
-pub async fn send_frame(s: &mut SendStream, bytes: &[u8]) -> Result<(), WireError> {
+/// Одно сообщение = [u32 BE len][bytes]. Записать + flush (ответ идёт следом на том же потоке).
+pub async fn send_frame<W: AsyncWrite + Unpin + ?Sized>(
+    s: &mut W,
+    bytes: &[u8],
+) -> Result<(), WireError> {
+    if bytes.len() > MAX_FRAME_WIRE {
+        return Err(WireError::TooLarge(bytes.len()));
+    }
+    s.write_all(&(bytes.len() as u32).to_be_bytes()).await?;
     s.write_all(bytes).await?;
-    s.finish().map_err(|_| WireError::Closed)?;
+    s.flush().await?;
     Ok(())
 }
 
-/// Прочитать фрейм целиком до FIN (uni-поток).
-pub async fn recv_frame(s: &mut RecvStream) -> Result<Vec<u8>, WireError> {
-    Ok(s.read_to_end(MAX_FRAME_WIRE).await?)
+/// Прочитать сообщение [u32 BE len][bytes].
+pub async fn recv_frame<R: AsyncRead + Unpin + ?Sized>(s: &mut R) -> Result<Vec<u8>, WireError> {
+    let mut lb = [0u8; 4];
+    s.read_exact(&mut lb).await?;
+    let len = u32::from_be_bytes(lb) as usize;
+    if len > MAX_FRAME_WIRE {
+        return Err(WireError::TooLarge(len));
+    }
+    let mut buf = vec![0u8; len];
+    s.read_exact(&mut buf).await?;
+    Ok(buf)
 }
 
-/// channel_hash соединения = TLS-Exporter(OVERLAY_CHANNEL_LABEL, "", 32).
-/// Метка — SSOT из mt_codec::domain (не дублируется literal-ом; [C-1]/[I-10]).
-/// Обе стороны QUIC выводят одинаковые 32 B → привязка RegProof к каналу (R4);
-/// спека 0.8.1 (RFC 8446 §7.5 / RFC 9266-паттерн).
-pub fn channel_hash(conn: &quinn::Connection) -> Result<[u8; 32], WireError> {
-    let mut ch = [0u8; 32];
-    conn.export_keying_material(&mut ch, OVERLAY_CHANNEL_LABEL, b"")
-        .map_err(|_| WireError::Export)?;
-    Ok(ch)
+/// channel_hash соединения = TLS-Exporter(OVERLAY_CHANNEL_LABEL, no-context, 32).
+/// Обе стороны TLS 1.3 выводят одинаковые 32 B → привязка RegProof к каналу (R4);
+/// спека 0.8.1 (RFC 8446 §7.5). Аргумент — rustls-соединение (client/server), общий у
+/// tokio-rustls через `TlsStream::get_ref().1`.
+pub fn channel_hash<D>(conn: &rustls::ConnectionCommon<D>) -> Result<[u8; 32], WireError> {
+    conn.export_keying_material([0u8; 32], OVERLAY_CHANNEL_LABEL, None)
+        .map_err(|_| WireError::Export)
 }

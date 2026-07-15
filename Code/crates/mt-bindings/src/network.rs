@@ -67,8 +67,7 @@ pub unsafe extern "C" fn mt_postman_start(
     let Some(rt) = rt() else {
         return std::ptr::null_mut();
     };
-    let _guard = rt.enter(); // quinn Endpoint::bind требует контекст реактора
-    let Ok(server) = PostmanServer::bind(addr) else {
+    let Ok(server) = rt.block_on(PostmanServer::bind(addr)) else {
         return std::ptr::null_mut();
     };
     let Ok(real_addr) = server.local_addr() else {

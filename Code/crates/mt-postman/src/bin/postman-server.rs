@@ -40,7 +40,9 @@ async fn main() {
         .unwrap_or_else(|| "postman-identity.bin".to_string());
 
     let seed = load_or_generate_seed(Path::new(&seed_path));
-    let server = PostmanServer::bind_with_seed(bind, &seed).expect("bind postman");
+    let server = PostmanServer::bind_with_seed(bind, &seed)
+        .await
+        .expect("bind postman");
     let addr = server.local_addr().expect("local addr");
     let host_kem_pk = server.muq().host_kem_pubkey();
 

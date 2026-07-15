@@ -1,47 +1,48 @@
-//! Node — единая сущность узла Montana (P2P Network Этап 3). Один QUIC-Endpoint: узел
-//! ОДНОВРЕМЕННО слушает (host держит очереди + courier релеит чужое) И инициирует
-//! соединения (client — шлёт/получает своё) — через одну неразличимую дверь. Нет
-//! разделения на «сервер-почтальон» и «клиент»: доступность (always-on десктоп /
-//! foreground карман) — режим развёртывания, не разные роли в коде. Сущность узла одна.
+//! Node — единая сущность узла Montana (P2P Network Этап 3; TCP+TLS-транспорт, спека §152).
+//! Узел ОДНОВРЕМЕННО слушает (host держит очереди + courier релеит чужое) И инициирует
+//! соединения (client — шлёт/получает своё) — через одну неразличимую дверь. Нет разделения
+//! на «сервер-почтальон» и «клиент»: доступность (always-on десктоп / foreground карман) —
+//! режим развёртывания, не разные роли в коде. Каждая клиентская операция — свежее TCP+TLS
+//! соединение (MuqClient).
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use quinn::Endpoint;
+use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
 
 use mt_crypto::{MlkemPublicKey, SecretKey};
 use mt_overlay::muq::{ProxyForward, Queue, QueueId, QueueResp};
 use mt_overlay::OverlayAddr;
 
 use crate::client::ClientError;
-use crate::config::{stand_client_config, stand_server_config, STAND_SNI};
+use crate::config::tls_acceptor;
 use crate::muq::MuqState;
-use crate::muq_client::{
-    muq_deposit, muq_register, muq_register_via_courier, muq_subscribe_via_courier,
-};
+use crate::muq_client::MuqClient;
 use crate::server::{handle_connection, Registry, ServerError};
 
 #[derive(Clone)]
 pub struct Node {
-    endpoint: Endpoint,
+    listener: Arc<TcpListener>,
+    acceptor: TlsAcceptor,
     reg: Arc<Mutex<Registry>>,
     muq: Arc<MuqState>,
 }
 
 impl Node {
-    /// Поднять узел: один Endpoint — и слушает (server), и звонит (client).
-    pub fn bind(addr: SocketAddr) -> Result<Self, ServerError> {
-        let mut endpoint = Endpoint::server(stand_server_config()?, addr)?;
-        endpoint.set_default_client_config(stand_client_config()?);
+    /// Поднять узел: один TCP-listener — и слушает (server), и звонит (client-методы).
+    pub async fn bind(addr: SocketAddr) -> Result<Self, ServerError> {
+        let listener = TcpListener::bind(addr).await?;
         Ok(Self {
-            endpoint,
+            listener: Arc::new(listener),
+            acceptor: tls_acceptor()?,
             reg: Arc::new(Mutex::new(Registry::default())),
             muq: Arc::new(MuqState::new()),
         })
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr, ServerError> {
-        Ok(self.endpoint.local_addr()?)
+        Ok(self.listener.local_addr()?)
     }
 
     /// MUQ-состояние узла (queue-host + courier/proxy-маршруты).
@@ -54,21 +55,27 @@ impl Node {
         self.muq.add_proxy_route(host_overlay, addr);
     }
 
-    /// Неразличимая дверь: принимать входящие соединения (host + courier + relay).
-    /// Тот же Endpoint используется client-методами — узел и слушает, и звонит.
+    /// Неразличимая дверь: принимать входящие TCP+TLS-соединения (host + courier + relay).
     pub async fn run(&self) {
-        while let Some(incoming) = self.endpoint.accept().await {
+        loop {
+            let (tcp, _peer) = match self.listener.accept().await {
+                Ok(x) => x,
+                Err(_) => continue,
+            };
+            tcp.set_nodelay(true).ok();
+            let acceptor = self.acceptor.clone();
             let reg = self.reg.clone();
             let muq = self.muq.clone();
             tokio::spawn(async move {
-                if let Ok(conn) = incoming.await {
-                    let _ = handle_connection(conn, reg, muq).await;
-                }
+                let Ok(tls) = acceptor.accept(tcp).await else {
+                    return;
+                };
+                let _ = handle_connection(tls, reg, muq).await;
             });
         }
     }
 
-    // --- своя активность через тот же Endpoint (client-роль единой сущности) ---
+    // --- своя активность (client-роль единой сущности): свежее TCP+TLS на операцию ---
 
     /// Зарегистрировать свою очередь на узле-хосте.
     pub async fn register_queue_on(
@@ -81,14 +88,10 @@ impl Node {
         if !host.ip().is_loopback() {
             return Err(ClientError::ForeignHostRegistration);
         }
-        let conn = self.endpoint.connect(host, STAND_SNI)?.await?;
-        let ok = muq_register(&conn, q).await?;
-        conn.close(0u32.into(), b"done");
-        Ok(ok)
+        MuqClient::connect(host).await?.register_queue(q).await
     }
 
     /// Relay-регистрация очереди на чужом хосте через курьер (host видит курьера, не нас).
-    /// Для своего узла (self-host) — register_queue_on(self_addr) без утечки (свой узел).
     pub async fn register_via_courier(
         &self,
         courier: SocketAddr,
@@ -96,10 +99,10 @@ impl Node {
         host_kem_pk: &MlkemPublicKey,
         q: &Queue,
     ) -> Result<bool, ClientError> {
-        let conn = self.endpoint.connect(courier, STAND_SNI)?.await?;
-        let ok = muq_register_via_courier(&conn, host_overlay, host_kem_pk, q).await?;
-        conn.close(0u32.into(), b"done");
-        Ok(ok)
+        MuqClient::connect(courier)
+            .await?
+            .register_via_courier(host_overlay, host_kem_pk, q)
+            .await
     }
 
     /// Положить депозит через узел-courier (двуххоп; courier не видит recv_id).
@@ -108,14 +111,13 @@ impl Node {
         courier: SocketAddr,
         pf: &ProxyForward,
     ) -> Result<bool, ClientError> {
-        let conn = self.endpoint.connect(courier, STAND_SNI)?.await?;
-        let ok = muq_deposit(&conn, pf).await?;
-        conn.close(0u32.into(), b"done");
-        Ok(ok)
+        MuqClient::connect(courier)
+            .await?
+            .deposit_via_proxy(pf)
+            .await
     }
 
     /// Двуххоп-ВЫБОРКА: забрать свои осколки ЧЕРЕЗ узел-courier (host видит курьера, не нас).
-    /// Закрывает получателя от хоста симметрично отправителю (Этап 3).
     pub async fn subscribe_via_courier(
         &self,
         courier: SocketAddr,
@@ -124,11 +126,10 @@ impl Node {
         recv_id: QueueId,
         recv_sk: &SecretKey,
     ) -> Result<QueueResp, ClientError> {
-        let conn = self.endpoint.connect(courier, STAND_SNI)?.await?;
-        let resp =
-            muq_subscribe_via_courier(&conn, host_overlay, host_kem_pk, recv_id, recv_sk).await?;
-        conn.close(0u32.into(), b"done");
-        Ok(resp)
+        MuqClient::connect(courier)
+            .await?
+            .subscribe_via_courier(host_overlay, host_kem_pk, recv_id, recv_sk)
+            .await
     }
 
     /// SELF-HOST (абсолют против сговора): забрать из СВОЕЙ очереди локально, без курьера

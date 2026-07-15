@@ -19,10 +19,14 @@ fn dht_resolved_address_reaches_live_postman() {
     let _guard = rt.enter(); // quinn Endpoint::bind требует контекст реактора
 
     // Живой host + курьер на реальных портах (адрес известен после bind, до run).
-    let host = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let host = rt
+        .block_on(PostmanServer::bind("127.0.0.1:0".parse().unwrap()))
+        .unwrap();
     let host_addr = host.local_addr().unwrap();
     let host_kem = host.muq().host_kem_pubkey();
-    let courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let courier = rt
+        .block_on(PostmanServer::bind("127.0.0.1:0".parse().unwrap()))
+        .unwrap();
     let courier_addr = courier.local_addr().unwrap();
     let host_overlay = [0xA0u8; 32];
     courier.muq().add_proxy_route(host_overlay, host_addr);

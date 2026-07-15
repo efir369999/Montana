@@ -1,10 +1,13 @@
-//! MUQ-клиент (Этап 2). Подключается к queue-host / entry-proxy БЕЗ overlay-регистрации
-//! Этапа 1 (несвязываемость — узел видит эфемерный ключ очереди, не account_id).
-//! Получатель: register_queue + subscribe; отправитель: deposit_via_proxy (двуххоп).
+//! MUQ-клиент (Этап 2; TCP+TLS-транспорт, спека §152). Каждая операция — свежее короткое
+//! TCP+TLS-соединение (модель SimpleX: несвязываемость, узел видит эфемерный ключ очереди,
+//! не account_id). Получатель: register_queue + subscribe; отправитель: deposit (двуххоп).
 
 use std::net::SocketAddr;
 
-use quinn::{Connection, Endpoint};
+use rustls::pki_types::ServerName;
+use tokio::net::TcpStream;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 
 use mt_crypto::{seal_to, MlkemPublicKey, SecretKey};
 use mt_overlay::challenge::NONCE_SIZE;
@@ -17,7 +20,7 @@ use mt_overlay::muq::{
 use mt_overlay::OverlayAddr;
 
 use crate::client::ClientError;
-use crate::config::{stand_client_config, STAND_SNI};
+use crate::config::{tls_connector, STAND_SNI};
 use crate::muq::{
     TAG_PROXY_FORWARD, TAG_PROXY_REGISTER, TAG_QUEUE_REGISTER, TAG_RECEIVE_ACK, TAG_RECEIVE_NONCE,
     TAG_RECEIVE_PROXY,
@@ -26,41 +29,86 @@ use crate::wire::{read_fixed, recv_frame, send_frame, write_fixed};
 
 const OK: u8 = 0x01;
 
+/// Открыть свежий TCP+TLS-стрим к почтальону `addr`.
+async fn open_stream(
+    addr: SocketAddr,
+    connector: &TlsConnector,
+) -> Result<TlsStream<TcpStream>, ClientError> {
+    let tcp = TcpStream::connect(addr)
+        .await
+        .map_err(|_| ClientError::Closed)?;
+    tcp.set_nodelay(true).ok();
+    let sni = ServerName::try_from(STAND_SNI)
+        .map_err(|_| ClientError::Closed)?
+        .to_owned();
+    connector
+        .connect(sni, tcp)
+        .await
+        .map_err(|_| ClientError::Closed)
+}
+
 pub struct MuqClient {
-    conn: Connection,
-    _endpoint: Endpoint,
+    addr: SocketAddr,
+    connector: TlsConnector,
 }
 
 impl MuqClient {
-    /// Подключиться к MUQ-узлу (host либо proxy). Без overlay-регистрации.
+    /// Подключиться к MUQ-узлу (host либо proxy). Валидирует достижимость одним TCP+TLS
+    /// рукопожатием (FFI connect падает на недоступном почтальоне), затем каждая операция —
+    /// свежее соединение.
     pub async fn connect(server: SocketAddr) -> Result<Self, ClientError> {
-        let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect("bind any"))?;
-        endpoint.set_default_client_config(stand_client_config()?);
-        let conn = endpoint.connect(server, STAND_SNI)?.await?;
+        let connector = tls_connector().map_err(|_| ClientError::Closed)?;
+        // Валидирующее рукопожатие: закрывается сразу (сервер ждёт тег, получает EOF, дропает).
+        let _probe = open_stream(server, &connector).await?;
         Ok(Self {
-            conn,
-            _endpoint: endpoint,
+            addr: server,
+            connector,
         })
+    }
+
+    async fn open(&self) -> Result<TlsStream<TcpStream>, ClientError> {
+        open_stream(self.addr, &self.connector).await
     }
 
     /// Получатель регистрирует очередь на хосте. Возвращает true при ok.
     pub async fn register_queue(&self, q: &Queue) -> Result<bool, ClientError> {
-        muq_register(&self.conn, q).await
+        let mut st = self.open().await?;
+        write_fixed(&mut st, &[TAG_QUEUE_REGISTER]).await?;
+        write_fixed(&mut st, &q.to_bytes()).await?;
+        let mut ack = [0u8; 1];
+        read_fixed(&mut st, &mut ack).await?;
+        Ok(ack[0] == OK)
     }
 
     /// Отправитель кладёт депозит через entry-proxy (двуххоп; sealed непрозрачен proxy).
     pub async fn deposit_via_proxy(&self, pf: &ProxyForward) -> Result<bool, ClientError> {
-        muq_deposit(&self.conn, pf).await
+        let mut st = self.open().await?;
+        write_fixed(&mut st, &[TAG_PROXY_FORWARD]).await?;
+        send_frame(&mut st, &pf.to_bytes()).await?;
+        let mut ack = [0u8; 1];
+        read_fixed(&mut st, &mut ack).await?;
+        Ok(ack[0] == OK)
     }
 
     /// Relay-регистрация очереди на чужом хосте через курьер (host видит курьера, не нас).
+    /// Queue запечатан ML-KEM к хосту — курьер крипто-слеп к recv_id/recv_pubkey.
     pub async fn register_via_courier(
         &self,
         host_overlay: OverlayAddr,
         host_kem_pk: &MlkemPublicKey,
         q: &Queue,
     ) -> Result<bool, ClientError> {
-        muq_register_via_courier(&self.conn, host_overlay, host_kem_pk, q).await
+        let sealed = seal_to(host_kem_pk, &q.to_bytes()).map_err(|_| ClientError::Rejected)?;
+        let pf = ProxyForward {
+            host_addr: host_overlay,
+            sealed,
+        };
+        let mut st = self.open().await?;
+        write_fixed(&mut st, &[TAG_PROXY_REGISTER]).await?;
+        send_frame(&mut st, &pf.to_bytes()).await?;
+        let mut ack = [0u8; 1];
+        read_fixed(&mut st, &mut ack).await?;
+        Ok(ack[0] == OK)
     }
 
     /// Relay-выборка через курьер (host видит курьера, не нас).
@@ -71,10 +119,51 @@ impl MuqClient {
         recv_id: QueueId,
         recv_sk: &SecretKey,
     ) -> Result<QueueResp, ClientError> {
-        muq_subscribe_via_courier(&self.conn, host_overlay, host_kem_pk, recv_id, recv_sk).await
+        // DEV-050(c) §478: сначала host-issued nonce (через курьер), затем подпись выборки им.
+        let nonce = self
+            .request_nonce_via_courier(host_overlay, host_kem_pk, recv_id)
+            .await?;
+        let sig = sign_subscribe_relay(recv_sk, &recv_id, &nonce)?;
+        let sub = QueueSubscribe {
+            recv_id,
+            nonce,
+            sig: *sig.as_bytes(),
+        };
+        let sealed = seal_to(host_kem_pk, &sub.to_bytes()).map_err(|_| ClientError::Rejected)?;
+        let rp = ReceiveProxy {
+            host_addr: host_overlay,
+            sealed,
+        };
+        let mut st = self.open().await?;
+        write_fixed(&mut st, &[TAG_RECEIVE_PROXY]).await?;
+        send_frame(&mut st, &rp.to_bytes()).await?;
+        let bytes = recv_frame(&mut st).await?;
+        QueueResp::decode(&bytes).map_err(ClientError::Decode)
+    }
+
+    /// DEV-050(c) §478: получатель запрашивает у хоста (через курьер) свежий host-issued
+    /// nonce для recv_id перед выборкой. Курьер крипто-слеп (sealed recv_id к ML-KEM хоста).
+    async fn request_nonce_via_courier(
+        &self,
+        host_overlay: OverlayAddr,
+        host_kem_pk: &MlkemPublicKey,
+        recv_id: QueueId,
+    ) -> Result<[u8; NONCE_SIZE], ClientError> {
+        let sealed = seal_to(host_kem_pk, &recv_id).map_err(|_| ClientError::Rejected)?;
+        let pf = ProxyForward {
+            host_addr: host_overlay,
+            sealed,
+        };
+        let mut st = self.open().await?;
+        write_fixed(&mut st, &[TAG_RECEIVE_NONCE]).await?;
+        send_frame(&mut st, &pf.to_bytes()).await?;
+        let mut nonce = [0u8; NONCE_SIZE];
+        read_fixed(&mut st, &mut nonce).await?;
+        Ok(nonce)
     }
 
     /// DEV-049(a) §593: подтвердить приём — хост дропает буфер очереди (drop-on-ack).
+    /// ack аутентифицирован как выборка — host-issued nonce + recv_key-подпись.
     pub async fn ack_via_courier(
         &self,
         host_overlay: OverlayAddr,
@@ -82,13 +171,30 @@ impl MuqClient {
         recv_id: QueueId,
         recv_sk: &SecretKey,
     ) -> Result<bool, ClientError> {
-        muq_ack_via_courier(&self.conn, host_overlay, host_kem_pk, recv_id, recv_sk).await
+        let nonce = self
+            .request_nonce_via_courier(host_overlay, host_kem_pk, recv_id)
+            .await?;
+        let sig = sign_subscribe_relay(recv_sk, &recv_id, &nonce)?;
+        let sub = QueueSubscribe {
+            recv_id,
+            nonce,
+            sig: *sig.as_bytes(),
+        };
+        let sealed = seal_to(host_kem_pk, &sub.to_bytes()).map_err(|_| ClientError::Rejected)?;
+        let pf = ProxyForward {
+            host_addr: host_overlay,
+            sealed,
+        };
+        let mut st = self.open().await?;
+        write_fixed(&mut st, &[TAG_RECEIVE_ACK]).await?;
+        send_frame(&mut st, &pf.to_bytes()).await?;
+        let mut ack = [0u8; 1];
+        read_fixed(&mut st, &mut ack).await?;
+        Ok(ack[0] == crate::muq::ack_ok())
     }
 
-    /// DEV-049(b) §201/§508: RS(k,n) фан-аут — дробит `ct` на `n` осколков и депонирует
-    /// по одному на каждый из `n` хостов (двуххоп-депозит к каждому). Падение до `n-k`
-    /// хостов переживается — получатель реконструирует из любых `k`. Возвращает число
-    /// успешных депозитов (durability достигнута при `>= k`).
+    /// DEV-049(b) §201/§508: RS(k,n) фан-аут — дробит `ct` на `n` осколков, депонирует по
+    /// одному на каждый из `n` хостов (двуххоп к каждому). Возвращает число успешных депозитов.
     #[allow(clippy::too_many_arguments)]
     pub async fn deposit_erasure(
         &self,
@@ -130,7 +236,6 @@ impl MuqClient {
     }
 
     /// DEV-049(b): собирает осколки с `n` хостов и реконструирует из любых `k` (RS).
-    /// None — собрано меньше `k` (сообщение недоступно).
     pub async fn fetch_erasure(
         &self,
         hosts: &[(OverlayAddr, MlkemPublicKey)],
@@ -162,128 +267,4 @@ impl MuqClient {
             .map(Some)
             .map_err(|_| ClientError::Rejected)
     }
-}
-
-// --- MUQ-операции над произвольным соединением (переиспользуют Node и MuqClient) ---
-
-pub(crate) async fn muq_register(conn: &Connection, q: &Queue) -> Result<bool, ClientError> {
-    let (mut s, mut r) = conn.open_bi().await?;
-    write_fixed(&mut s, &[TAG_QUEUE_REGISTER]).await?;
-    write_fixed(&mut s, &q.to_bytes()).await?;
-    let _ = s.finish();
-    let mut ack = [0u8; 1];
-    read_fixed(&mut r, &mut ack).await?;
-    Ok(ack[0] == OK)
-}
-
-pub(crate) async fn muq_deposit(conn: &Connection, pf: &ProxyForward) -> Result<bool, ClientError> {
-    let (mut s, mut r) = conn.open_bi().await?;
-    write_fixed(&mut s, &[TAG_PROXY_FORWARD]).await?;
-    send_frame(&mut s, &pf.to_bytes()).await?;
-    let mut ack = [0u8; 1];
-    read_fixed(&mut r, &mut ack).await?;
-    Ok(ack[0] == OK)
-}
-
-/// Relay-регистрация: очередь регистрируется через курьер, host видит курьера, не B.
-/// Queue запечатан ML-KEM к хосту — курьер крипто-слеп к recv_id/recv_pubkey.
-pub(crate) async fn muq_register_via_courier(
-    conn: &Connection,
-    host_overlay: OverlayAddr,
-    host_kem_pk: &MlkemPublicKey,
-    q: &Queue,
-) -> Result<bool, ClientError> {
-    let sealed = seal_to(host_kem_pk, &q.to_bytes()).map_err(|_| ClientError::Rejected)?;
-    let pf = ProxyForward {
-        host_addr: host_overlay,
-        sealed,
-    };
-    let (mut s, mut r) = conn.open_bi().await?;
-    write_fixed(&mut s, &[TAG_PROXY_REGISTER]).await?;
-    send_frame(&mut s, &pf.to_bytes()).await?;
-    let mut ack = [0u8; 1];
-    read_fixed(&mut r, &mut ack).await?;
-    Ok(ack[0] == OK)
-}
-
-/// Двуххоп-выборка: получатель забирает через курьер (host видит курьера, не B).
-/// B генерит nonce (host трекает — anti-replay без channel_hash), подписывает recv_key,
-/// запечатывает QueueSubscribe в ReceiveProxy для host (курьер не видит recv_id).
-/// DEV-050(c) §478: получатель запрашивает у хоста (через курьер) свежий host-issued
-/// nonce для recv_id перед выборкой. Курьер крипто-слеп (sealed recv_id к ML-KEM хоста).
-pub(crate) async fn muq_request_nonce_via_courier(
-    conn: &Connection,
-    host_overlay: OverlayAddr,
-    host_kem_pk: &MlkemPublicKey,
-    recv_id: QueueId,
-) -> Result<[u8; NONCE_SIZE], ClientError> {
-    let sealed = seal_to(host_kem_pk, &recv_id).map_err(|_| ClientError::Rejected)?;
-    let pf = ProxyForward {
-        host_addr: host_overlay,
-        sealed,
-    };
-    let (mut s, mut r) = conn.open_bi().await?;
-    write_fixed(&mut s, &[TAG_RECEIVE_NONCE]).await?;
-    send_frame(&mut s, &pf.to_bytes()).await?;
-    let mut nonce = [0u8; NONCE_SIZE];
-    read_fixed(&mut r, &mut nonce).await?;
-    Ok(nonce)
-}
-
-pub(crate) async fn muq_ack_via_courier(
-    conn: &Connection,
-    host_overlay: OverlayAddr,
-    host_kem_pk: &MlkemPublicKey,
-    recv_id: QueueId,
-    recv_sk: &SecretKey,
-) -> Result<bool, ClientError> {
-    // DEV-049(a): ack аутентифицирован как выборка — host-issued nonce + recv_key-подпись.
-    let nonce = muq_request_nonce_via_courier(conn, host_overlay, host_kem_pk, recv_id).await?;
-    let sig = sign_subscribe_relay(recv_sk, &recv_id, &nonce)?;
-    let sub = QueueSubscribe {
-        recv_id,
-        nonce,
-        sig: *sig.as_bytes(),
-    };
-    let sealed = seal_to(host_kem_pk, &sub.to_bytes()).map_err(|_| ClientError::Rejected)?;
-    let pf = ProxyForward {
-        host_addr: host_overlay,
-        sealed,
-    };
-    let (mut s, mut r) = conn.open_bi().await?;
-    write_fixed(&mut s, &[TAG_RECEIVE_ACK]).await?;
-    send_frame(&mut s, &pf.to_bytes()).await?;
-    let mut ack = [0u8; 1];
-    read_fixed(&mut r, &mut ack).await?;
-    Ok(ack[0] == crate::muq::ack_ok())
-}
-
-pub(crate) async fn muq_subscribe_via_courier(
-    conn: &Connection,
-    host_overlay: OverlayAddr,
-    host_kem_pk: &MlkemPublicKey,
-    recv_id: QueueId,
-    recv_sk: &SecretKey,
-) -> Result<QueueResp, ClientError> {
-    // DEV-050(c) §478: сначала запрашиваем host-issued nonce (через курьер), затем
-    // подписываем выборку им. Украденный QueueSubscribe непереносим (nonce одноразов, выдан
-    // именно этому запросу).
-    let nonce = muq_request_nonce_via_courier(conn, host_overlay, host_kem_pk, recv_id).await?;
-    let sig = sign_subscribe_relay(recv_sk, &recv_id, &nonce)?;
-    let sub = QueueSubscribe {
-        recv_id,
-        nonce,
-        sig: *sig.as_bytes(),
-    };
-    // Запечатать QueueSubscribe к ML-KEM ключу хоста — курьер крипто-слеп к recv_id.
-    let sealed = seal_to(host_kem_pk, &sub.to_bytes()).map_err(|_| ClientError::Rejected)?;
-    let rp = ReceiveProxy {
-        host_addr: host_overlay,
-        sealed,
-    };
-    let (mut s, mut r) = conn.open_bi().await?;
-    write_fixed(&mut s, &[TAG_RECEIVE_PROXY]).await?;
-    send_frame(&mut s, &rp.to_bytes()).await?;
-    let bytes = recv_frame(&mut r).await?;
-    QueueResp::decode(&bytes).map_err(ClientError::Decode)
 }

@@ -27,7 +27,9 @@ async fn with_timeout<F: std::future::Future>(f: F) -> F::Output {
 #[tokio::test]
 async fn a_to_b_to_ack_over_real_quic() {
     // Почтальон на 127.0.0.1:0 (ОС выберет порт) — «коробка, которую держишь ты».
-    let server = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let server = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
     let postman_addr = server.local_addr().unwrap();
     tokio::spawn(server.run());
 
@@ -77,7 +79,9 @@ async fn a_to_b_to_ack_over_real_quic() {
 #[tokio::test]
 async fn relay_to_offline_b_does_not_reach_a_as_deliver() {
     // B офлайн (не подключён) → почтальон буферизует (Этап 2), A не получает ложный DELIVER.
-    let server = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let server = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
     let postman_addr = server.local_addr().unwrap();
     tokio::spawn(server.run());
 
@@ -103,7 +107,9 @@ async fn relay_to_offline_b_does_not_reach_a_as_deliver() {
 #[tokio::test]
 async fn duplicate_msg_id_delivered_once() {
     // §396: A шлёт один msg_id дважды → B получает DELIVER ровно один раз.
-    let server = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let server = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
     let postman_addr = server.local_addr().unwrap();
     tokio::spawn(server.run());
 

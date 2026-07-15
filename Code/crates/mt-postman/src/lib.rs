@@ -1,9 +1,10 @@
-//! mt-postman — плоский QUIC-транспорт почтальона (Montana P2P Network, Этап 1).
+//! mt-postman — плоский TCP+TLS-транспорт почтальона (Montana P2P Network, Этап 1;
+//! спека §152 — TCP/TLS-443 обязателен, операторы режут non-443 UDP).
 //!
-//! Сервер-почтальон принимает QUIC-соединения, гоняет прологовое рукопожатие
+//! Сервер-почтальон принимает TCP+TLS-соединения, гоняет прологовое рукопожатие
 //! (RegHello/RegChallenge/RegProof, ML-DSA-65 — mt-overlay::prologue/challenge) и
 //! маршрутизирует OverlayFrame по overlay_addr (RELAY→DELIVER/Buffer, ACK — Postman).
-//! Транспортный хоп — QUIC-TLS (admission-обёртка A-3 по [I-16]); реальная security —
+//! Транспортный хоп — TCP+TLS 1.3 (admission-обёртка A-3 по [I-16]); реальная security —
 //! opaque E2E-payload + ML-DSA-подпись регистрации. Не consensus state.
 
 pub mod client;

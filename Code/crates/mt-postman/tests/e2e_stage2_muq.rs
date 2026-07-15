@@ -66,12 +66,18 @@ fn build_deposit(
 async fn offline_delivery_all_via_couriers_host_never_sees_b() {
     // host + курьер депозита + курьер выборки (разные). B регистрирует И выбирает через
     // курьеров — host НЕ видит B ни при регистрации, ни при выборке.
-    let host = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let host = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
     let host_addr = host.local_addr().unwrap();
     let host_kem = host.muq().host_kem_pubkey();
-    let dep_courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let dep_courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
     let dep_addr = dep_courier.local_addr().unwrap();
-    let recv_courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let recv_courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
     let recv_addr = recv_courier.local_addr().unwrap();
     let host_overlay: OverlayAddr = [0xA0u8; 32];
     dep_courier.muq().add_proxy_route(host_overlay, host_addr);
@@ -117,25 +123,40 @@ async fn offline_delivery_all_via_couriers_host_never_sees_b() {
     assert_eq!(resp.items.len(), 1, "осколок в буфере");
     assert_eq!(resp.items[0].ct, ct);
 
-    // drop-on-delivery
+    // DEV-049(a) §593: drop-on-ACK — буфер держится до подтверждения B (транзит переживает
+    // падение плеча курьер→B). B подтверждает приём — ТОЛЬКО тогда host дропает буфер.
+    let ack_cli = with_timeout(MuqClient::connect(recv_addr)).await.unwrap();
+    assert!(
+        with_timeout(ack_cli.ack_via_courier(host_overlay, &host_kem, recv_id, &recv_sk))
+            .await
+            .unwrap(),
+        "ack прошёл через курьер"
+    );
     let b2 = with_timeout(MuqClient::connect(recv_addr)).await.unwrap();
     let resp2 = with_timeout(b2.subscribe_via_courier(host_overlay, &host_kem, recv_id, &recv_sk))
         .await
         .unwrap();
-    assert!(resp2.items.is_empty(), "после выдачи — drop-on-delivery");
+    assert!(
+        resp2.items.is_empty(),
+        "после ack — буфер дропнут (drop-on-ack §593)"
+    );
 }
 
 #[tokio::test]
 async fn durability_rs_2of3_via_couriers() {
     // 3 host + 1 курьер (route ко всем). B регистрирует+выбирает через курьер; RS(2,3)
     // переживает выключение одного хоста.
-    let courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let courier = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
     let courier_addr = courier.local_addr().unwrap();
     let mut host_addrs = Vec::new();
     let mut host_overlays: Vec<OverlayAddr> = Vec::new();
     let mut host_kems = Vec::new();
     for i in 0..3u8 {
-        let h = PostmanServer::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let h = PostmanServer::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
         let a = h.local_addr().unwrap();
         let ov: OverlayAddr = [0xC0 + i; 32];
         courier.muq().add_proxy_route(ov, a);

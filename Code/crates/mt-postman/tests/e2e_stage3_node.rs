@@ -66,12 +66,12 @@ fn spawn(n: &Node) {
 #[tokio::test]
 async fn node_is_one_entity_host_courier_client() {
     // Три узла — все Node (одна сущность). Регистрация+депозит+выборка через courier-узел.
-    let host = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let host = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let host_addr = host.local_addr().unwrap();
     let host_kem = host.host_kem_pubkey();
-    let courier = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let courier = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let courier_addr = courier.local_addr().unwrap();
-    let sender = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let sender = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     spawn(&host);
     spawn(&courier);
     spawn(&sender);
@@ -123,14 +123,14 @@ async fn node_is_one_entity_host_courier_client() {
 async fn two_hop_retrieval_hides_receiver_from_host() {
     // host + курьер депозита + курьер выборки (РАЗНЫЕ хозяева, non-collusion). host не
     // видит B ни при регистрации, ни при выборке.
-    let host = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let host = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let host_addr = host.local_addr().unwrap();
     let host_kem = host.host_kem_pubkey();
-    let dep_courier = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let dep_courier = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let dep_addr = dep_courier.local_addr().unwrap();
-    let recv_courier = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let recv_courier = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let recv_addr = recv_courier.local_addr().unwrap();
-    let peer = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let peer = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     for n in [&host, &dep_courier, &recv_courier, &peer] {
         spawn(n);
     }
@@ -178,7 +178,7 @@ async fn two_hop_retrieval_hides_receiver_from_host() {
 async fn self_host_absolute_no_courier() {
     // Абсолют против сговора: получатель держит очередь на СВОЁМ узле, забирает ЛОКАЛЬНО.
     // Регистрация прямая — но к СВОЕМУ узлу (host = я), утечки нет.
-    let me = Node::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let me = Node::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let me_addr = me.local_addr().unwrap();
     spawn(&me);
     let me_overlay: OverlayAddr = [0xA0u8; 32];

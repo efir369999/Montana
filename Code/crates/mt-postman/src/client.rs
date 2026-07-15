@@ -1,12 +1,17 @@
-//! Клиент (телефон, Этап 1). Connect к почтальону → регистрация overlay_addr
-//! (RegHello/RegChallenge/RegProof, ML-DSA-65) → отправка RELAY, приём DELIVER/ACK.
-//! Входящие фреймы отдаются через канал `recv()`.
+//! Клиент (телефон, Этап 1; TCP+TLS-транспорт, спека §152). Connect к почтальону →
+//! регистрация overlay_addr (RegHello/RegChallenge/RegProof, ML-DSA-65) → отправка RELAY,
+//! приём DELIVER/ACK. Персистентное соединение: split на reader (входящие → канал recv())
+//! + writer (исходящие фреймы под async-замком).
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use quinn::{Connection, Endpoint};
+use rustls::pki_types::ServerName;
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::io::{split, WriteHalf};
+use tokio::net::TcpStream;
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
+use tokio_rustls::client::TlsStream;
 
 use mt_crypto::{SecretKey, PUBLIC_KEY_SIZE};
 use mt_overlay::challenge::{sign_registration, Nonce, NONCE_SIZE};
@@ -16,7 +21,7 @@ use mt_overlay::prologue::{decode_reg_challenge, encode_reg_hello, encode_reg_pr
 use mt_overlay::{overlay_addr, OverlayAddr};
 use mt_state::{derive_account_id, SUITE_MLDSA65};
 
-use crate::config::{stand_client_config, ConfigError, STAND_SNI};
+use crate::config::{tls_connector, ConfigError, STAND_SNI};
 use crate::wire::{channel_hash, read_fixed, recv_frame, send_frame, write_fixed, WireError};
 
 const REG_OK: u8 = 0x01;
@@ -27,14 +32,12 @@ pub enum ClientError {
     Config(#[from] ConfigError),
     #[error("endpoint io: {0}")]
     Io(#[from] std::io::Error),
-    #[error("connect: {0}")]
-    Connect(#[from] quinn::ConnectError),
-    #[error("connection: {0}")]
-    Connection(#[from] quinn::ConnectionError),
     #[error("wire: {0}")]
     Wire(#[from] WireError),
     #[error("crypto: {0}")]
     Crypto(#[from] mt_crypto::CryptoError),
+    #[error("connection closed")]
+    Closed,
     #[error("malformed challenge from postman")]
     MalformedChallenge,
     #[error("прямая регистрация на чужом хосте запрещена (§534 self-host only); используй register_via_courier")]
@@ -45,9 +48,10 @@ pub enum ClientError {
     Rejected,
 }
 
+type ClientStream = TlsStream<TcpStream>;
+
 pub struct PostmanClient {
-    conn: Connection,
-    _endpoint: Endpoint, // держит транспорт живым, пока жив клиент
+    writer: Arc<AsyncMutex<WriteHalf<ClientStream>>>,
     overlay: OverlayAddr,
     incoming: mpsc::Receiver<OverlayFrame>,
 }
@@ -59,57 +63,54 @@ impl PostmanClient {
         account_pubkey: [u8; PUBLIC_KEY_SIZE],
         account_sk: &SecretKey,
     ) -> Result<Self, ClientError> {
-        let mut endpoint = Endpoint::client("0.0.0.0:0".parse().expect("bind any"))?;
-        endpoint.set_default_client_config(stand_client_config()?);
-        let conn = endpoint.connect(server, STAND_SNI)?.await?;
+        let connector = tls_connector()?;
+        let tcp = TcpStream::connect(server).await?;
+        tcp.set_nodelay(true).ok();
+        let sni = ServerName::try_from(STAND_SNI)
+            .map_err(|_| ClientError::Closed)?
+            .to_owned();
+        let mut tls = connector.connect(sni, tcp).await?;
 
-        // Рукопожатие по bi-потоку.
-        let (mut send, mut recv) = conn.open_bi().await?;
-        write_fixed(&mut send, &encode_reg_hello(&account_pubkey)).await?;
+        // Рукопожатие по дуплексному потоку (до split).
+        write_fixed(&mut tls, &encode_reg_hello(&account_pubkey)).await?;
 
         let mut chal = [0u8; NONCE_SIZE];
-        read_fixed(&mut recv, &mut chal).await?;
+        read_fixed(&mut tls, &mut chal).await?;
         let nonce: Nonce =
             decode_reg_challenge(&chal).map_err(|_| ClientError::MalformedChallenge)?;
 
-        let ch = channel_hash(&conn)?;
+        let ch = channel_hash(tls.get_ref().1)?;
         let account_id = derive_account_id(SUITE_MLDSA65, &account_pubkey);
         let overlay = overlay_addr(&account_id);
         let sig = sign_registration(account_sk, &overlay, &nonce, &ch)?;
-        write_fixed(&mut send, &encode_reg_proof(sig.as_bytes())).await?;
+        write_fixed(&mut tls, &encode_reg_proof(sig.as_bytes())).await?;
 
         let mut ok = [0u8; 1];
-        read_fixed(&mut recv, &mut ok).await?;
+        read_fixed(&mut tls, &mut ok).await?;
         if ok[0] != REG_OK {
             return Err(ClientError::Rejected);
         }
 
-        // Приёмный таск: входящие uni-потоки от почтальона (DELIVER/ACK) → канал.
+        // Split: reader гонит входящие фреймы в канал, writer шлёт исходящие под замком.
+        let (mut reader, writer) = split(tls);
         let (tx, rx) = mpsc::channel(64);
-        let rconn = conn.clone();
         tokio::spawn(async move {
             // Этап 1 шаг 4 (§396): дедуп входящих по msg_id скользящим окном.
             let mut dedup = DedupWindow::default();
-            while let Ok(mut r) = rconn.accept_uni().await {
-                match recv_frame(&mut r).await {
-                    Ok(bytes) => {
-                        if let Ok(f) = OverlayFrame::decode(&bytes) {
-                            if !dedup.check_and_insert(&f.msg_id) {
-                                continue; // повтор — отбросить
-                            }
-                            if tx.send(f).await.is_err() {
-                                break;
-                            }
-                        }
-                    },
-                    Err(_) => continue,
+            while let Ok(bytes) = recv_frame(&mut reader).await {
+                if let Ok(f) = OverlayFrame::decode(&bytes) {
+                    if !dedup.check_and_insert(&f.msg_id) {
+                        continue; // повтор — отбросить
+                    }
+                    if tx.send(f).await.is_err() {
+                        break;
+                    }
                 }
             }
         });
 
         Ok(Self {
-            conn,
-            _endpoint: endpoint,
+            writer: Arc::new(AsyncMutex::new(writer)),
             overlay,
             incoming: rx,
         })
@@ -150,8 +151,8 @@ impl PostmanClient {
             msg_id,
             payload,
         };
-        let mut s = self.conn.open_uni().await?;
-        send_frame(&mut s, &f.to_bytes()).await?;
+        let mut w = self.writer.lock().await;
+        send_frame(&mut *w, &f.to_bytes()).await?;
         Ok(())
     }
 
