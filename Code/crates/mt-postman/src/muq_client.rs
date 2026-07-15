@@ -7,8 +7,12 @@ use std::net::SocketAddr;
 use quinn::{Connection, Endpoint};
 
 use mt_crypto::{seal_to, MlkemPublicKey, SecretKey};
+use mt_overlay::challenge::NONCE_SIZE;
+use mt_overlay::erasure::{rs_reconstruct, rs_split};
+use mt_overlay::frame::MsgId;
 use mt_overlay::muq::{
-    sign_subscribe_relay, ProxyForward, Queue, QueueId, QueueResp, QueueSubscribe, ReceiveProxy,
+    sign_deposit, sign_subscribe_relay, HostDeposit, ProxyForward, Queue, QueueId, QueueResp,
+    QueueSubscribe, ReceiveProxy,
 };
 use mt_overlay::OverlayAddr;
 
@@ -65,6 +69,84 @@ impl MuqClient {
         recv_sk: &SecretKey,
     ) -> Result<QueueResp, ClientError> {
         muq_subscribe_via_courier(&self.conn, host_overlay, host_kem_pk, recv_id, recv_sk).await
+    }
+
+    /// DEV-049(b) §201/§508: RS(k,n) фан-аут — дробит `ct` на `n` осколков и депонирует
+    /// по одному на каждый из `n` хостов (двуххоп-депозит к каждому). Падение до `n-k`
+    /// хостов переживается — получатель реконструирует из любых `k`. Возвращает число
+    /// успешных депозитов (durability достигнута при `>= k`).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn deposit_erasure(
+        &self,
+        hosts: &[(OverlayAddr, MlkemPublicKey)],
+        k: usize,
+        send_id: QueueId,
+        send_sk: &SecretKey,
+        msg_id: MsgId,
+        ct: &[u8],
+    ) -> Result<usize, ClientError> {
+        let n = hosts.len();
+        let shards = rs_split(ct, k, n).map_err(|_| ClientError::Rejected)?;
+        let mut ok = 0usize;
+        for (i, ((overlay, kem), shard)) in hosts.iter().zip(shards.iter()).enumerate() {
+            let mut nonce = [0u8; NONCE_SIZE];
+            getrandom::getrandom(&mut nonce).map_err(|_| ClientError::Rejected)?;
+            let sig = sign_deposit(send_sk, &send_id, &msg_id, &nonce)
+                .map_err(|_| ClientError::Rejected)?;
+            let hd = HostDeposit {
+                send_id,
+                msg_id,
+                ttl_windows: 240,
+                shard_index: i as u8,
+                shard_total: n as u8,
+                nonce,
+                ct: shard.clone(),
+                sig: *sig.as_bytes(),
+            };
+            let sealed = seal_to(kem, &hd.to_bytes()).map_err(|_| ClientError::Rejected)?;
+            let pf = ProxyForward {
+                host_addr: *overlay,
+                sealed,
+            };
+            if self.deposit_via_proxy(&pf).await.unwrap_or(false) {
+                ok += 1;
+            }
+        }
+        Ok(ok)
+    }
+
+    /// DEV-049(b): собирает осколки с `n` хостов и реконструирует из любых `k` (RS).
+    /// None — собрано меньше `k` (сообщение недоступно).
+    pub async fn fetch_erasure(
+        &self,
+        hosts: &[(OverlayAddr, MlkemPublicKey)],
+        k: usize,
+        recv_id: QueueId,
+        recv_sk: &SecretKey,
+    ) -> Result<Option<Vec<u8>>, ClientError> {
+        let n = hosts.len();
+        let mut shards: Vec<Option<Vec<u8>>> = vec![None; n];
+        let mut got = 0usize;
+        for (overlay, kem) in hosts {
+            if let Ok(resp) = self
+                .subscribe_via_courier(*overlay, kem, recv_id, recv_sk)
+                .await
+            {
+                if let Some(item) = resp.items.first() {
+                    let idx = item.shard_index as usize;
+                    if idx < n && shards[idx].is_none() {
+                        shards[idx] = Some(item.ct.clone());
+                        got += 1;
+                    }
+                }
+            }
+        }
+        if got < k {
+            return Ok(None);
+        }
+        rs_reconstruct(shards, k, n)
+            .map(Some)
+            .map_err(|_| ClientError::Rejected)
     }
 }
 
