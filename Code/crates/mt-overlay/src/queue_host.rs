@@ -37,12 +37,19 @@ pub enum SubscribeError {
     Replay, // двуххоп-выборка: nonce уже использован (украденный QueueSubscribe непереносим)
 }
 
+/// DEV-050(a) [I-15]: глобальный лимит регистраций очередей за окно (~60s) — time-based
+/// anti-fan-out (без денег). recv_id анонимен (не identity), поэтому потолок глобальный
+/// по узлу-хосту за окно; массовое размножение очередей замедлено временем.
+pub const MAX_REGISTRATIONS_PER_WINDOW: u32 = 1024;
+
 #[derive(Default)]
 pub struct QueueHost {
     queues: HashMap<QueueId, Queue>,                // recv_id → Queue
     send_route: HashMap<QueueId, QueueId>,          // send_id → recv_id
     buffer: HashMap<QueueId, Vec<StoredShard>>,     // recv_id → осколки
     seen_sub_nonces: HashMap<QueueId, DedupWindow>, // anti-replay relay-выборки (bounded окно)
+    reg_window: u64,                                // DEV-050(a): текущее окно счётчика регистраций
+    reg_count: u32,                                 // DEV-050(a): регистраций в reg_window
 }
 
 impl QueueHost {
@@ -51,7 +58,15 @@ impl QueueHost {
     }
 
     /// Хост создаёт очередь (recv_id/send_id независимы; получатель прислал recv_pubkey).
-    pub fn register_queue(&mut self, q: Queue) -> bool {
+    pub fn register_queue(&mut self, q: Queue, current_window: u64) -> bool {
+        // DEV-050(a) [I-15]: global registration rate-limit per window (anti-fan-out).
+        if current_window != self.reg_window {
+            self.reg_window = current_window;
+            self.reg_count = 0;
+        }
+        if self.reg_count >= MAX_REGISTRATIONS_PER_WINDOW {
+            return false; // лимит окна исчерпан — регистрация отклонена
+        }
         // DEV-050(d): first-write-wins — существующий recv_id не перезаписывается другим
         // recv_pubkey. Иначе сторона, узнавшая recv_id (лог / скомпрометированный
         // получатель), перерегистрировала бы очередь на свой recv_pubkey и перехватывала
@@ -62,6 +77,7 @@ impl QueueHost {
                 return false;
             }
         }
+        self.reg_count += 1;
         self.send_route.insert(q.send_id, q.recv_id);
         self.queues.insert(q.recv_id, q);
         true
@@ -197,11 +213,11 @@ mod tests {
             rotation_epoch: 0,
             quota: 8,
         };
-        assert!(host.register_queue(q.clone())); // первая регистрация принята
-        assert!(host.register_queue(q.clone())); // тот же recv_pubkey — идемпотентно ок
+        assert!(host.register_queue(q.clone(), 0)); // первая регистрация принята
+        assert!(host.register_queue(q.clone(), 0)); // тот же recv_pubkey — идемпотентно ок
         let mut hijack = q.clone();
         hijack.recv_pubkey = hijacker_pk;
-        assert!(!host.register_queue(hijack)); // DEV-050(d): hijack отвергнут (first-write-wins)
+        assert!(!host.register_queue(hijack, 0)); // DEV-050(d): hijack отвергнут (first-write-wins)
     }
 
     #[test]
@@ -209,14 +225,17 @@ mod tests {
         use crate::muq::sign_subscribe_relay;
         let (rpk, rsk) = kp(0x11);
         let mut host = QueueHost::new();
-        host.register_queue(Queue {
-            recv_id: [0x71; 32],
-            send_id: [0x51; 32],
-            recv_pubkey: rpk,
-            send_pubkey: None,
-            rotation_epoch: 1000,
-            quota: 64,
-        });
+        host.register_queue(
+            Queue {
+                recv_id: [0x71; 32],
+                send_id: [0x51; 32],
+                recv_pubkey: rpk,
+                send_pubkey: None,
+                rotation_epoch: 1000,
+                quota: 64,
+            },
+            0,
+        );
         let recv_id = [0x71u8; 32];
         let nonce = [0x33u8; 16];
         let sig = sign_subscribe_relay(&rsk, &recv_id, &nonce).unwrap();
@@ -309,14 +328,17 @@ mod tests {
     fn quota_and_ttl() {
         let (rpk, _) = kp(0x11);
         let mut host = QueueHost::new();
-        host.register_queue(Queue {
-            recv_id: [0x71; 32],
-            send_id: [0x51; 32],
-            recv_pubkey: rpk,
-            send_pubkey: None,
-            rotation_epoch: 1000,
-            quota: 2,
-        });
+        host.register_queue(
+            Queue {
+                recv_id: [0x71; 32],
+                send_id: [0x51; 32],
+                recv_pubkey: rpk,
+                send_pubkey: None,
+                rotation_epoch: 1000,
+                quota: 2,
+            },
+            0,
+        );
         for i in 0..2u8 {
             let hd = HostDeposit {
                 send_id: [0x51; 32],

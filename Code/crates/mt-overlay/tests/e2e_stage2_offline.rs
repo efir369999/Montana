@@ -25,7 +25,7 @@ fn e2e_muq_two_hop_deposit_subscribe_reassemble() {
     let mut host = QueueHost::new();
     let q = Queue::generate(rpk, Some(spk), 1000, 64).unwrap();
     let (recv_id, send_id) = (q.recv_id, q.send_id);
-    host.register_queue(q);
+    host.register_queue(q, 0);
 
     // A: сообщение → bucket → RS(2,4) → 4 осколка → двуххоп через entry-proxy.
     let sealed = b"opaque-pq-double-ratchet-envelope-for-sleeping-bob".to_vec();
@@ -90,7 +90,7 @@ fn e2e_muq_cannot_subscribe_foreign_queue() {
     let mut host = QueueHost::new();
     let q = Queue::generate(rpk, None, 1000, 64).unwrap();
     let recv_id = q.recv_id;
-    host.register_queue(q);
+    host.register_queue(q, 0);
     let nonce: Nonce = [0x07; 16];
     let ch: ChannelHash = [0x0C; 32];
     let sig = sign_subscribe(&bsk, &recv_id, &nonce, &ch).unwrap();

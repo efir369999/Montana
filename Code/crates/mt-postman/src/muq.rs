@@ -165,7 +165,7 @@ async fn handle_register(
                 .host
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .register_queue(q);
+                .register_queue(q, current_window());
             if accepted {
                 OK
             } else {
@@ -424,7 +424,7 @@ async fn handle_relay_register(
                 .host
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .register_queue(q);
+                .register_queue(q, current_window());
             if accepted {
                 OK
             } else {
