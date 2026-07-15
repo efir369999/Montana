@@ -1095,8 +1095,8 @@ Mitigated by DEV-042: a divergence triggered by this race is now rejected and re
 **Severity:**        medium (silent-failure on the fetch critical path; queue can wedge). Off-chain.
 **Closure path:**    batched/paged fetch (return shards in frame-sized pages with a continuation cursor) OR an explicit "response too large, N bytes" error code distinct from the empty-queue case; never map the oversize error to an empty result.
 **Closure cost:**    < 1 working day (paged fetch or explicit error code + test).
-**Status:**          open (fetch-path robustness pending)
-**Acknowledged:**    deep critic-audit of the P2P stack (2026-07-14), recorded per author's stage-by-stage + full-stack critic pass
+**Status:**          closed — handle_receive_proxy propagate ошибки (decode / no-route / forward-fail oversize → WireError → stream reset); пустой QueueResp остаётся только легитимным ответом host'а, B отличает «нет почты» от «сломалось» и делает refetch
+**Acknowledged:**    deep critic-audit (2026-07-14); closed per author 'закрывай до конца' (2026-07-15)
 
 ## DEV-053 (closed): HostDeposit sealing — spec aligned to code (Noise_PQ XX → ML-KEM sealed-box, v0.14.0)
 

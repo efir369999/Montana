@@ -258,23 +258,21 @@ async fn handle_receive_proxy(
     state: &Arc<MuqState>,
 ) -> Result<(), WireError> {
     let bytes = recv_frame(&mut recv).await?;
-    let resp = match ReceiveProxy::decode(&bytes) {
-        Ok(rp) => {
-            let dst = state
-                .proxy_routes
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .get(&rp.host_addr)
-                .copied();
-            match dst {
-                Some(addr) => forward_subscribe_to_host(addr, &rp.sealed)
-                    .await
-                    .unwrap_or_else(|_| QueueResp { items: vec![] }.to_bytes()),
-                None => QueueResp { items: vec![] }.to_bytes(),
-            }
-        },
-        Err(_) => QueueResp { items: vec![] }.to_bytes(),
+    // DEV-052: НЕ маппим ошибки в пустой QueueResp — иначе B не отличит «нет почты»
+    // (легитимный empty от host) от «доставка сломалась» (oversize frame / host down /
+    // нет маршрута). Ошибка форварда → propagate → stream reset → B видит error и делает
+    // refetch, вместо тихого «очередь пуста». Пустой QueueResp остаётся только ответом host.
+    let rp = ReceiveProxy::decode(&bytes).map_err(|_| WireError::Closed)?;
+    let dst = state
+        .proxy_routes
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&rp.host_addr)
+        .copied();
+    let Some(addr) = dst else {
+        return Err(WireError::Closed); // нет маршрута — явная ошибка, не тихий empty
     };
+    let resp = forward_subscribe_to_host(addr, &rp.sealed).await?; // forward-fail → propagate
     send_frame(&mut send, &resp).await?;
     Ok(())
 }
