@@ -44,7 +44,6 @@ pub struct MuqState {
     host: Mutex<QueueHost>,
     proxy_routes: Mutex<HashMap<OverlayAddr, SocketAddr>>,
     /// Текущее окно для TTL депозита. Стенд: фиксировано; деплой подставит floor(unix/60).
-    window: u64,
     /// ML-KEM keypair хоста: клиент запечатывает sealed к host_kem_pk, только host откроет.
     /// Курьер крипто-слеп к содержимому sealed (recv_id/депозит) — вопрос анонимности закрыт.
     host_kem_pk: MlkemPublicKey,
@@ -59,7 +58,6 @@ impl Default for MuqState {
         Self {
             host: Mutex::new(QueueHost::new()),
             proxy_routes: Mutex::new(HashMap::new()),
-            window: 0,
             host_kem_pk,
             host_kem_sk,
         }
@@ -67,6 +65,14 @@ impl Default for MuqState {
 }
 
 impl MuqState {
+    /// DEV-049(d): эвикция истёкших шардов по TTL (вызывается prune-таймером узла).
+    pub(crate) fn prune_expired(&self, window: u64) {
+        self.host
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .prune(window);
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -174,6 +180,17 @@ async fn handle_register(
 }
 
 /// Двуххоп-депозит: proxy принёс распечатанный HostDeposit. host verify send_key (secured) + буфер.
+/// DEV-049(d): текущее окно из системных часов (floor(unix/60)) для TTL хранения шардов.
+/// Off-chain ([P2P-1]) — MUQ-транспорт НЕ входит в consensus root, системные часы
+/// допустимы для эвикции по TTL (не для consensus-значений; там только TimeChain).
+pub(crate) fn current_window() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() / 60)
+        .unwrap_or(0)
+}
+
 async fn handle_deposit(
     mut send: quinn::SendStream,
     mut recv: quinn::RecvStream,
@@ -185,7 +202,7 @@ async fn handle_deposit(
         .and_then(|b| HostDeposit::decode(&b).ok())
     {
         Some(hd) => {
-            let w = state.window;
+            let w = current_window(); // DEV-049(d): реальное окно, не static 0
             match state
                 .host
                 .lock()

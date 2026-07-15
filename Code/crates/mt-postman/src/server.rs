@@ -90,6 +90,17 @@ impl PostmanServer {
 
     /// Accept-цикл: на каждое соединение — независимый таск (handshake → routing).
     pub async fn run(self) {
+        // DEV-049(d): периодическая эвикция истёкших шардов по TTL (окно из системных
+        // часов, off-chain). Без неё expire_window (=window+ttl) не наступает и буфер
+        // растёт без границы TTL — только quota сдерживает.
+        let prune_muq = self.muq.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                tick.tick().await;
+                prune_muq.prune_expired(crate::muq::current_window());
+            }
+        });
         while let Some(incoming) = self.endpoint.accept().await {
             let reg = self.reg.clone();
             let muq = self.muq.clone();
