@@ -249,6 +249,46 @@ int32_t mt_client_ack(const MtClient *client,
                       const uint8_t *recv_sk);
 
 /**
+ * DEV-049(b): RS(k,n) multi-host отправка — дробит `msg` на `n` осколков и депонирует
+ * по одному на каждый из `n` хостов. Хосты — конкатенированные массивы: `host_overlays`
+ * (n*32), `host_kems` (n*1184). Возврат: число успешных депозитов (durability при >= k),
+ * -1 при ошибке.
+ *
+ * # Safety
+ * `client` валиден; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `send_id`→32;
+ * `send_sk`→4032; `msg_id`→16; `msg`→`msg_len`.
+ */
+int32_t mt_client_send_erasure(const MtClient *client,
+                               const uint8_t *host_overlays,
+                               const uint8_t *host_kems,
+                               uintptr_t n,
+                               uintptr_t k,
+                               const uint8_t *send_id,
+                               const uint8_t *send_sk,
+                               const uint8_t *msg_id,
+                               const uint8_t *msg,
+                               uintptr_t msg_len);
+
+/**
+ * DEV-049(b): RS(k,n) multi-host выборка — собирает осколки с `n` хостов и реконструирует
+ * из любых `k`. Пишет реконструированный ct в `out`; возврат — длина (0 если собрано < k /
+ * ошибка; need > out_cap = буфер мал).
+ *
+ * # Safety
+ * `client` валиден; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `recv_id`→32;
+ * `recv_sk`→4032; `out`→`out_cap`.
+ */
+uintptr_t mt_client_recv_erasure(const MtClient *client,
+                                 const uint8_t *host_overlays,
+                                 const uint8_t *host_kems,
+                                 uintptr_t n,
+                                 uintptr_t k,
+                                 const uint8_t *recv_id,
+                                 const uint8_t *recv_sk,
+                                 uint8_t *out,
+                                 uintptr_t out_cap);
+
+/**
  * Тип deep-link montana://: 0 = bootstrap-payload (montana://b/...), 1 = wallet-адрес
  * (montana://mt...), -1 = ошибка разбора.
  *

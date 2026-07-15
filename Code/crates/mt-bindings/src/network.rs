@@ -451,6 +451,132 @@ pub unsafe extern "C" fn mt_client_ack(
     }
 }
 
+/// DEV-049(b): RS(k,n) multi-host отправка — дробит `msg` на `n` осколков и депонирует
+/// по одному на каждый из `n` хостов. Хосты — конкатенированные массивы: `host_overlays`
+/// (n*32), `host_kems` (n*1184). Возврат: число успешных депозитов (durability при >= k),
+/// -1 при ошибке.
+///
+/// # Safety
+/// `client` валиден; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `send_id`→32;
+/// `send_sk`→4032; `msg_id`→16; `msg`→`msg_len`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn mt_client_send_erasure(
+    client: *const MtClient,
+    host_overlays: *const u8,
+    host_kems: *const u8,
+    n: usize,
+    k: usize,
+    send_id: *const u8,
+    send_sk: *const u8,
+    msg_id: *const u8,
+    msg: *const u8,
+    msg_len: usize,
+) -> i32 {
+    if client.is_null()
+        || host_overlays.is_null()
+        || host_kems.is_null()
+        || send_id.is_null()
+        || msg_id.is_null()
+        || msg.is_null()
+        || n == 0
+    {
+        return -1;
+    }
+    let Some(rt) = rt() else {
+        return -1;
+    };
+    let ksz = mt_crypto::MLKEM_PUBLIC_KEY_SIZE;
+    let mut hosts = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut overlay = [0u8; 32];
+        std::ptr::copy_nonoverlapping(host_overlays.add(i * 32), overlay.as_mut_ptr(), 32);
+        let kem_slice = std::slice::from_raw_parts(host_kems.add(i * ksz), ksz);
+        let Some(kem) = MlkemPublicKey::from_slice(kem_slice) else {
+            return -1;
+        };
+        hosts.push((overlay, kem));
+    }
+    let mut sid = [0u8; 32];
+    std::ptr::copy_nonoverlapping(send_id, sid.as_mut_ptr(), 32);
+    let Some(sk) = secret_from_ptr(send_sk) else {
+        return -1;
+    };
+    let mut mid = [0u8; 16];
+    std::ptr::copy_nonoverlapping(msg_id, mid.as_mut_ptr(), 16);
+    let ct = std::slice::from_raw_parts(msg, msg_len).to_vec();
+    match ffi_catch(|| {
+        rt.block_on(
+            (*client)
+                .inner
+                .deposit_erasure(&hosts, k, sid, &sk, mid, &ct),
+        )
+    }) {
+        Some(Ok(ok)) if ok >= k => 0,
+        _ => -1,
+    }
+}
+
+/// DEV-049(b): RS(k,n) multi-host выборка — собирает осколки с `n` хостов и реконструирует
+/// из любых `k`. Пишет реконструированный ct в `out`; возврат — длина (0 если собрано < k /
+/// ошибка; need > out_cap = буфер мал).
+///
+/// # Safety
+/// `client` валиден; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `recv_id`→32;
+/// `recv_sk`→4032; `out`→`out_cap`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn mt_client_recv_erasure(
+    client: *const MtClient,
+    host_overlays: *const u8,
+    host_kems: *const u8,
+    n: usize,
+    k: usize,
+    recv_id: *const u8,
+    recv_sk: *const u8,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    if client.is_null()
+        || host_overlays.is_null()
+        || host_kems.is_null()
+        || recv_id.is_null()
+        || out.is_null()
+        || n == 0
+    {
+        return 0;
+    }
+    let Some(rt) = rt() else {
+        return 0;
+    };
+    let ksz = mt_crypto::MLKEM_PUBLIC_KEY_SIZE;
+    let mut hosts = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut overlay = [0u8; 32];
+        std::ptr::copy_nonoverlapping(host_overlays.add(i * 32), overlay.as_mut_ptr(), 32);
+        let kem_slice = std::slice::from_raw_parts(host_kems.add(i * ksz), ksz);
+        let Some(kem) = MlkemPublicKey::from_slice(kem_slice) else {
+            return 0;
+        };
+        hosts.push((overlay, kem));
+    }
+    let mut rid = [0u8; 32];
+    std::ptr::copy_nonoverlapping(recv_id, rid.as_mut_ptr(), 32);
+    let Some(sk) = secret_from_ptr(recv_sk) else {
+        return 0;
+    };
+    match ffi_catch(|| rt.block_on((*client).inner.fetch_erasure(&hosts, k, rid, &sk))) {
+        Some(Ok(Some(ct))) => {
+            if ct.len() > out_cap {
+                return ct.len();
+            }
+            std::ptr::copy_nonoverlapping(ct.as_ptr(), out, ct.len());
+            ct.len()
+        },
+        _ => 0,
+    }
+}
+
 impl MtPostman {
     pub(crate) fn muq(&self) -> &Arc<MuqState> {
         &self.muq
