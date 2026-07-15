@@ -80,8 +80,9 @@ impl MuqClient {
         host_overlay: OverlayAddr,
         host_kem_pk: &MlkemPublicKey,
         recv_id: QueueId,
+        recv_sk: &SecretKey,
     ) -> Result<bool, ClientError> {
-        muq_ack_via_courier(&self.conn, host_overlay, host_kem_pk, recv_id).await
+        muq_ack_via_courier(&self.conn, host_overlay, host_kem_pk, recv_id, recv_sk).await
     }
 
     /// DEV-049(b) §201/§508: RS(k,n) фан-аут — дробит `ct` на `n` осколков и депонирует
@@ -234,8 +235,17 @@ pub(crate) async fn muq_ack_via_courier(
     host_overlay: OverlayAddr,
     host_kem_pk: &MlkemPublicKey,
     recv_id: QueueId,
+    recv_sk: &SecretKey,
 ) -> Result<bool, ClientError> {
-    let sealed = seal_to(host_kem_pk, &recv_id).map_err(|_| ClientError::Rejected)?;
+    // DEV-049(a): ack аутентифицирован как выборка — host-issued nonce + recv_key-подпись.
+    let nonce = muq_request_nonce_via_courier(conn, host_overlay, host_kem_pk, recv_id).await?;
+    let sig = sign_subscribe_relay(recv_sk, &recv_id, &nonce)?;
+    let sub = QueueSubscribe {
+        recv_id,
+        nonce,
+        sig: *sig.as_bytes(),
+    };
+    let sealed = seal_to(host_kem_pk, &sub.to_bytes()).map_err(|_| ClientError::Rejected)?;
     let pf = ProxyForward {
         host_addr: host_overlay,
         sealed,

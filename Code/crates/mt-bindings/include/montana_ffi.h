@@ -237,6 +237,18 @@ uintptr_t mt_client_recv(const MtClient *client,
                          uintptr_t out_cap);
 
 /**
+ * Подтвердить приём (DEV-049(a) §593): хост дропает буфер очереди recv_id. 0 = успех.
+ *
+ * # Safety
+ * `client` валиден; `host_overlay`→32; `host_kem`→1184; `recv_id`→32; `recv_sk`→4032.
+ */
+int32_t mt_client_ack(const MtClient *client,
+                      const uint8_t *host_overlay,
+                      const uint8_t *host_kem,
+                      const uint8_t *recv_id,
+                      const uint8_t *recv_sk);
+
+/**
  * Тип deep-link montana://: 0 = bootstrap-payload (montana://b/...), 1 = wallet-адрес
  * (montana://mt...), -1 = ошибка разбора.
  *

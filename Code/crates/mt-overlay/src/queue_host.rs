@@ -40,6 +40,9 @@ pub enum SubscribeError {
 /// anti-fan-out (без денег). recv_id анонимен (не identity), поэтому потолок глобальный
 /// по узлу-хосту за окно; массовое размножение очередей замедлено временем.
 pub const MAX_REGISTRATIONS_PER_WINDOW: u32 = 1024;
+/// DEV-050(c): потолок невыбранных host-issued nonce на recv_id — граница памяти против
+/// флуда issue-без-subscribe. При переполнении старые сбрасываются (легитимен re-request).
+pub const MAX_ISSUED_NONCES: usize = 64;
 
 #[derive(Default)]
 pub struct QueueHost {
@@ -62,10 +65,11 @@ impl QueueHost {
     pub fn issue_nonce(&mut self, recv_id: &QueueId) -> crate::challenge::Nonce {
         let mut nonce = [0u8; crate::challenge::NONCE_SIZE];
         getrandom::getrandom(&mut nonce).expect("OS CSPRNG");
-        self.issued_nonces
-            .entry(*recv_id)
-            .or_default()
-            .insert(nonce);
+        let set = self.issued_nonces.entry(*recv_id).or_default();
+        if set.len() >= MAX_ISSUED_NONCES {
+            set.clear(); // граница памяти (флуд issue без subscribe)
+        }
+        set.insert(nonce);
         nonce
     }
 
@@ -173,11 +177,33 @@ impl QueueHost {
         Ok(self.buffer_of(recv_id))
     }
 
-    /// DEV-049(a) §593: получатель подтвердил приём (E2E delivery-receipt) — хост
-    /// удаляет весь буфер очереди. Drop происходит ТОЛЬКО по подтверждению B, не по
-    /// отправке курьеру (транзит переживает падение курьер→B).
-    pub fn ack_drain(&mut self, recv_id: &QueueId) {
+    /// DEV-049(a) §593: получатель подтвердил приём — хост удаляет буфер очереди. Drop
+    /// ТОЛЬКО по подтверждению B (не по отправке курьеру). Аутентифицирован как выборка:
+    /// recv_key-подпись над host-issued nonce — украденный/поддельный ack (только recv_id)
+    /// не дропает чужой буфер.
+    pub fn ack_drain(
+        &mut self,
+        recv_id: &QueueId,
+        nonce: &crate::challenge::Nonce,
+        sig: &Signature,
+    ) -> bool {
+        let recv_pubkey = match self.queues.get(recv_id) {
+            Some(q) => q.recv_pubkey,
+            None => return false,
+        };
+        if !verify_subscribe(&recv_pubkey, recv_id, nonce, &RELAY_CHANNEL_MARKER, sig) {
+            return false;
+        }
+        let issued = self
+            .issued_nonces
+            .get_mut(recv_id)
+            .map(|set| set.remove(nonce))
+            .unwrap_or(false);
+        if !issued {
+            return false;
+        }
         self.buffer.remove(recv_id);
+        true
     }
 
     pub fn drop_delivered(&mut self, recv_id: &QueueId, msg_id: &MsgId) {

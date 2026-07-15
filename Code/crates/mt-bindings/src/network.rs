@@ -419,13 +419,14 @@ pub unsafe extern "C" fn mt_client_recv(
 /// Подтвердить приём (DEV-049(a) §593): хост дропает буфер очереди recv_id. 0 = успех.
 ///
 /// # Safety
-/// `client` валиден; `host_overlay`→32; `host_kem`→1184; `recv_id`→32.
+/// `client` валиден; `host_overlay`→32; `host_kem`→1184; `recv_id`→32; `recv_sk`→4032.
 #[no_mangle]
 pub unsafe extern "C" fn mt_client_ack(
     client: *const MtClient,
     host_overlay: *const u8,
     host_kem: *const u8,
     recv_id: *const u8,
+    recv_sk: *const u8,
 ) -> i32 {
     if client.is_null() || host_overlay.is_null() || host_kem.is_null() || recv_id.is_null() {
         return -1;
@@ -441,7 +442,10 @@ pub unsafe extern "C" fn mt_client_ack(
     };
     let mut rid = [0u8; 32];
     std::ptr::copy_nonoverlapping(recv_id, rid.as_mut_ptr(), 32);
-    match ffi_catch(|| rt.block_on((*client).inner.ack_via_courier(overlay, &kem, rid))) {
+    let Some(sk) = secret_from_ptr(recv_sk) else {
+        return -1;
+    };
+    match ffi_catch(|| rt.block_on((*client).inner.ack_via_courier(overlay, &kem, rid, &sk))) {
         Some(Ok(true)) => 0,
         _ => -1,
     }
@@ -738,7 +742,15 @@ mod tests {
 
         // DEV-049(a): подтверждаем приём — хост дропает буфер очереди
         assert_eq!(
-            unsafe { mt_client_ack(b2, host_overlay.as_ptr(), kem.as_ptr(), recv_id.as_ptr()) },
+            unsafe {
+                mt_client_ack(
+                    b2,
+                    host_overlay.as_ptr(),
+                    kem.as_ptr(),
+                    recv_id.as_ptr(),
+                    recv_sk.as_bytes().as_ptr(),
+                )
+            },
             0
         );
         // 4-й recv — очередь опустошена

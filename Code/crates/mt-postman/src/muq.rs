@@ -432,18 +432,24 @@ async fn handle_relay_ack(
     state: &Arc<MuqState>,
 ) -> Result<(), WireError> {
     let sealed = recv_frame(&mut recv).await?;
-    let ack = match open_from(&state.host_kem_sk, &sealed) {
-        Ok(b) if b.len() == 32 => {
-            let mut rid = [0u8; 32];
-            rid.copy_from_slice(&b);
-            state
+    let ack = match open_from(&state.host_kem_sk, &sealed)
+        .ok()
+        .and_then(|b| QueueSubscribe::decode(&b).ok())
+    {
+        Some(sub) => {
+            let sig = Signature::from_array(sub.sig);
+            let ok = state
                 .host
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .ack_drain(&rid);
-            OK
+                .ack_drain(&sub.recv_id, &sub.nonce, &sig);
+            if ok {
+                OK
+            } else {
+                ERR
+            }
         },
-        _ => ERR,
+        None => ERR,
     };
     write_fixed(&mut send, &[ack]).await?;
     let _ = send.finish();
