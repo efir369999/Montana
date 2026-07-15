@@ -395,7 +395,7 @@ impl SessionState {
             let pt = pt.ok_or(RatchetError::Decrypt)?;
             let (_, _, mut used) = self.mkskipped.remove(idx);
             used.zeroize();
-            return Ok(unpad_message(pt)?);
+            return unpad_message(pt);
         }
 
         let is_kem_step = match &self.dhr {
@@ -469,6 +469,6 @@ impl SessionState {
         while self.mkskipped.len() > MAX_MKSKIPPED {
             self.mkskipped.remove(0);
         }
-        Ok(unpad_message(pt)?)
+        unpad_message(pt)
     }
 }
