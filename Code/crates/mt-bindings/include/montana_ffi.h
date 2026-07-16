@@ -738,4 +738,13 @@ int32_t mt_muq_gen_queue_id(uint8_t *out);
  */
 int32_t mt_node_hello(const char *addr, uint8_t *out_kem, uint8_t *out_send_id);
 
+
+// Этап 1 второго фронта — локальный архив «Монтана/Чаты/<чат>/»
+int32_t mt_archive_append(const char *base_path, const char *chat_name,
+                          const uint8_t *hk, const uint8_t *account_id,
+                          uint64_t block_seq, const uint8_t *conv_id, uint8_t dir,
+                          uint64_t send_time, const uint8_t *content, size_t content_len);
+int32_t mt_archive_put_media(const char *base_path, const char *chat_name,
+                             const char *blob_id_hex, const uint8_t *blob, size_t blob_len);
+
 #endif  /* MONTANA_FFI_H */

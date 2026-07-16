@@ -81,6 +81,7 @@ pub const MT_ERR_KDF_FAILED: i32 = -10;
 pub const MT_ERR_ADDRESS_INVALID: i32 = -13;
 pub const MT_ERR_KEM_FAILED: i32 = -11;
 pub const MT_ERR_REPLAY: i32 = -12;
+pub const MT_ERR_IO: i32 = -14;
 pub const MT_ERR_PANIC: i32 = -100;
 
 #[inline]

@@ -476,3 +476,121 @@ pub unsafe extern "C" fn mt_history_key(entropy: *const u8, out: *mut u8) -> c_i
         MT_OK
     })
 }
+
+// ═══ Этап 1 второго фронта — локальный архив «Монтана/Чаты/<чат>/» ═══
+
+/// Дописать одно сообщение в локальный архив: <base>/Чаты/<chat>/переписка.mtlog,
+/// sealed под history_key (Rust делает encode+seal+файл). base = папка «Монтана» приложения.
+///
+/// # Safety
+/// `hk`/`account_id`/`conv_id` → 32 B; строки — валидный UTF-8 C-string; `content` → `content_len` B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_append(
+    base_path: *const c_char,
+    chat_name: *const c_char,
+    hk: *const u8,
+    account_id: *const u8,
+    block_seq: u64,
+    conv_id: *const u8,
+    dir: u8,
+    send_time: u64,
+    content: *const u8,
+    content_len: usize,
+) -> c_int {
+    guard(|| {
+        if base_path.is_null()
+            || chat_name.is_null()
+            || hk.is_null()
+            || account_id.is_null()
+            || conv_id.is_null()
+            || (content.is_null() && content_len != 0)
+        {
+            return crate::MT_ERR_NULL_PTR;
+        }
+        let base = match CStr::from_ptr(base_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let chat = match CStr::from_ptr(chat_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let mut hk32 = [0u8; 32];
+        hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
+        let mut acct = [0u8; 32];
+        acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let mut conv = [0u8; 32];
+        conv.copy_from_slice(slice::from_raw_parts(conv_id, 32));
+        let body = if content_len == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(content, content_len).to_vec()
+        };
+        let block = mt_messenger_e2e::archive::HistoryBlock {
+            block_seq,
+            items: vec![mt_messenger_e2e::archive::HistoryItem {
+                conv_id: conv,
+                dir,
+                send_time,
+                content: body,
+            }],
+        };
+        let sealed = mt_messenger_e2e::archive::seal_block(&hk32, &acct, &block);
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        match store.append_block(chat, &sealed) {
+            Ok(()) => crate::MT_OK,
+            Err(_) => crate::MT_ERR_IO,
+        }
+    })
+}
+
+/// Положить медиа-блоб: <base>/Чаты/<chat>/Медиа/<blob_id_hex>.
+///
+/// # Safety
+/// строки — валидный UTF-8 C-string; `blob` → `blob_len` B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_put_media(
+    base_path: *const c_char,
+    chat_name: *const c_char,
+    blob_id_hex: *const c_char,
+    blob: *const u8,
+    blob_len: usize,
+) -> c_int {
+    guard(|| {
+        if base_path.is_null()
+            || chat_name.is_null()
+            || blob_id_hex.is_null()
+            || (blob.is_null() && blob_len != 0)
+        {
+            return crate::MT_ERR_NULL_PTR;
+        }
+        let base = match CStr::from_ptr(base_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let chat = match CStr::from_ptr(chat_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let bid = match CStr::from_ptr(blob_id_hex).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let data = if blob_len == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(blob, blob_len).to_vec()
+        };
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        match store.put_media(chat, bid, &data) {
+            Ok(()) => crate::MT_OK,
+            Err(_) => crate::MT_ERR_IO,
+        }
+    })
+}
