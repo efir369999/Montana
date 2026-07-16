@@ -11,6 +11,7 @@
 //! - `contacts` — Этап 11: @имя-заявка, ключ контактов, ContactRecord/List.
 //! - `device_registry` — Этап 10: подписанный реестр устройств (мульти-девайс).
 
+pub mod archive;
 pub mod call;
 pub mod contacts;
 pub mod content;
