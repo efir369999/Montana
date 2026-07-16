@@ -477,6 +477,23 @@ pub unsafe extern "C" fn mt_history_key(entropy: *const u8, out: *mut u8) -> c_i
     })
 }
 
+/// media_key = HKDF-SHA-256(salt=0×32, ikm=entropy_32, info="mt-media-key", 32) — s.2 Этап 1.
+/// Отдельная ветвь сида для медиа at-rest (≠ history_key). `entropy`/`out` — 32 байта. SSOT для всех клиентов.
+#[no_mangle]
+pub unsafe extern "C" fn mt_media_key(entropy: *const u8, out: *mut u8) -> c_int {
+    guard(|| {
+        if entropy.is_null() || out.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let ent = slice::from_raw_parts(entropy, MT_HISTORY_KEY_LEN);
+        let prk = mt_mnemonic::hmac_sha256(&[0u8; 32], ent); // HKDF-Extract(salt=0×32, ikm=entropy)
+        let okm =
+            mt_mnemonic::hkdf_expand(&prk, mt_codec::domain::MSG_MEDIA_KEY, MT_HISTORY_KEY_LEN);
+        slice::from_raw_parts_mut(out, MT_HISTORY_KEY_LEN).copy_from_slice(&okm);
+        MT_OK
+    })
+}
+
 // ═══ Этап 1 второго фронта — локальный архив «Монтана/Чаты/<чат>/» ═══
 
 /// Дописать одно сообщение в локальный архив: <base>/Чаты/<chat>/переписка.mtlog,
@@ -490,7 +507,6 @@ pub unsafe extern "C" fn mt_archive_append(
     chat_name: *const c_char,
     hk: *const u8,
     account_id: *const u8,
-    block_seq: u64,
     conv_id: *const u8,
     dir: u8,
     send_time: u64,
@@ -526,22 +542,13 @@ pub unsafe extern "C" fn mt_archive_append(
         } else {
             slice::from_raw_parts(content, content_len).to_vec()
         };
-        let block = mt_messenger_e2e::archive::HistoryBlock {
-            block_seq,
-            items: vec![mt_messenger_e2e::archive::HistoryItem {
-                conv_id: conv,
-                dir,
-                send_time,
-                content: body,
-            }],
-        };
-        let sealed = mt_messenger_e2e::archive::seal_block(&hk32, &acct, &block);
         let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
             Ok(s) => s,
             Err(_) => return crate::MT_ERR_IO,
         };
-        match store.append_block(chat, &sealed) {
-            Ok(()) => crate::MT_OK,
+        // Ядро назначает сквозной block_seq per-личность (seq.bin) — клиент не передаёт seq (нет повтора nonce).
+        match store.append_item(chat, &hk32, &acct, &conv, dir, send_time, &body) {
+            Ok(_seq) => crate::MT_OK,
             Err(_) => crate::MT_ERR_IO,
         }
     })
@@ -563,19 +570,41 @@ pub unsafe extern "C" fn mt_archive_put_media(
     blob_len: usize,
 ) -> c_int {
     guard(|| {
-        if base_path.is_null() || chat_name.is_null() || blob_id_hex.is_null()
-            || hk.is_null() || account_id.is_null() || (blob.is_null() && blob_len != 0)
+        if base_path.is_null()
+            || chat_name.is_null()
+            || blob_id_hex.is_null()
+            || hk.is_null()
+            || account_id.is_null()
+            || (blob.is_null() && blob_len != 0)
         {
             return crate::MT_ERR_NULL_PTR;
         }
-        let base = match CStr::from_ptr(base_path).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
-        let chat = match CStr::from_ptr(chat_name).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
-        let bid = match CStr::from_ptr(blob_id_hex).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
-        let mut hk32 = [0u8; 32]; hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
-        let mut acct = [0u8; 32]; acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
-        let data = if blob_len == 0 { Vec::new() } else { slice::from_raw_parts(blob, blob_len).to_vec() };
-        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) { Ok(s) => s, Err(_) => return crate::MT_ERR_IO };
-        match store.put_media(chat, bid, &hk32, &acct, &data) {
+        let base = match CStr::from_ptr(base_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let chat = match CStr::from_ptr(chat_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let bid = match CStr::from_ptr(blob_id_hex).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let mut mk32 = [0u8; 32];
+        mk32.copy_from_slice(slice::from_raw_parts(hk, 32)); // media_key
+        let mut acct = [0u8; 32];
+        acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let data = if blob_len == 0 {
+            Vec::new()
+        } else {
+            slice::from_raw_parts(blob, blob_len).to_vec()
+        };
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        match store.put_media(chat, bid, &mk32, &acct, &data) {
             Ok(()) => crate::MT_OK,
             Err(_) => crate::MT_ERR_IO,
         }
@@ -598,23 +627,43 @@ pub unsafe extern "C" fn mt_archive_get_media(
     out_cap: usize,
 ) -> isize {
     let r = guard(|| {
-        if base_path.is_null() || chat_name.is_null() || blob_id_hex.is_null()
-            || hk.is_null() || account_id.is_null() || (out.is_null() && out_cap != 0)
+        if base_path.is_null()
+            || chat_name.is_null()
+            || blob_id_hex.is_null()
+            || hk.is_null()
+            || account_id.is_null()
+            || (out.is_null() && out_cap != 0)
         {
             return crate::MT_ERR_NULL_PTR;
         }
-        let base = match CStr::from_ptr(base_path).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
-        let chat = match CStr::from_ptr(chat_name).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
-        let bid = match CStr::from_ptr(blob_id_hex).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
-        let mut hk32 = [0u8; 32]; hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
-        let mut acct = [0u8; 32]; acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
-        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) { Ok(s) => s, Err(_) => return crate::MT_ERR_IO };
-        match store.get_media(chat, bid, &hk32, &acct) {
+        let base = match CStr::from_ptr(base_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let chat = match CStr::from_ptr(chat_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let bid = match CStr::from_ptr(blob_id_hex).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let mut mk32 = [0u8; 32];
+        mk32.copy_from_slice(slice::from_raw_parts(hk, 32)); // media_key
+        let mut acct = [0u8; 32];
+        acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        match store.get_media(chat, bid, &mk32, &acct) {
             Some(pt) => {
-                if pt.len() > out_cap { return crate::MT_ERR_BUFFER_TOO_SMALL; }
+                if pt.len() > out_cap {
+                    return crate::MT_ERR_BUFFER_TOO_SMALL;
+                }
                 slice::from_raw_parts_mut(out, pt.len()).copy_from_slice(&pt);
                 pt.len() as i32
-            }
+            },
             None => crate::MT_ERR_IO,
         }
     });

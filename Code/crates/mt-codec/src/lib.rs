@@ -111,6 +111,8 @@ pub mod domain {
     pub const MSG_AUTH: &[u8] = b"mt-auth"; // подпись сессионного nonce (Этап 2)
     pub const MSG_HISTORY_KEY: &[u8] = b"mt-history-key"; // HKDF info для history_key (Этап 10)
     pub const MSG_HISTORY: &[u8] = b"mt-history"; // AD блоков истории (Этап 10)
+    pub const MSG_MEDIA_KEY: &[u8] = b"mt-media-key"; // HKDF info для media_key (s.2 Этап 1)
+    pub const MSG_MEDIA_VAULT: &[u8] = b"mt-media-vault"; // AD медиа at-rest vault (s.2 Этап 1)
     pub const MSG_DEVICE_LINK: &[u8] = b"montana-link"; // обёртка ключа при QR-привязке устройства
 }
 

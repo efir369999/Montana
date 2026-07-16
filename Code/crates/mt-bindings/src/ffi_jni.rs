@@ -403,6 +403,29 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeHistoryKey<'local
     }
 }
 
+/// media_key = HKDF-SHA256(0×32, entropy_32, "mt-media-key", 32) → byte[32]. SSOT (≠ history_key).
+#[no_mangle]
+pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMediaKey<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    entropy: JByteArray<'local>,
+) -> jbyteArray {
+    let null = std::ptr::null_mut();
+    let ent = match env.convert_byte_array(entropy) {
+        Ok(b) => b,
+        Err(_) => return null,
+    };
+    if ent.len() != super::MT_HISTORY_KEY_LEN {
+        return null;
+    }
+    let prk = hmac_sha256(&[0u8; 32], &ent);
+    let okm = hkdf_expand(&prk, domain::MSG_MEDIA_KEY, super::MT_HISTORY_KEY_LEN);
+    match env.byte_array_from_slice(&okm) {
+        Ok(arr) => arr.into_raw(),
+        Err(_) => null,
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Движок E2E (KEM-храповик) — зеркало ffi_e2e.rs. Мульти-выход через cat_lp.
 // ─────────────────────────────────────────────────────────────────────────────
