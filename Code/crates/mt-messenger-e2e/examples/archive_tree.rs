@@ -37,7 +37,7 @@ fn main() {
             st.append_block(chat, &seal_block(&hk, &acct, &block))
                 .unwrap();
         }
-        st.put_media(chat, "6c385ae2ef1c472b_demo.jpg", b"demo-media-bytes")
+        st.put_media(chat, "6c385ae2ef1c472b_demo.jpg", &hk, &acct, b"demo-media-bytes")
             .unwrap();
     }
     println!("Дерево создано в: {base}");

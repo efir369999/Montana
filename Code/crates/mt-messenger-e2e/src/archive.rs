@@ -134,6 +134,40 @@ pub fn open_block(
     Some(block)
 }
 
+pub const MEDIA_AD: &[u8] = b"mt-media-vault";
+
+fn media_ad(account_id: &[u8; 32]) -> Vec<u8> {
+    let mut ad = MEDIA_AD.to_vec();
+    ad.push(0x00);
+    ad.extend_from_slice(account_id);
+    ad
+}
+
+fn media_nonce(blob_id_hex: &str) -> [u8; 12] {
+    let h: [u8; 32] = Sha256::digest(blob_id_hex.as_bytes()).into();
+    let mut n = [0u8; 12];
+    n.copy_from_slice(&h[..12]);
+    n
+}
+
+pub fn seal_media(history_key: &[u8; 32], account_id: &[u8; 32], blob_id_hex: &str, plaintext: &[u8]) -> Vec<u8> {
+    let nonce = media_nonce(blob_id_hex);
+    let ct = seal(history_key, &nonce, plaintext, &media_ad(account_id));
+    let mut out = Vec::with_capacity(12 + ct.len());
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&ct);
+    out
+}
+
+pub fn open_media(history_key: &[u8; 32], account_id: &[u8; 32], sealed: &[u8]) -> Option<Vec<u8>> {
+    if sealed.len() < 12 {
+        return None;
+    }
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&sealed[..12]);
+    open(history_key, &nonce, &sealed[12..], &media_ad(account_id))
+}
+
 pub fn sealed_block_id(sealed: &[u8]) -> [u8; 32] {
     Sha256::digest(sealed).into()
 }
@@ -213,10 +247,33 @@ impl ArchiveStore {
     }
 
     /// Положить медиа-блоб: <base>/Чаты/<имя>/Медиа/<blob_id_hex>.
-    pub fn put_media(&self, chat_name: &str, blob_id_hex: &str, blob: &[u8]) -> io::Result<()> {
+    /// Зашифровать медиа под history_key и положить в <base>/Чаты/<имя>/Медиа/<blob_id>.
+    /// Другие приложения видят только шифртекст; расшифровывает только клиент по сиду.
+    pub fn put_media(
+        &self,
+        chat_name: &str,
+        blob_id_hex: &str,
+        history_key: &[u8; 32],
+        account_id: &[u8; 32],
+        plaintext: &[u8],
+    ) -> io::Result<()> {
         let mdir = self.chat_dir(chat_name).join(MEDIA_DIR);
         fs::create_dir_all(&mdir)?;
-        fs::write(mdir.join(sanitize(blob_id_hex)), blob)
+        let sealed = seal_media(history_key, account_id, blob_id_hex, plaintext);
+        fs::write(mdir.join(sanitize(blob_id_hex)), sealed)
+    }
+
+    /// Прочитать и расшифровать медиа. None если нет файла либо расшифровка не прошла.
+    pub fn get_media(
+        &self,
+        chat_name: &str,
+        blob_id_hex: &str,
+        history_key: &[u8; 32],
+        account_id: &[u8; 32],
+    ) -> Option<Vec<u8>> {
+        let path = self.chat_dir(chat_name).join(MEDIA_DIR).join(sanitize(blob_id_hex));
+        let sealed = fs::read(path).ok()?;
+        open_media(history_key, account_id, &sealed)
     }
 
     pub fn media_path(&self, chat_name: &str, blob_id_hex: &str) -> PathBuf {
@@ -321,7 +378,7 @@ mod tests {
 
         let sealed = seal_block(&hk, &acct, &sample_block());
         st.append_block("Алиса", &sealed).unwrap();
-        st.put_media("Алиса", "6c385ae2blob", b"\x89PNG demo")
+        st.put_media("Алиса", "6c385ae2blob", &hk, &acct, b"\x89PNG demo")
             .unwrap();
 
         // иерархия появилась

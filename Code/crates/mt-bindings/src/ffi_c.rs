@@ -547,50 +547,76 @@ pub unsafe extern "C" fn mt_archive_append(
     })
 }
 
-/// Положить медиа-блоб: <base>/Чаты/<chat>/Медиа/<blob_id_hex>.
+/// Зашифровать медиа под history_key и положить в <base>/Чаты/<chat>/Медиа/<blob_id_hex>.
+/// Другие приложения видят только шифртекст; расшифровывает только клиент по сиду.
 ///
 /// # Safety
-/// строки — валидный UTF-8 C-string; `blob` → `blob_len` B.
+/// строки — валидный UTF-8 C-string; `hk`/`account_id` → 32 B; `blob` → `blob_len` B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_archive_put_media(
     base_path: *const c_char,
     chat_name: *const c_char,
     blob_id_hex: *const c_char,
+    hk: *const u8,
+    account_id: *const u8,
     blob: *const u8,
     blob_len: usize,
 ) -> c_int {
     guard(|| {
-        if base_path.is_null()
-            || chat_name.is_null()
-            || blob_id_hex.is_null()
-            || (blob.is_null() && blob_len != 0)
+        if base_path.is_null() || chat_name.is_null() || blob_id_hex.is_null()
+            || hk.is_null() || account_id.is_null() || (blob.is_null() && blob_len != 0)
         {
             return crate::MT_ERR_NULL_PTR;
         }
-        let base = match CStr::from_ptr(base_path).to_str() {
-            Ok(s) => s,
-            Err(_) => return crate::MT_ERR_INVALID_UTF8,
-        };
-        let chat = match CStr::from_ptr(chat_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return crate::MT_ERR_INVALID_UTF8,
-        };
-        let bid = match CStr::from_ptr(blob_id_hex).to_str() {
-            Ok(s) => s,
-            Err(_) => return crate::MT_ERR_INVALID_UTF8,
-        };
-        let data = if blob_len == 0 {
-            Vec::new()
-        } else {
-            slice::from_raw_parts(blob, blob_len).to_vec()
-        };
-        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
-            Ok(s) => s,
-            Err(_) => return crate::MT_ERR_IO,
-        };
-        match store.put_media(chat, bid, &data) {
+        let base = match CStr::from_ptr(base_path).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
+        let chat = match CStr::from_ptr(chat_name).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
+        let bid = match CStr::from_ptr(blob_id_hex).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
+        let mut hk32 = [0u8; 32]; hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
+        let mut acct = [0u8; 32]; acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let data = if blob_len == 0 { Vec::new() } else { slice::from_raw_parts(blob, blob_len).to_vec() };
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) { Ok(s) => s, Err(_) => return crate::MT_ERR_IO };
+        match store.put_media(chat, bid, &hk32, &acct, &data) {
             Ok(()) => crate::MT_OK,
             Err(_) => crate::MT_ERR_IO,
         }
     })
+}
+
+/// Прочитать и расшифровать медиа. Возвращает длину plaintext (>=0) либо код ошибки (<0).
+/// `out_cap` мал → MT_ERR_BUFFER_TOO_SMALL; файла нет / расшифровка не прошла → MT_ERR_IO.
+///
+/// # Safety
+/// строки — валидный UTF-8; `hk`/`account_id` → 32 B; `out` → `out_cap` B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_get_media(
+    base_path: *const c_char,
+    chat_name: *const c_char,
+    blob_id_hex: *const c_char,
+    hk: *const u8,
+    account_id: *const u8,
+    out: *mut u8,
+    out_cap: usize,
+) -> isize {
+    let r = guard(|| {
+        if base_path.is_null() || chat_name.is_null() || blob_id_hex.is_null()
+            || hk.is_null() || account_id.is_null() || (out.is_null() && out_cap != 0)
+        {
+            return crate::MT_ERR_NULL_PTR;
+        }
+        let base = match CStr::from_ptr(base_path).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
+        let chat = match CStr::from_ptr(chat_name).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
+        let bid = match CStr::from_ptr(blob_id_hex).to_str() { Ok(s) => s, Err(_) => return crate::MT_ERR_INVALID_UTF8 };
+        let mut hk32 = [0u8; 32]; hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
+        let mut acct = [0u8; 32]; acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) { Ok(s) => s, Err(_) => return crate::MT_ERR_IO };
+        match store.get_media(chat, bid, &hk32, &acct) {
+            Some(pt) => {
+                if pt.len() > out_cap { return crate::MT_ERR_BUFFER_TOO_SMALL; }
+                slice::from_raw_parts_mut(out, pt.len()).copy_from_slice(&pt);
+                pt.len() as i32
+            }
+            None => crate::MT_ERR_IO,
+        }
+    });
+    r as isize
 }

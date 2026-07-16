@@ -745,6 +745,10 @@ int32_t mt_archive_append(const char *base_path, const char *chat_name,
                           uint64_t block_seq, const uint8_t *conv_id, uint8_t dir,
                           uint64_t send_time, const uint8_t *content, size_t content_len);
 int32_t mt_archive_put_media(const char *base_path, const char *chat_name,
-                             const char *blob_id_hex, const uint8_t *blob, size_t blob_len);
+                             const char *blob_id_hex, const uint8_t *hk, const uint8_t *account_id,
+                             const uint8_t *blob, size_t blob_len);
+intptr_t mt_archive_get_media(const char *base_path, const char *chat_name,
+                              const char *blob_id_hex, const uint8_t *hk, const uint8_t *account_id,
+                              uint8_t *out, size_t out_cap);
 
 #endif  /* MONTANA_FFI_H */
