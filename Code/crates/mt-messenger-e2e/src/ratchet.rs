@@ -1,17 +1,17 @@
-//! Этап 6 — двойной храповик (KEM-храповик на ML-KEM-768).
-//! Симметричные шаги цепочки (HMAC), корневой KEM-шаг (HKDF), AEAD сообщения
-//! (ChaCha20-Poly1305, RFC 8439). Байт-точно по spec «Функции деривации».
+//! Stage 6 — double ratchet (KEM ratchet over ML-KEM-768).
+//! Symmetric chain steps (HMAC), root KEM step (HKDF), AEAD messages
+//! (ChaCha20-Poly1305, RFC 8439). Byte-exact per spec "Derivation functions".
 
 use crate::kdf::{hkdf_sha256, hmac_sha256};
 
 pub const MLKEM_PUBKEY_SIZE: usize = 1184;
 
-/// Симметричный шаг цепочки: (MK, CK').
+/// Symmetric chain step: (MK, CK').
 pub fn kdf_ck(ck: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     (hmac_sha256(ck, &[0x01]), hmac_sha256(ck, &[0x02]))
 }
 
-/// Корневой/KEM-шаг: (RK', CK) = HKDF(salt=RK, IKM=ss, info="mt-ratchet-rk", 64).
+/// Root/KEM step: (RK', CK) = HKDF(salt=RK, IKM=ss, info="mt-ratchet-rk", 64).
 pub fn kdf_rk(rk: &[u8; 32], ss: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     let okm = hkdf_sha256(rk, ss, b"mt-ratchet-rk", 64);
     let mut a = [0u8; 32];
@@ -21,7 +21,7 @@ pub fn kdf_rk(rk: &[u8; 32], ss: &[u8; 32]) -> ([u8; 32], [u8; 32]) {
     (a, b)
 }
 
-/// Ключ+нонс AEAD: HKDF(salt=0×32, IKM=MK, info="mt-ratchet-msg", 44).
+/// AEAD key+nonce: HKDF(salt=0×32, IKM=MK, info="mt-ratchet-msg", 44).
 pub fn msg_key(mk: &[u8; 32]) -> ([u8; 32], [u8; 12]) {
     let okm = hkdf_sha256(&[0u8; 32], mk, b"mt-ratchet-msg", 44);
     let mut k = [0u8; 32];

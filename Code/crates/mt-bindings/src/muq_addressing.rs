@@ -1,16 +1,16 @@
-//! FFI слой адресации MUQ: деривация ключей очереди, сериализация Queue, генерация id.
-//! Дополняет транспортные глаголы (network.rs) слоем адресации клиента-приложения:
-//! приложение строит очередь (recv/send id + ключи), сериализует для register, генерит id.
-//! SSOT логики — mt_overlay::muq (derive_queue_keypairs, Queue::to_bytes); здесь FFI-обёртка.
+//! MUQ addressing FFI layer: queue key derivation, Queue serialization, id generation.
+//! Complements the transport verbs (network.rs) with an application-client addressing layer:
+//! the application builds a queue (recv/send id + keys), serializes it for register, generates id.
+//! Logic SSOT is mt_overlay::muq (derive_queue_keypairs, Queue::to_bytes); this is the FFI wrapper.
 
 use mt_crypto::{PUBLIC_KEY_SIZE, SECRET_KEY_SIZE};
 use mt_overlay::muq::{derive_queue_keypairs, Queue, QUEUE_ID_SIZE, QUEUE_WIRE_SIZE};
 
-/// Деривация ключей очереди из routing_secret(32)+queue_index — recv/send ML-DSA keypairs.
-/// out_recv_pk[1952] out_recv_sk[4032] out_send_pk[1952] out_send_sk[4032]. 0=успех, -1=ошибка.
+/// Derive queue keys from routing_secret(32)+queue_index — recv/send ML-DSA keypairs.
+/// out_recv_pk[1952] out_recv_sk[4032] out_send_pk[1952] out_send_sk[4032]. 0=success, -1=error.
 ///
 /// # Safety
-/// routing_secret → 32 B; out_* — валидные буферы на указанные размеры.
+/// routing_secret → 32 B; out_* — valid buffers of the specified sizes.
 #[no_mangle]
 pub unsafe extern "C" fn mt_muq_derive_queue_keys(
     routing_secret: *const u8,
@@ -40,11 +40,11 @@ pub unsafe extern "C" fn mt_muq_derive_queue_keys(
     0
 }
 
-/// Сериализация Queue (wire §413) для регистрации. send_pk null = unsecured-очередь.
-/// Возврат: записанные байты (QUEUE_WIRE_SIZE) или 0 при ошибке/малом буфере.
+/// Serialize Queue (wire §413) for registration. send_pk null = unsecured queue.
+/// Returns: bytes written (QUEUE_WIRE_SIZE) or 0 on error / insufficient buffer.
 ///
 /// # Safety
-/// recv_id/send_id/recv_pk → 32/32/1952; send_pk → 1952 или null; out → out_cap байт.
+/// recv_id/send_id/recv_pk → 32/32/1952; send_pk → 1952 or null; out → out_cap bytes.
 #[no_mangle]
 pub unsafe extern "C" fn mt_muq_queue_serialize(
     recv_id: *const u8,
@@ -91,10 +91,10 @@ pub unsafe extern "C" fn mt_muq_queue_serialize(
     bytes.len()
 }
 
-/// Случайный QueueId (32 B, OS CSPRNG) — recv_id либо send_id. 0=успех, -1=ошибка.
+/// Random QueueId (32 B, OS CSPRNG) — recv_id or send_id. 0=success, -1=error.
 ///
 /// # Safety
-/// out — валиден на 32 байта.
+/// out — valid for 32 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn mt_muq_gen_queue_id(out: *mut u8) -> i32 {
     if out.is_null() {

@@ -1,5 +1,5 @@
-//! Криптографические KDF-примитивы (spec Этап 5-7). Чистый HMAC/HKDF-SHA-256 →
-//! кросс-платформенно байт-идентично. RFC 5869 (HKDF), RFC 2104 (HMAC).
+//! Cryptographic KDF primitives (spec Stage 5-7). Pure HMAC/HKDF-SHA-256 →
+//! cross-platform byte-identical. RFC 5869 (HKDF), RFC 2104 (HMAC).
 
 use sha2::{Digest, Sha256};
 

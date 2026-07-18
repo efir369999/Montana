@@ -1,13 +1,13 @@
-//! Этап 8 — сверка отпечатка личности (safety number).
-//! party_code: account_id (32 B) → 30 десятичных цифр (итер. SHA-256, ITER=5200).
-//! safety_number: симметричный 60-значный отпечаток пары. Байт-точно по spec «Отпечаток».
+//! Stage 8 — identity fingerprint verification (safety number).
+//! party_code: account_id (32 B) → 30 decimal digits (iterated SHA-256, ITER=5200).
+//! safety_number: symmetric 60-digit fingerprint of the pair. Byte-exact per spec "Fingerprint".
 
 use sha2::{Digest, Sha256};
 
 pub const SAFETY_ITER: u32 = 5200;
 
-/// party_code(account_id) = 30 цифр: h = SHA-256^ITER("mt-safety"‖0x00‖account_id),
-/// 6 групп по big-endian uint40(h[5k..5k+5]) mod 100000, каждая 5 цифр.
+/// party_code(account_id) = 30 digits: h = SHA-256^ITER("mt-safety"‖0x00‖account_id),
+/// 6 groups of big-endian uint40(h[5k..5k+5]) mod 100000, each 5 digits.
 pub fn party_code(account_id: &[u8; 32]) -> String {
     let mut init = b"mt-safety".to_vec();
     init.push(0u8);
@@ -28,8 +28,8 @@ pub fn party_code(account_id: &[u8; 32]) -> String {
     out
 }
 
-/// safety_number(id_A, id_B) = 60 цифр: party_code(lo)‖party_code(hi),
-/// (lo, hi) — сортировка по возрастанию как 32-байтные big-endian числа. Симметрично.
+/// safety_number(id_A, id_B) = 60 digits: party_code(lo)‖party_code(hi),
+/// (lo, hi) — ascending sort as 32-byte big-endian numbers. Symmetric.
 pub fn safety_number(a: &[u8; 32], b: &[u8; 32]) -> String {
     let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
     party_code(lo) + &party_code(hi)
@@ -53,7 +53,7 @@ mod tests {
             safety_number(&a, &b),
             "534333257869110355393448740858157809020367483198118535796002"
         );
-        // симметрия: порядок аргументов не влияет
+        // symmetry: argument order does not matter
         assert_eq!(safety_number(&a, &b), safety_number(&b, &a));
     }
 }

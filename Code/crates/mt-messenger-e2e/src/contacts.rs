@@ -1,6 +1,6 @@
-//! Этап 11 — контакты, @имя, поиск (канонические кодеки).
-//! Подпись заявки @имени, ключ контактов из сида, ContactRecord/ContactList.
-//! Разбор инвалид-безопасен (Gate 13): нарушение → None/Reject, НИКОГДА паника.
+//! Stage 11 — contacts, @username, search (canonical codecs).
+//! @username claim signature, contacts key from seed, ContactRecord/ContactList.
+//! Parsing is invalid-safe (Gate 13): violation → None/Reject, NEVER panic.
 
 use crate::kdf::hkdf_sha256;
 
@@ -9,7 +9,7 @@ pub const MAX_CONTACTS_BLOB: usize = 4 * 1024 * 1024;
 pub const USERNAME_MAX: usize = 32;
 pub const DISPLAY_MAX: usize = 64;
 
-/// Сообщение подписи заявки @имени: "mt-username"‖0x00‖username‖account_id.
+/// @username claim signature message: "mt-username"‖0x00‖username‖account_id.
 pub fn username_claim_message(username: &[u8], account_id: &[u8; 32]) -> Vec<u8> {
     let mut m = b"mt-username".to_vec();
     m.push(0x00);
@@ -18,7 +18,7 @@ pub fn username_claim_message(username: &[u8], account_id: &[u8; 32]) -> Vec<u8>
     m
 }
 
-/// Сообщение подписи освобождения @имени (отдельный домен — заявка не переигрывается):
+/// @username release signature message (separate domain — the claim is not replayed):
 /// "mt-username-release"‖0x00‖username‖account_id‖release_time_le8.
 pub fn username_release_message(
     username: &[u8],
@@ -68,7 +68,7 @@ pub fn encode_contact_record(r: &ContactRecord) -> Vec<u8> {
     o
 }
 
-/// Инвалид-безопасный разбор одной записи из позиции p; возвращает (record, next_p) или None.
+/// Invalid-safe parsing of one record from position p; returns (record, next_p) or None.
 pub fn decode_contact_record_at(b: &[u8], p: usize) -> Option<(ContactRecord, usize)> {
     let mut i = p;
     if b.len() < i + 34 {
@@ -117,7 +117,7 @@ pub fn decode_contact_record_at(b: &[u8], p: usize) -> Option<(ContactRecord, us
     ))
 }
 
-/// ContactList = list_version(0x01) ‖ count u16 LE ‖ [ContactRecord × count]. Инвалид-безопасно.
+/// ContactList = list_version(0x01) ‖ count u16 LE ‖ [ContactRecord × count]. Invalid-safe.
 pub fn decode_contact_list(b: &[u8]) -> Option<Vec<ContactRecord>> {
     if b.len() < 3 || b[0] != 0x01 {
         return None;
@@ -190,7 +190,7 @@ mod tests {
             hex::encode(&enc),
             "9f199584ed120b987b617ba5bff829e176f23e5465dd70cfac5c141dfb131a210105616c69636505416c696365e803000000000000"
         );
-        // round-trip через список
+        // round-trip through the list
         let list = encode_contact_list(std::slice::from_ref(&r));
         let back = decode_contact_list(&list).unwrap();
         assert_eq!(back, vec![r]);
@@ -198,13 +198,13 @@ mod tests {
 
     #[test]
     fn decode_rejects_malformed() {
-        // verified вне {0,1}
+        // verified outside {0,1}
         let mut bad = zero_acc().to_vec();
         bad.push(0x02);
         bad.extend_from_slice(&[0, 0]);
         bad.extend_from_slice(&1000u64.to_le_bytes());
         assert!(decode_contact_record_at(&bad, 0).is_none());
-        // username с недопустимым символом (пробел)
+        // username with an invalid character (space)
         let r = ContactRecord {
             account_id: zero_acc(),
             verified: false,
@@ -213,9 +213,9 @@ mod tests {
             added_at: 0,
         };
         assert!(decode_contact_record_at(&encode_contact_record(&r), 0).is_none());
-        // список короче header
+        // list shorter than header
         assert!(decode_contact_list(&[0x01, 0x05]).is_none());
-        // неверный list_version
+        // invalid list_version
         assert!(decode_contact_list(&[0x02, 0x00, 0x00]).is_none());
     }
 }

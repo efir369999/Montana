@@ -1,16 +1,16 @@
-//! Этап 12 — медиа: запечатанный блоб (content-addressed) + MediaRef (Content 0x05).
-//! Крупный контент не влезает в храповик (MAX_PLAINTEXT), поэтому шифруется отдельным
-//! блобом (сервер видит только шифр), а в храповик едет компактная ссылка MediaRef.
+//! Stage 12 — media: sealed blob (content-addressed) + MediaRef (Content 0x05).
+//! Large content does not fit into the ratchet (MAX_PLAINTEXT), so it is encrypted as a separate
+//! blob (the server sees only the ciphertext), while a compact MediaRef reference travels through the ratchet.
 
 use sha2::{Digest, Sha256};
 
 use crate::ratchet::{open, seal};
 
-/// AD блоба: "mt-media" (8 B) || 0x00.
+/// Blob AD: "mt-media" (8 B) || 0x00.
 pub const MEDIA_AD: &[u8] = b"mt-media\x00";
 
-pub const MAX_BLOB: u64 = 2_147_483_648; // 2 GiB — логический потолок файла
-pub const MAX_BLOB_CHUNK: usize = 16_777_216; // 16 MiB — единица заливки/аллокации/PoT
+pub const MAX_BLOB: u64 = 2_147_483_648; // 2 GiB — logical file ceiling
+pub const MAX_BLOB_CHUNK: usize = 16_777_216; // 16 MiB — upload/allocation/PoT unit
 pub const THUMB_MAX: usize = 16_384; // 16 KiB
 pub const BLOB_POT_STEPS: u32 = 1_048_576;
 
@@ -20,20 +20,20 @@ pub const MEDIA_FILE: u8 = 0x03;
 pub const MEDIA_AUDIO: u8 = 0x04;
 pub const MEDIA_STICKER: u8 = 0x05;
 
-/// pad_len(n): скрывает точный размер (overhead < 1/16). bit_length — позиция старшего бита.
+/// pad_len(n): hides the exact size (overhead < 1/16). bit_length — index of the most significant bit.
 pub fn pad_len(n: usize) -> usize {
     if n < 256 {
         return 256;
     }
     let bl = usize::BITS - n.leading_zeros(); // bit_length(n)
     let step = 1usize << (bl - 5);
-    // ceiling division (n + step - 1) / step — MSRV 1.70 (div_ceil стабилен лишь с 1.73);
-    // переполнение невозможно: n ≤ MAX_PLAINTEXT (1 MiB) ≪ usize::MAX - step
+    // ceiling division (n + step - 1) / step — MSRV 1.70 (div_ceil is stable only since 1.73);
+    // overflow is impossible: n ≤ MAX_PLAINTEXT (1 MiB) ≪ usize::MAX - step
     ((n + step - 1) / step) * step
 }
 
 /// sealed_blob = nonce || ChaCha20-Poly1305.Seal(blob_key, nonce, input, AD="mt-media"||0x00).
-/// `input` — уже финальный вход (в production паддится через pad_len до вызова; в KAT — сырой).
+/// `input` is the already-final input (in production it is padded via pad_len before the call; raw in KAT).
 pub fn seal_blob(blob_key: &[u8; 32], nonce: &[u8; 12], input: &[u8]) -> Vec<u8> {
     let body = seal(blob_key, nonce, input, MEDIA_AD);
     let mut out = Vec::with_capacity(12 + body.len());
@@ -42,12 +42,12 @@ pub fn seal_blob(blob_key: &[u8; 32], nonce: &[u8; 12], input: &[u8]) -> Vec<u8>
     out
 }
 
-/// blob_id = SHA-256(sealed_blob) — контент-адресация (целостность).
+/// blob_id = SHA-256(sealed_blob) — content addressing (integrity).
 pub fn blob_id(sealed_blob: &[u8]) -> [u8; 32] {
     Sha256::digest(sealed_blob).into()
 }
 
-/// Расшифровать блоб -> padded plaintext (вызывающий усекает до MediaRef.size).
+/// Decrypt the blob -> padded plaintext (the caller truncates to MediaRef.size).
 pub fn open_blob(blob_key: &[u8; 32], sealed_blob: &[u8]) -> Option<Vec<u8>> {
     if sealed_blob.len() < 12 {
         return None;
@@ -57,7 +57,7 @@ pub fn open_blob(blob_key: &[u8; 32], sealed_blob: &[u8]) -> Option<Vec<u8>> {
     open(blob_key, &nonce, &sealed_blob[12..], MEDIA_AD)
 }
 
-/// MediaRef — тело Content типа 0x05 (едет внутри храповика, E2E).
+/// MediaRef — the Content body of type 0x05 (travels inside the ratchet, E2E).
 /// content_type(0x05) || msg_id(16) || sent_at(u64 LE) || media_kind(1) || blob_id(32) ||
 /// blob_key(32) || size(u64 LE) || mime_len(1) || mime || name_len(1) || name || thumb_len(u16 LE) || thumb.
 #[allow(clippy::too_many_arguments)]
@@ -103,7 +103,7 @@ pub struct MediaRef {
     pub thumb: Vec<u8>,
 }
 
-/// Разбор Content 0x05 (не паникует; инварианты — из спеки Этапа 12).
+/// Parse Content 0x05 (does not panic; invariants from the Stage 12 spec).
 pub fn decode_media_content(b: &[u8]) -> Option<MediaRef> {
     let mut i = 0usize;
     let need = |i: usize, n: usize| -> Option<()> { (i + n <= b.len()).then_some(()) };
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn media_blob_kat() {
         let sealed = seal_blob(&[0x66; 32], &[0u8; 12], b"montana-media");
-        // sealed = nonce(12) || sealed_body(29); проверяем sealed_body и blob_id.
+        // sealed = nonce(12) || sealed_body(29); check sealed_body and blob_id.
         assert_eq!(
             hex(&sealed[12..]),
             "e26a877f209a12646c4e630e0a6705598d68389e621357aee335b7d636"

@@ -1,7 +1,7 @@
-//! Крипто-бэкенд движка с cfg-развилкой (SSOT: один движок в оба таргета).
+//! Engine crypto backend with cfg branching (SSOT: one engine for both targets).
 //! native → mt-crypto (OpenSSL FIPS); wasm → pure-Rust ml-dsa/ml-kem.
-//! API байт-ориентирован; секретные ключи — сырые байты (ML-KEM sk 2400, ML-DSA seed 32).
-//! Байт-идентичность бэкендов заперта кросс-бэкенд KAT (Этап 1).
+//! API is byte-oriented; secret keys are raw bytes (ML-KEM sk 2400, ML-DSA seed 32).
+//! Byte-identity of backends is locked by cross-backend KAT (Stage 1).
 
 pub const MLKEM_PUB: usize = 1184;
 pub const MLKEM_SK: usize = 2400;

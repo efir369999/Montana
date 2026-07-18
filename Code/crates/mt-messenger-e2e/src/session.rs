@@ -1,6 +1,6 @@
-//! Этап 6 — машина состояний двойного храповика (KEM-храповик на ML-KEM-768).
-//! Крипта — через crate::crypto (cfg-развилка). Приём — на пробной логике:
-//! состояние меняется только при успехе AEAD.
+//! Stage 6 — double ratchet state machine (KEM ratchet on ML-KEM-768).
+//! Crypto — via crate::crypto (cfg branch). Reception — on trial-decrypt logic:
+//! state changes only on AEAD success.
 
 use crate::crypto::{kem_decapsulate, kem_encapsulate, kem_keypair_from_seed};
 use crate::ratchet::{ad_bytes, kdf_ck, kdf_rk, msg_key, open, seal, MLKEM_PUBKEY_SIZE};
@@ -12,8 +12,8 @@ pub const MAX_SKIP: u32 = 1000;
 pub const MAX_MKSKIPPED: usize = 2000;
 pub const MAX_PLAINTEXT: usize = 1_048_576;
 
-/// DEV-049(c) §490: padding-до-бакета внутри AEAD — скрывает точную длину сообщения.
-/// Маркер 0x80 (ISO/IEC 7816-4) + нули до pad_len; cap на MAX_PLAINTEXT.
+/// DEV-049(c) §490: padding-to-bucket inside AEAD — hides the exact message length.
+/// Marker 0x80 (ISO/IEC 7816-4) + zeros up to pad_len; cap at MAX_PLAINTEXT.
 fn pad_message(pt: &[u8]) -> Vec<u8> {
     let target = crate::media::pad_len(pt.len() + 1)
         .min(MAX_PLAINTEXT)
@@ -402,8 +402,8 @@ impl SessionState {
             Some(d) => &d[..] != ratchet_pub,
             None => true,
         };
-        // spec, Этап 6 «Правило exactly-once»: номер в текущей цепочке ниже курсора
-        // приёма и ключ уже израсходован/вытеснен -> повтор, сессия сохраняется.
+        // spec, Stage 6 "exactly-once rule": number in the current chain below the receive
+        // cursor and the key already consumed/evicted -> replay, session is preserved.
         if !is_kem_step && m_ns < self.nr {
             return Err(RatchetError::Replay);
         }

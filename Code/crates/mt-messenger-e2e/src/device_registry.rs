@@ -1,7 +1,7 @@
-//! Этап 10 — подписанный реестр устройств (мульти-девайс, канонический профиль).
+//! Stage 10 — signed device registry (multi-device, canonical profile).
 //! DeviceRegistry: format 0x02 ‖ registry_seq u64 LE ‖ registry_time u64 LE ‖ entry_count u16 LE
-//! ‖ entries ‖ registry_sig (ML-DSA-65 над "mt-device-registry"‖0x00‖<всё до sig>).
-//! Разбор инвалид-безопасен (Gate 13): любое нарушение → Reject, НИКОГДА паника.
+//! ‖ entries ‖ registry_sig (ML-DSA-65 over "mt-device-registry"‖0x00‖<everything up to sig>).
+//! Parsing is invalid-safe (Gate 13): any violation → Reject, NEVER panic.
 
 use crate::crypto::{dsa_verify, MLDSA_SIG};
 
@@ -28,7 +28,7 @@ pub fn encode_entry(e: &DeviceEntry) -> Vec<u8> {
     o
 }
 
-/// Байты, которые подписывает account_key: домен ‖ 0x00 ‖ format ‖ seq ‖ time ‖ count ‖ entries.
+/// Bytes signed by account_key: domain ‖ 0x00 ‖ format ‖ seq ‖ time ‖ count ‖ entries.
 pub fn registry_sign_message(
     registry_seq: u64,
     registry_time: u64,
@@ -46,7 +46,7 @@ pub fn registry_sign_message(
     m
 }
 
-/// Полный сериализованный реестр (для публикации): format‖seq‖time‖count‖entries‖sig.
+/// Full serialized registry (for publication): format‖seq‖time‖count‖entries‖sig.
 pub fn encode_registry(
     registry_seq: u64,
     registry_time: u64,
@@ -78,7 +78,7 @@ pub enum RegistryOutcome {
     Reject,
 }
 
-/// Инвалид-безопасный разбор + проверка подписи account_key. Reject на любом нарушении.
+/// Invalid-safe parsing + account_key signature verification. Reject on any violation.
 pub fn parse_and_verify(buf: &[u8], account_pub: &[u8]) -> RegistryOutcome {
     if buf.len() < 19 {
         return RegistryOutcome::Reject;
@@ -132,7 +132,7 @@ pub fn parse_and_verify(buf: &[u8], account_pub: &[u8]) -> RegistryOutcome {
     })
 }
 
-/// Активные (revoked == false) устройства для fan-out.
+/// Active (revoked == false) devices for fan-out.
 pub fn active_devices(reg: &ParsedRegistry) -> Vec<&DeviceEntry> {
     reg.entries.iter().filter(|e| !e.revoked).collect()
 }

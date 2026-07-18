@@ -1,5 +1,5 @@
-//! Этап 5 — установление постквантовой сессии (PQXDH на ML-KEM-768).
-//! Ключевое расписание: HKDF-SHA-256(salt=0×32, IKM=ss_id‖ss_spk[‖ss_opk],
+//! Stage 5 — post-quantum session establishment (PQXDH over ML-KEM-768).
+//! Key schedule: HKDF-SHA-256(salt=0×32, IKM=ss_id‖ss_spk[‖ss_opk],
 //! info="mt-pqxdh-root"‖0x00‖transcript_hash, L=96) → root‖chain‖confirm_key.
 
 use zeroize::Zeroize;
@@ -24,8 +24,8 @@ impl Drop for SessionKeys {
     }
 }
 
-/// Вывести корень сессии из общих секретов ML-KEM и стенограммы (spec Шаг 3).
-/// `ss_opk = None` — путь без одноразового пре-ключа (IKM = ss_id‖ss_spk).
+/// Derive the session root from ML-KEM shared secrets and the transcript (spec Step 3).
+/// `ss_opk = None` — path without a one-time pre-key (IKM = ss_id‖ss_spk).
 pub fn derive_session_keys(
     ss_id: &[u8; 32],
     ss_spk: &[u8; 32],

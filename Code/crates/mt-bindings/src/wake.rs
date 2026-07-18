@@ -1,21 +1,21 @@
-//! C-ABI пробуждения (Montana P2P Network, Этап 7): byte-exact форматы WakeInline/
-//! WakeHandle, арбитр ступеней, реестр account_id↔wake_handle. Чистые синхронные
-//! обёртки над mt-wake — без сетевого стека, доступны крипто-сборке клиента (iOS/
-//! Android). Пути FFI не паникуют (mt-wake decode возвращает Result), поэтому
-//! catch_unwind не нужен; ошибки — через false/null.
+//! Wake C-ABI (Montana P2P Network, Stage 7): byte-exact WakeInline/
+//! WakeHandle formats, rung arbiter, account_id↔wake_handle registry. Pure synchronous
+//! wrappers over mt-wake — no network stack, available to the client crypto build (iOS/
+//! Android). FFI paths do not panic (mt-wake decode returns Result), so
+//! catch_unwind is not needed; errors are reported via false/null.
 //!
-//! Thread-safety: WakeRegistry-хэндл НЕ синхронизирован для параллельного &mut —
-//! вызывающий сериализует доступ к одному хэндлу. Форматные функции без состояния.
+//! Thread-safety: the WakeRegistry handle is NOT synchronized for concurrent &mut —
+//! the caller serializes access to a single handle. Format functions are stateless.
 
 use mt_wake::{
     select_rung, WakeHandle, WakeInline, WakeRegistry, ACCOUNT_ID_LEN, RECV_ID_LEN,
     WAKE_HANDLE_LEN, WAKE_HANDLE_MSG_LEN, WAKE_INLINE_LEN,
 };
 
-/// Кодирует WakeInline (recv_id 32 + window 8 LE) в `out` (40 B). true при успехе.
+/// Encodes WakeInline (recv_id 32 + window 8 LE) into `out` (40 B). true on success.
 ///
 /// # Safety
-/// `recv_id` — валиден и ≥32 B; `out` — валиден и ≥40 B.
+/// `recv_id` is valid and ≥32 B; `out` is valid and ≥40 B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_inline_encode(
     recv_id: *const u8,
@@ -36,10 +36,10 @@ pub unsafe extern "C" fn mt_wake_inline_encode(
     true
 }
 
-/// Декодирует WakeInline из `input` (len B). При успехе пишет recv_id (32) + window.
+/// Decodes WakeInline from `input` (len B). On success writes recv_id (32) + window.
 ///
 /// # Safety
-/// `input` — валиден и ≥`len` B; `out_recv_id` — ≥32 B; `out_window` — валиден.
+/// `input` is valid and ≥`len` B; `out_recv_id` is ≥32 B; `out_window` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_inline_decode(
     input: *const u8,
@@ -61,10 +61,10 @@ pub unsafe extern "C" fn mt_wake_inline_decode(
     }
 }
 
-/// Кодирует WakeHandle (wake_handle 16 + window 8 LE) в `out` (24 B). true при успехе.
+/// Encodes WakeHandle (wake_handle 16 + window 8 LE) into `out` (24 B). true on success.
 ///
 /// # Safety
-/// `handle` — валиден и ≥16 B; `out` — валиден и ≥24 B.
+/// `handle` is valid and ≥16 B; `out` is valid and ≥24 B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_handle_encode(
     handle: *const u8,
@@ -85,10 +85,10 @@ pub unsafe extern "C" fn mt_wake_handle_encode(
     true
 }
 
-/// Декодирует WakeHandle из `input` (len B). При успехе пишет wake_handle (16) + window.
+/// Decodes WakeHandle from `input` (len B). On success writes wake_handle (16) + window.
 ///
 /// # Safety
-/// `input` — валиден и ≥`len` B; `out_handle` — ≥16 B; `out_window` — валиден.
+/// `input` is valid and ≥`len` B; `out_handle` is ≥16 B; `out_window` is valid.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_handle_decode(
     input: *const u8,
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn mt_wake_handle_decode(
     }
 }
 
-/// Арбитр ступеней: возврат — номер ступени 1–4 (высшая суверенность первой).
+/// Rung arbiter: returns the rung number 1–4 (highest sovereignty first).
 #[no_mangle]
 pub extern "C" fn mt_wake_select_rung(
     live_tunnel: bool,
@@ -120,7 +120,7 @@ pub extern "C" fn mt_wake_select_rung(
     select_rung(live_tunnel, ibeacon_home, unlock_sync) as u8
 }
 
-/// Создаёт реестр account_id↔wake_handle (для телефона-почтальона). Освобождается
+/// Creates an account_id↔wake_handle registry (for the postman phone). Freed by
 /// `mt_wake_registry_free`.
 #[no_mangle]
 pub extern "C" fn mt_wake_registry_new() -> *mut WakeRegistry {
@@ -128,7 +128,7 @@ pub extern "C" fn mt_wake_registry_new() -> *mut WakeRegistry {
 }
 
 /// # Safety
-/// `reg` — указатель от `mt_wake_registry_new` (не использованный после free) или null.
+/// `reg` is a pointer from `mt_wake_registry_new` (not used after free) or null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_registry_free(reg: *mut WakeRegistry) {
     if !reg.is_null() {
@@ -136,10 +136,10 @@ pub unsafe extern "C" fn mt_wake_registry_free(reg: *mut WakeRegistry) {
     }
 }
 
-/// Регистрирует account_id (32 B), пишет 16 B wake_handle. Идемпотентна. true при успехе.
+/// Registers account_id (32 B), writes the 16 B wake_handle. Idempotent. true on success.
 ///
 /// # Safety
-/// `reg` валиден; `account_id` — ≥32 B; `out_handle` — ≥16 B.
+/// `reg` is valid; `account_id` is ≥32 B; `out_handle` is ≥16 B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_register(
     reg: *mut WakeRegistry,
@@ -160,10 +160,10 @@ pub unsafe extern "C" fn mt_wake_register(
     }
 }
 
-/// Ищет wake_handle по account_id. true если найден (пишет out_handle), иначе false.
+/// Looks up wake_handle by account_id. true if found (writes out_handle), else false.
 ///
 /// # Safety
-/// `reg` валиден; `account_id` — ≥32 B; `out_handle` — ≥16 B.
+/// `reg` is valid; `account_id` is ≥32 B; `out_handle` is ≥16 B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_handle_of(
     reg: *const WakeRegistry,
@@ -184,10 +184,10 @@ pub unsafe extern "C" fn mt_wake_handle_of(
     }
 }
 
-/// Резолвит account_id по wake_handle (почтальон, ступень 4). true если найден.
+/// Resolves account_id by wake_handle (postman, rung 4). true if found.
 ///
 /// # Safety
-/// `reg` валиден; `handle` — ≥16 B; `out_account` — ≥32 B.
+/// `reg` is valid; `handle` is ≥16 B; `out_account` is ≥32 B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_wake_account_of(
     reg: *const WakeRegistry,

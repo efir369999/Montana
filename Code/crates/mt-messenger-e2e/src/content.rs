@@ -1,6 +1,6 @@
-//! Этап 9 — кодек Content (plaintext храповика личного чата 1-на-1).
-//! Бинарный, LE. Заголовок 25 B (content_type 1 ‖ msg_id 16 ‖ sent_at 8 LE) ‖ тело по типу.
-//! Разбор инвалид-безопасен: любое нарушение → Reject/Ignore, НИКОГДА паника (spec «Инварианты Content»).
+//! Stage 9 — Content codec (plaintext of the 1-on-1 personal chat ratchet).
+//! Binary, LE. Header 25 B (content_type 1 ‖ msg_id 16 ‖ sent_at 8 LE) ‖ body by type.
+//! Parsing is invalid-safe: any violation → Reject/Ignore, NEVER panics (spec "Content Invariants").
 
 pub const CONTENT_HEADER: usize = 25;
 pub const MAX_PLAINTEXT: usize = 1_048_576;
@@ -35,7 +35,7 @@ pub enum Content {
         sent_at: u64,
         start: bool,
     },
-    /// Известный тип, тело которого разбирает Этап 12 (media) — здесь сохраняем сырым.
+    /// Known type whose body is parsed by Stage 12 (media) — kept raw here.
     Media {
         msg_id: [u8; 16],
         sent_at: u64,
@@ -46,9 +46,9 @@ pub enum Content {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseOutcome {
     Ok(Content),
-    /// Неизвестный content_type — forward-compat: игнорировать, не ошибка (spec инвариант 2).
+    /// Unknown content_type — forward-compat: ignore, not an error (spec invariant 2).
     Ignore,
-    /// Нарушение длины/формата/UTF-8 — сообщение отвергается, состояние не меняется.
+    /// Length/format/UTF-8 violation — message is rejected, state is unchanged.
     Reject,
 }
 
@@ -59,10 +59,10 @@ fn hdr(buf: &[u8]) -> ([u8; 16], u64) {
     (mid, sent_at)
 }
 
-/// Разбор Content. Никогда не паникует; возвращает Ok/Ignore/Reject.
+/// Parse Content. Never panics; returns Ok/Ignore/Reject.
 pub fn parse(buf: &[u8]) -> ParseOutcome {
     if buf.len() < CONTENT_HEADER {
-        return ParseOutcome::Reject; // инвариант 1
+        return ParseOutcome::Reject; // invariant 1
     }
     let ct = buf[0];
     let (msg_id, sent_at) = hdr(buf);
@@ -124,7 +124,7 @@ pub fn parse(buf: &[u8]) -> ParseOutcome {
             sent_at,
             body: body.to_vec(),
         }),
-        _ => ParseOutcome::Ignore, // инвариант 2
+        _ => ParseOutcome::Ignore, // invariant 2
     }
 }
 
@@ -195,13 +195,13 @@ mod tests {
                 text: "hi".to_owned()
             })
         );
-        // короче заголовка → Reject
+        // shorter than header → Reject
         assert_eq!(parse(&[0u8; 10]), ParseOutcome::Reject);
-        // неизвестный тип → Ignore (forward-compat)
+        // unknown type → Ignore (forward-compat)
         let mut unknown = vec![0x7f];
         unknown.extend_from_slice(&[0u8; 24]);
         assert_eq!(parse(&unknown), ParseOutcome::Ignore);
-        // typing с некорректным state → Reject
+        // typing with invalid state → Reject
         assert_eq!(
             parse(&encode_typing(&[0x33; 16], 3000, true)[..],),
             ParseOutcome::Ok(Content::Typing {
@@ -213,15 +213,15 @@ mod tests {
         let mut bad_typing = encode_typing(&[0x33; 16], 3000, true);
         *bad_typing.last_mut().unwrap() = 0x05;
         assert_eq!(parse(&bad_typing), ParseOutcome::Reject);
-        // receipt неверной длины → Reject
+        // receipt of wrong length → Reject
         let mut bad_rcpt = encode_receipt(TYPE_READ, &[0x22; 16], 2000, &[0x11; 16]);
         bad_rcpt.push(0x00);
         assert_eq!(parse(&bad_rcpt), ParseOutcome::Reject);
-        // text_len не сходится с остатком → Reject
+        // text_len does not match the remainder → Reject
         let mut bad_text = encode_text(&[0x11; 16], 1000, &[0u8; 16], b"hi");
-        bad_text.pop(); // убрать 1 байт текста
+        bad_text.pop(); // remove 1 byte of text
         assert_eq!(parse(&bad_text), ParseOutcome::Reject);
-        // невалидный UTF-8 → Reject
+        // invalid UTF-8 → Reject
         let bad_utf8 = encode_text(&[0x11; 16], 1000, &[0u8; 16], &[0xff, 0xfe]);
         assert_eq!(parse(&bad_utf8), ParseOutcome::Reject);
     }

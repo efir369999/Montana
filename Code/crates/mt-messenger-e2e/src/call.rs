@@ -1,6 +1,6 @@
-//! Этап 13 — постквантовый медиа-слой звонка (канонический профиль).
-//! call_seed доставляется внутри храповика (Этап 6) → PQ-защищён. Из него выводятся
-//! call_key и sframe_key (ключ AEAD медиа-кадров SFrame поверх SRTP). Домены "mt-call"/"mt-call-sframe".
+//! Stage 13 — post-quantum media layer of the call (canonical profile).
+//! call_seed is delivered inside the ratchet (Stage 6) → PQ-protected. From it are derived
+//! call_key and sframe_key (AEAD key for SFrame media frames over SRTP). Domains "mt-call"/"mt-call-sframe".
 
 use crate::kdf::hkdf_sha256;
 

@@ -1,6 +1,6 @@
-//! Этап 5 — машина состояний PQXDH: сборка/разбор InitialHandshake, сторона
-//! Алисы (build) и Боба (process). Стенограмма и layout — байт-точно по спеке.
-//! Крипто — через crate::crypto (cfg-развилка native/wasm), только байты.
+//! Stage 5 — PQXDH state machine: build/parse InitialHandshake, Alice's side
+//! (build) and Bob's side (process). Transcript and layout are byte-exact per spec.
+//! Crypto goes through crate::crypto (native/wasm cfg split), bytes only.
 
 use sha2::{Digest, Sha256};
 
@@ -26,14 +26,14 @@ pub enum E2eError {
 }
 
 pub fn account_id(account_key_pub: &[u8]) -> [u8; 32] {
-    // account_id по формуле спеки — через канонический mt_crypto::hash (тот же код, что mt_state::derive_account_id).
+    // account_id per the spec formula — via canonical mt_crypto::hash (same code as mt_state::derive_account_id).
     mt_crypto::hash(
         mt_codec::domain::ACCOUNT,
         &[&SUITE_MLDSA65_LE, account_key_pub],
     )
 }
 
-/// Связка Боба (публичная часть, из Этапа 4).
+/// Bob's bundle (public part, from Stage 4).
 pub struct RecipientBundle<'a> {
     pub account_key_pub: &'a [u8; MLDSA_PUB],
     pub app_kem_pub: &'a [u8; MLKEM_PUB],
@@ -91,8 +91,8 @@ pub struct Handshake {
     pub transcript_hash: [u8; 32],
 }
 
-/// Сторона Алисы. `account_seed` (32B) — сид её ML-DSA-ключа; `eph_seed` (64B) —
-/// клиентская случайность для эфемерной ML-KEM пары.
+/// Alice's side. `account_seed` (32B) is the seed of her ML-DSA key; `eph_seed` (64B) is
+/// client randomness for the ephemeral ML-KEM pair.
 pub fn build_handshake(
     alice_account_pub: &[u8; MLDSA_PUB],
     account_seed: &[u8; 32],
@@ -180,7 +180,7 @@ pub struct Processed {
     pub opk_consumed: Option<u32>,
 }
 
-/// Приватный материал Боба.
+/// Bob's private material.
 pub struct RecipientKeys<'a> {
     pub account_id: &'a [u8; 32],
     pub app_kem_pub: &'a [u8; MLKEM_PUB],
@@ -201,8 +201,8 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     d == 0
 }
 
-/// Сторона Боба: разбор, свежесть, проверка sig_A, три декапсуляции, вывод корня,
-/// сверка confirm_tag. Любой сбой → отклонение без изменения состояния.
+/// Bob's side: parse, freshness, sig_A verification, three decapsulations, root derivation,
+/// confirm_tag check. Any failure → rejection without state change.
 pub fn process_handshake(
     hs: &[u8],
     bob: &RecipientKeys,

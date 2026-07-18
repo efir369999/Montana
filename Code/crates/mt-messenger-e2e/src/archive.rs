@@ -1,12 +1,12 @@
-//! Этап 1 (второй фронт — децентрализация данных) — архив истории.
+//! Stage 1 (second front — data decentralization) — history archive.
 //! HistoryBlock = block_seq u64 LE ‖ item_count u32 LE
 //!   ‖ [ conv_id 32 ‖ dir 1 ‖ send_time u64 LE ‖ content_len u32 LE ‖ Content ]×item_count
 //! sealed = nonce(block_seq_le8 ‖ 0x00000000) ‖ ChaCha20-Poly1305(history_key, nonce, block,
 //!                                                                 AD = "mt-history" ‖ 0x00 ‖ account_id).
-//! history_key = HKDF-SHA-256(0×32, entropy_32, "mt-history-key", 32) — SSOT (первый фронт, Этап 12).
-//! media_key   = HKDF-SHA-256(0×32, entropy_32, "mt-media-key", 32)  — отдельная ветвь сида (≠ history_key).
-//! block_seq — сквозной счётчик per-личность (seq.bin в base), не per-чат: иначе повтор nonce (spec s.2 v0.3.1).
-//! Разбор инвалид-безопасен (Gate 13): любое нарушение → None, НИКОГДА паника.
+//! history_key = HKDF-SHA-256(0×32, entropy_32, "mt-history-key", 32) — SSOT (first front, Stage 12).
+//! media_key   = HKDF-SHA-256(0×32, entropy_32, "mt-media-key", 32)  — separate seed branch (≠ history_key).
+//! block_seq — global counter per-identity (seq.bin in base), not per-chat: otherwise nonce reuse (spec s.2 v0.3.1).
+//! Parsing is invalid-safe (Gate 13): any violation → None, NEVER panic.
 
 use crate::kdf::hkdf_sha256;
 use crate::ratchet::{open, seal};
@@ -28,7 +28,7 @@ pub fn history_key(entropy_32: &[u8; 32]) -> [u8; 32] {
     out
 }
 
-/// Отдельная ветвь сида для медиа at-rest — не пересекается с history_key (разные nonce-пространства).
+/// Separate seed branch for media at-rest — does not overlap with history_key (different nonce spaces).
 pub fn media_key(entropy_32: &[u8; 32]) -> [u8; 32] {
     let k = hkdf_sha256(&[0u8; 32], entropy_32, MSG_MEDIA_KEY, 32);
     let mut out = [0u8; 32];
@@ -158,7 +158,7 @@ fn media_nonce(blob_ref: &str) -> [u8; 12] {
     n
 }
 
-/// Запечатать медиа под media_key (≠ history_key). blob_ref — уникальная метка блоба → уникальный nonce.
+/// Seal media under media_key (≠ history_key). blob_ref — unique blob label → unique nonce.
 pub fn seal_media(
     media_key: &[u8; 32],
     account_id: &[u8; 32],
@@ -186,14 +186,14 @@ pub fn sealed_block_id(sealed: &[u8]) -> [u8; 32] {
     Sha256::digest(sealed).into()
 }
 
-// ============ ArchiveStore — локальная иерархия «Монтана/Чаты/<имя чата>/» ============
-// Зеркалит структуру приложения: <base>/Чаты/<ярлык>/переписка.mtlog + <base>/Чаты/<ярлык>/Медиа/<blob_ref>.
-// Ярлык (имя папки) навигабелен пользователем; содержимое лога — sealed (at-rest, нужен сид).
-// Сквозной счётчик block_seq хранится в <base>/seq.bin (per-личность, не per-чат).
+// ============ ArchiveStore — local hierarchy "Montana/Chats/<chat name>/" ============
+// Mirrors the app structure: <base>/Chats/<label>/conversation.mtlog + <base>/Chats/<label>/Media/<blob_ref>.
+// Label (folder name) is user-navigable; log contents are sealed (at-rest, seed required).
+// The global block_seq counter is stored in <base>/seq.bin (per-identity, not per-chat).
 
-pub const CHATS_DIR: &str = "Чаты";
-pub const MEDIA_DIR: &str = "Медиа";
-pub const LOG_FILE: &str = "переписка.mtlog";
+pub const CHATS_DIR: &str = "Chats";
+pub const MEDIA_DIR: &str = "Media";
+pub const LOG_FILE: &str = "conversation.mtlog";
 
 pub struct ArchiveStore {
     base: PathBuf,
@@ -226,8 +226,8 @@ impl ArchiveStore {
         self.base.join(CHATS_DIR).join(sanitize(chat_name))
     }
 
-    /// Назначить следующий сквозной block_seq (per-личность): читает seq.bin, возвращает текущее,
-    /// сохраняет current+1 атомарно (write tmp → rename). Первый вызов → 0.
+    /// Assign the next global block_seq (per-identity): reads seq.bin, returns the current value,
+    /// stores current+1 atomically (write tmp → rename). First call → 0.
     pub fn next_block_seq(&self) -> io::Result<u64> {
         let path = self.base.join(SEQ_FILE);
         let cur = match fs::read(&path) {
@@ -243,9 +243,9 @@ impl ArchiveStore {
         Ok(cur)
     }
 
-    /// Единая точка записи одного элемента в архив: ядро назначает block_seq (SSOT счётчика),
-    /// строит одноэлементный HistoryBlock, seal под history_key, дописывает в лог чата.
-    /// Возвращает назначенный block_seq.
+    /// Single entry point for writing one item into the archive: the core assigns block_seq (counter SSOT),
+    /// builds a single-item HistoryBlock, seals under history_key, appends to the chat log.
+    /// Returns the assigned block_seq.
     #[allow(clippy::too_many_arguments)]
     pub fn append_item(
         &self,
@@ -272,7 +272,7 @@ impl ArchiveStore {
         Ok(seq)
     }
 
-    /// Дописать sealed-блок в лог чата: <base>/Чаты/<ярлык>/переписка.mtlog (length-prefixed u32 LE ‖ sealed).
+    /// Append a sealed block to the chat log: <base>/Chats/<label>/conversation.mtlog (length-prefixed u32 LE ‖ sealed).
     pub fn append_block(&self, chat_name: &str, sealed_block: &[u8]) -> io::Result<()> {
         let dir = self.chat_dir(chat_name);
         fs::create_dir_all(&dir)?;
@@ -285,7 +285,7 @@ impl ArchiveStore {
         Ok(())
     }
 
-    /// Прочитать все sealed-блоки лога чата по порядку.
+    /// Read all sealed blocks of the chat log in order.
     pub fn read_blocks(&self, chat_name: &str) -> io::Result<Vec<Vec<u8>>> {
         let path = self.chat_dir(chat_name).join(LOG_FILE);
         let data = match fs::read(&path) {
@@ -307,8 +307,8 @@ impl ArchiveStore {
         Ok(out)
     }
 
-    /// Зашифровать медиа под media_key и положить в <base>/Чаты/<ярлык>/Медиа/<blob_ref>.
-    /// Другие приложения видят только шифртекст; расшифровывает только клиент по сиду.
+    /// Encrypt media under media_key and store it in <base>/Chats/<label>/Media/<blob_ref>.
+    /// Other apps see only ciphertext; only the client decrypts using the seed.
     pub fn put_media(
         &self,
         chat_name: &str,
@@ -323,7 +323,7 @@ impl ArchiveStore {
         fs::write(mdir.join(sanitize(blob_ref)), sealed)
     }
 
-    /// Прочитать и расшифровать медиа. None если нет файла либо расшифровка не прошла.
+    /// Read and decrypt media. None if the file is missing or decryption failed.
     pub fn get_media(
         &self,
         chat_name: &str,
@@ -345,7 +345,7 @@ impl ArchiveStore {
             .join(sanitize(blob_ref))
     }
 
-    /// Миграция папки чата при переименовании ярлыка (идентичность переписки = conv_address, не ярлык).
+    /// Migrate the chat folder when the label is renamed (conversation identity = conv_address, not the label).
     pub fn rename_chat(&self, old_label: &str, new_label: &str) -> io::Result<()> {
         let so = sanitize(old_label);
         let sn = sanitize(new_label);
@@ -392,7 +392,7 @@ mod tests {
         assert_ne!(
             history_key(&ent),
             media_key(&ent),
-            "ветви ключей обязаны различаться"
+            "key branches must differ"
         );
     }
 
@@ -458,7 +458,7 @@ mod tests {
         let hk = history_key(&[0x55u8; 32]);
         let acct = [0x33u8; 32];
         let sealed = seal_media(&mk, &acct, "voice_abc", b"secret");
-        // history_key НЕ открывает media (раздельные ветви)
+        // history_key does NOT open media (separate branches)
         assert_eq!(open_media(&hk, &acct, &sealed), None);
     }
 
@@ -467,7 +467,7 @@ mod tests {
         let hk = history_key(&[0x55u8; 32]);
         let acct = [0x33u8; 32];
         let sealed = seal_block(&hk, &acct, &sample_block());
-        // KAT: SHA-256(sealed) детерминирован (nonce из block_seq).
+        // KAT: SHA-256(sealed) is deterministic (nonce from block_seq).
         // block = header(12) + item(conv32+dir1+time8+len4+"montana"7 = 52) = 64; sealed = nonce12 + ct(64+16) = 92
         assert_eq!(sealed.len(), 12 + 64 + 16);
         let id = hex::encode(sealed_block_id(&sealed));
@@ -482,7 +482,7 @@ mod tests {
         let tmp = std::env::temp_dir().join("mt_archive_seq_test");
         let _ = fs::remove_dir_all(&tmp);
         let st = ArchiveStore::open(&tmp).unwrap();
-        // сквозной счётчик: разные чаты не сбрасывают seq
+        // global counter: different chats do not reset seq
         assert_eq!(st.next_block_seq().unwrap(), 0);
         assert_eq!(st.next_block_seq().unwrap(), 1);
         assert_eq!(st.next_block_seq().unwrap(), 2);
@@ -498,17 +498,17 @@ mod tests {
         let acct = [0x33u8; 32];
         let conv_a = [0x01u8; 32];
         let conv_b = [0x02u8; 32];
-        // чат A первое сообщение → seq 0; чат B первое → seq 1 (НЕ 0 — нет повтора nonce)
+        // chat A first message → seq 0; chat B first → seq 1 (NOT 0 — no nonce reuse)
         let s0 = st
-            .append_item("Алиса", &hk, &acct, &conv_a, DIR_OUT, 1000, b"hi")
+            .append_item("Alice", &hk, &acct, &conv_a, DIR_OUT, 1000, b"hi")
             .unwrap();
         let s1 = st
-            .append_item("Боб", &hk, &acct, &conv_b, DIR_OUT, 1001, b"yo")
+            .append_item("Bob", &hk, &acct, &conv_b, DIR_OUT, 1001, b"yo")
             .unwrap();
         assert_eq!(s0, 0);
         assert_eq!(s1, 1);
-        // прочитать блок чата B — seq 1
-        let blocks_b = st.read_blocks("Боб").unwrap();
+        // read chat B's block — seq 1
+        let blocks_b = st.read_blocks("Bob").unwrap();
         assert_eq!(blocks_b.len(), 1);
         let blk = open_block(&hk, &acct, &blocks_b[0]).unwrap();
         assert_eq!(blk.block_seq, 1);
@@ -525,35 +525,35 @@ mod tests {
         let acct = [0x33u8; 32];
 
         let sealed = seal_block(&hk, &acct, &sample_block());
-        st.append_block("Алиса", &sealed).unwrap();
-        st.put_media("Алиса", "voice_ref", &mk, &acct, b"\x89PNG demo")
+        st.append_block("Alice", &sealed).unwrap();
+        st.put_media("Alice", "voice_ref", &mk, &acct, b"\x89PNG demo")
             .unwrap();
 
-        // иерархия появилась
-        assert!(tmp.join("Чаты").join("Алиса").join(LOG_FILE).exists());
+        // hierarchy created
+        assert!(tmp.join("Chats").join("Alice").join(LOG_FILE).exists());
         assert!(tmp
-            .join("Чаты")
-            .join("Алиса")
+            .join("Chats")
+            .join("Alice")
             .join(MEDIA_DIR)
             .join("voice_ref")
             .exists());
 
-        // лог читается обратно и расшифровывается
-        let blocks = st.read_blocks("Алиса").unwrap();
+        // log reads back and decrypts
+        let blocks = st.read_blocks("Alice").unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(open_block(&hk, &acct, &blocks[0]), Some(sample_block()));
 
-        // медиа читается под media_key
+        // media reads back under media_key
         assert_eq!(
-            st.get_media("Алиса", "voice_ref", &mk, &acct),
+            st.get_media("Alice", "voice_ref", &mk, &acct),
             Some(b"\x89PNG demo".to_vec())
         );
 
-        // миграция папки при переименовании
-        st.rename_chat("Алиса", "Алиса Смит").unwrap();
-        assert!(tmp.join("Чаты").join("Алиса Смит").join(LOG_FILE).exists());
+        // folder migration on rename
+        st.rename_chat("Alice", "Alice Smith").unwrap();
+        assert!(tmp.join("Chats").join("Alice Smith").join(LOG_FILE).exists());
         assert_eq!(
-            st.get_media("Алиса Смит", "voice_ref", &mk, &acct),
+            st.get_media("Alice Smith", "voice_ref", &mk, &acct),
             Some(b"\x89PNG demo".to_vec())
         );
 

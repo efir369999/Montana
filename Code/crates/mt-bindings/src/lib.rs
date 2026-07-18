@@ -1,11 +1,11 @@
-//! Montana-bindings — единственный источник истины Montana для не-Rust клиентов.
+//! Montana-bindings — the single source of truth of Montana for non-Rust clients.
 //!
-//! Re-exports канонических функций из mt-mnemonic / mt-crypto / mt-state / mt-account
-//! через стабильный C ABI (для iOS xcframework + Android cdylib JNI) и WASM-bindings
-//! (для web). Все клиенты обязаны вызывать ЭТИ функции, а не реимплементировать
-//! PBKDF2/HKDF/SHA/ML-DSA/address-derivation/transaction-encoding в нативном коде.
+//! Re-exports canonical functions from mt-mnemonic / mt-crypto / mt-state / mt-account
+//! through a stable C ABI (for iOS xcframework + Android cdylib JNI) and WASM bindings
+//! (for web). All clients must call THESE functions rather than reimplement
+//! PBKDF2/HKDF/SHA/ML-DSA/address-derivation/transaction-encoding in native code.
 //!
-//! Spec invariant [SSOT-Rust] — см. `Formal-Docs/02-Spec/SSOT-Rust.md`.
+//! Spec invariant [SSOT-Rust] — see `Formal-Docs/02-Spec/SSOT-Rust.md`.
 
 use core::panic::AssertUnwindSafe;
 
@@ -52,8 +52,8 @@ pub const MT_MLKEM_SECKEY_SIZE: usize = 2400;
 pub const MT_MLKEM_CT_SIZE: usize = 1088;
 pub const MT_MLKEM_SS_SIZE: usize = 32;
 
-// [C-1] SSOT cross-check: MT_* размеры совпадают с mt-crypto (native). Литералы нужны
-// и на wasm (где mt-crypto недоступен), поэтому дублируются, но дрейф ловится на сборке.
+// [C-1] SSOT cross-check: MT_* sizes match mt-crypto (native). The literals are needed
+// on wasm too (where mt-crypto is unavailable), so they are duplicated, but drift is caught at build time.
 #[cfg(not(target_arch = "wasm32"))]
 const _: () = {
     assert!(MT_MLDSA_PUBKEY_SIZE == mt_crypto::PUBLIC_KEY_SIZE);
@@ -93,7 +93,7 @@ fn guard<F: FnOnce() -> i32>(f: F) -> i32 {
     }
 }
 
-// ── Текстовый адрес Base58Check (App spec §4.3) — SSOT для всех клиентов.
+// ── Base58Check text address (App spec §4.3) — SSOT for all clients.
 // address = "mt" + Base58(account_id ‖ checksum), checksum = SHA-256(SHA-256(account_id))[0..4].
 fn sha256d(b: &[u8]) -> [u8; 32] {
     let h1 = Sha256::digest(b);
@@ -238,7 +238,7 @@ mod kat_address {
 
     #[test]
     fn zero_entropy_address_kat() {
-        // Эталонный вектор: 32 нулевых байта энтропии -> мнемоника -> account -> адрес.
+        // Reference vector: 32 zero bytes of entropy -> mnemonic -> account -> address.
         let m = mt_mnemonic::entropy_to_mnemonic(&[0u8; 32]);
         assert!(m.ends_with(" art"));
         let mc = std::ffi::CString::new(m).unwrap();

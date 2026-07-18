@@ -1,10 +1,10 @@
-//! JNI surface для Android Kotlin.
+//! JNI surface for Android Kotlin.
 //!
-//! Реэкспортирует те же функции что ffi_c.rs, но через JNI ABI с правильными
-//! Java_<pkg>_<class>_<method> именами. Класс на стороне Kotlin: `quest.montana.app.MtBindings`.
+//! Re-exports the same functions as ffi_c.rs, but through the JNI ABI with correct
+//! Java_<pkg>_<class>_<method> names. Class on the Kotlin side: `quest.montana.app.MtBindings`.
 //!
-//! Сборка: `cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -p mt-bindings build --release`.
-//! Артефакт: `libmt_bindings.so` (3 ABI) → `Android/MontanaApp/app/src/main/jniLibs/{abi}/`.
+//! Build: `cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -p mt-bindings build --release`.
+//! Artifact: `libmt_bindings.so` (3 ABI) → `Android/MontanaApp/app/src/main/jniLibs/{abi}/`.
 
 #![cfg(target_os = "android")]
 
@@ -37,7 +37,7 @@ const MLKEM_PUB: usize = super::MT_MLKEM_PUBKEY_SIZE;
 const MLKEM_SK: usize = super::MT_MLKEM_SECKEY_SIZE;
 const MLDSA_PUB: usize = super::MT_MLDSA_PUBKEY_SIZE;
 
-// Мульти-выход JNI: [4B BE len(a)] a b  → Kotlin режет по префиксу. Освобождение — GC JVM.
+// Multi-output JNI: [4B BE len(a)] a b  → Kotlin splits by prefix. Freed by the JVM GC.
 fn cat_lp(a: &[u8], b: &[u8]) -> Vec<u8> {
     let mut v = Vec::with_capacity(4 + a.len() + b.len());
     v.extend_from_slice(&(a.len() as u32).to_be_bytes());
@@ -48,8 +48,8 @@ fn cat_lp(a: &[u8], b: &[u8]) -> Vec<u8> {
 
 const MT_SUITE_MLDSA65: u16 = 0x0001;
 
-/// Соответствует error codes из ffi_c.rs (отрицательные).
-/// На Kotlin стороне трактуются как throw IllegalArgumentException/IllegalStateException.
+/// Matches the error codes from ffi_c.rs (negative).
+/// On the Kotlin side treated as throw IllegalArgumentException/IllegalStateException.
 
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAbiVersion(
@@ -59,7 +59,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAbiVersion(
     super::ABI_VERSION as jint
 }
 
-/// 24 слова → 64-байт master_seed. Возвращает byte[64] или null если ошибка.
+/// 24 words → 64-byte master_seed. Returns byte[64] or null on error.
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMnemonicToMasterSeed<'local>(
     mut env: JNIEnv<'local>,
@@ -81,7 +81,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMnemonicToMasterS
     }
 }
 
-/// 32 байта entropy → 24-словная UTF-8 мнемоника.
+/// 32 bytes entropy → 24-word UTF-8 mnemonic.
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeEntropyToMnemonic<'local>(
     mut env: JNIEnv<'local>,
@@ -102,7 +102,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeEntropyToMnemonic
     }
 }
 
-/// 24 слова → ML-DSA-65 account: byte[1952 + 4032 + 32] = pk||sk||account_id.
+/// 24 words → ML-DSA-65 account: byte[1952 + 4032 + 32] = pk||sk||account_id.
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountFromMnemonic<'local>(
     mut env: JNIEnv<'local>,
@@ -142,7 +142,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountFromMnemon
     }
 }
 
-/// ML-DSA-65 sign(seckey[4032], msg) → signature[3309] (или null при ошибке).
+/// ML-DSA-65 sign(seckey[4032], msg) → signature[3309] (or null on error).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeSign<'local>(
     mut env: JNIEnv<'local>,
@@ -181,7 +181,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeSign<'local>(
     }
 }
 
-/// ML-DSA-65 verify. Возвращает 1 (valid) / 0 (invalid) / -1 (input error).
+/// ML-DSA-65 verify. Returns 1 (valid) / 0 (invalid) / -1 (input error).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeVerify<'local>(
     mut env: JNIEnv<'local>,
@@ -218,10 +218,10 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeVerify<'local>(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Полная крипто-поверхность SSOT (зеркало ffi_c.rs) — идентичность/адрес/KEM.
+//  Full crypto surface SSOT (mirror of ffi_c.rs) — identity/address/KEM.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 24 слова → 32-байтный ML-DSA account seed (для E2E build_handshake, роль ACCOUNT_KEY).
+/// 24 words → 32-byte ML-DSA account seed (for E2E build_handshake, role ACCOUNT_KEY).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountSeedFromMnemonic<'local>(
     mut env: JNIEnv<'local>,
@@ -245,7 +245,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountSeedFromMn
     }
 }
 
-/// 24 слова → 32 байта энтропии (для history_key).
+/// 24 words → 32 bytes entropy (for history_key).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMnemonicToEntropy<'local>(
     mut env: JNIEnv<'local>,
@@ -267,7 +267,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMnemonicToEntropy
     }
 }
 
-/// 24 слова → app_kem (ML-KEM-768): pub[1184] ‖ sk[2400].
+/// 24 words → app_kem (ML-KEM-768): pub[1184] ‖ sk[2400].
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAppKemFromMnemonic<'local>(
     mut env: JNIEnv<'local>,
@@ -301,7 +301,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAppKemFromMnemoni
     }
 }
 
-/// ML-KEM-768 KeyGen из 64-байтного сида → pub[1184] ‖ sk[2400] (для SPK/OTK).
+/// ML-KEM-768 KeyGen from a 64-byte seed → pub[1184] ‖ sk[2400] (for SPK/OTK).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMlkemKeypairFromSeed<'local>(
     mut env: JNIEnv<'local>,
@@ -335,7 +335,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMlkemKeypairFromS
     }
 }
 
-/// account_id[32] → адрес "mt…" (Base58Check) как UTF-8 byte[].
+/// account_id[32] → address "mt…" (Base58Check) as UTF-8 byte[].
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountIdToAddress<'local>(
     mut env: JNIEnv<'local>,
@@ -359,7 +359,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAccountIdToAddres
     }
 }
 
-/// адрес "mt…" → account_id[32] (проверяет контрольную сумму; null если невалиден).
+/// address "mt…" → account_id[32] (verifies the checksum; null if invalid).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeAddressToAccountId<'local>(
     mut env: JNIEnv<'local>,
@@ -427,7 +427,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeMediaKey<'local>(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Движок E2E (KEM-храповик) — зеркало ffi_e2e.rs. Мульти-выход через cat_lp.
+//  E2E engine (KEM ratchet) — mirror of ffi_e2e.rs. Multi-output via cat_lp.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// RatchetEncrypt: session ⊕ plaintext ⊕ rng_seed[64] → [len(newSession)] newSession ‖ msg.
@@ -459,7 +459,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eEncrypt<'local
         Ok(s) => s,
         Err(_) => return null,
     };
-    // длина 64 проверена выше — try_into не паникует
+    // length 64 checked above — try_into does not panic
     let seed: [u8; 64] = seed_v.as_slice().try_into().unwrap();
     let msg = match st.encrypt(&plaintext, &seed) {
         Ok(m) => m,
@@ -504,9 +504,9 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eDecrypt<'local
     }
 }
 
-/// Алиса: build_handshake + init_initiator → [len(hs)] hs ‖ session.
-/// Аргументы: alice_account_pub, account_seed[32], bob_account_pub, bob_app_kem_pub,
-/// bob_spk_pub, spk_id, opk_id (0=нет), bob_opk_pub (пусто если нет), eph_seed[64], send_time.
+/// Alice: build_handshake + init_initiator → [len(hs)] hs ‖ session.
+/// Arguments: alice_account_pub, account_seed[32], bob_account_pub, bob_app_kem_pub,
+/// bob_spk_pub, spk_id, opk_id (0=none), bob_opk_pub (empty if none), eph_seed[64], send_time.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eBuildHandshake<'local>(
@@ -548,7 +548,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eBuildHandshake
     {
         return null;
     }
-    // все длины проверены выше (return null иначе) — try_into не паникует
+    // all lengths checked above (return null otherwise) — try_into does not panic
     let a_pub: [u8; MLDSA_PUB] = a_pub_v.as_slice().try_into().unwrap();
     let seed: [u8; 32] = seed_v.as_slice().try_into().unwrap();
     let b_pub: [u8; MLDSA_PUB] = b_pub_v.as_slice().try_into().unwrap();
@@ -586,7 +586,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eBuildHandshake
     }
 }
 
-/// Боб: process_handshake + init_responder → session blob (single output).
+/// Bob: process_handshake + init_responder → session blob (single output).
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eProcessHandshake<'local>(
@@ -628,7 +628,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eProcessHandsha
     {
         return null;
     }
-    // все длины проверены выше (return null иначе) — try_into не паникует
+    // all lengths checked above (return null otherwise) — try_into does not panic
     let acc_id: [u8; 32] = acc_v.as_slice().try_into().unwrap();
     let app_pub: [u8; MLKEM_PUB] = app_pub_v.as_slice().try_into().unwrap();
     let spk_pub: [u8; MLKEM_PUB] = spk_pub_v.as_slice().try_into().unwrap();
@@ -702,7 +702,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eSealBlob<'loca
     }
 }
 
-/// open_blob(blob_key[32], sealed) → padded plaintext byte[] (или null).
+/// open_blob(blob_key[32], sealed) → padded plaintext byte[] (or null).
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eOpenBlob<'local>(
     mut env: JNIEnv<'local>,
@@ -751,7 +751,7 @@ pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2eBlobId<'local>
     }
 }
 
-/// pad_len(n) — целевой размер после паддинга.
+/// pad_len(n) — target size after padding.
 #[no_mangle]
 pub extern "system" fn Java_quest_montana_app_MtBindings_nativeE2ePadLen(
     _env: JNIEnv,

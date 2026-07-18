@@ -1,9 +1,9 @@
-//! C-ABI surface — общая для iOS staticlib и Android cdylib.
+//! C-ABI surface — shared by the iOS staticlib and the Android cdylib.
 //!
-//! Все функции возвращают i32 status code. Output буферы — caller-supplied,
-//! фиксированной длины, документированной в `mt_bindings.h`.
+//! All functions return an i32 status code. Output buffers are caller-supplied,
+//! of fixed length documented in `mt_bindings.h`.
 
-// Контракты безопасности (размеры буферов, ненулевые указатели) документированы в mt_bindings.h.
+// Safety contracts (buffer sizes, non-null pointers) are documented in mt_bindings.h.
 #![allow(clippy::missing_safety_doc)]
 
 use core::slice;
@@ -23,7 +23,7 @@ use zeroize::Zeroizing;
 
 use super::*;
 
-/// Канонический suite_id для ML-DSA-65 account keypair (spec §Suite registry).
+/// Canonical suite_id for the ML-DSA-65 account keypair (spec §Suite registry).
 pub const MT_SUITE_MLDSA65: u16 = 0x0001;
 
 #[no_mangle]
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn mt_derive_account_id(
     })
 }
 
-/// 24-словная мнемоника → ML-DSA-65 account keypair + canonical account_id (suite 0x0001).
+/// 24-word mnemonic → ML-DSA-65 account keypair + canonical account_id (suite 0x0001).
 #[no_mangle]
 pub unsafe extern "C" fn mt_account_from_mnemonic(
     mnemonic_utf8: *const c_char,
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn mt_account_from_mnemonic(
     })
 }
 
-/// account_id (32 байта) → текстовый адрес "mt…" (Base58Check), записывает в out + NUL.
+/// account_id (32 bytes) → textual address "mt…" (Base58Check), writes into out + NUL.
 #[no_mangle]
 pub unsafe extern "C" fn mt_account_id_to_address(
     account_id: *const u8,
@@ -208,7 +208,7 @@ pub unsafe extern "C" fn mt_account_id_to_address(
     })
 }
 
-/// Текстовый адрес "mt…" → account_id (32 байта). Проверяет контрольную сумму.
+/// Textual address "mt…" → account_id (32 bytes). Verifies the checksum.
 #[no_mangle]
 pub unsafe extern "C" fn mt_address_to_account_id(
     address_utf8: *const c_char,
@@ -298,10 +298,10 @@ pub unsafe extern "C" fn mt_verify(
     })
 }
 
-/// 32 байта энтропии → 24-словная мнемоника UTF-8.
+/// 32 bytes of entropy → 24-word UTF-8 mnemonic.
 ///
-/// `out_mnemonic_utf8` — буфер ≥ out_capacity байт; функция запишет нуль-терминированную строку.
-/// `out_len` — фактически записанные байты (без терминатора). При недостатке буфера вернёт MT_ERR_BUFFER_TOO_SMALL.
+/// `out_mnemonic_utf8` — a buffer ≥ out_capacity bytes; the function writes a null-terminated string.
+/// `out_len` — the bytes actually written (excluding the terminator). If the buffer is too small it returns MT_ERR_BUFFER_TOO_SMALL.
 #[no_mangle]
 pub unsafe extern "C" fn mt_entropy_to_mnemonic(
     entropy: *const u8,
@@ -329,7 +329,7 @@ pub unsafe extern "C" fn mt_entropy_to_mnemonic(
     })
 }
 
-/// HKDF-Expand(master_seed, role, 64) -> ML-KEM-768 seed (d‖z). Этап 1: app_kem_key.
+/// HKDF-Expand(master_seed, role, 64) -> ML-KEM-768 seed (d‖z). Stage 1: app_kem_key.
 #[no_mangle]
 pub unsafe extern "C" fn mt_mlkem_seed_for_role(
     master_seed: *const u8,
@@ -350,7 +350,7 @@ pub unsafe extern "C" fn mt_mlkem_seed_for_role(
     })
 }
 
-/// ML-KEM-768 KeyGen из 64-байтного сида (FIPS 203, deterministic). pk 1184 / sk 2400.
+/// ML-KEM-768 KeyGen from a 64-byte seed (FIPS 203, deterministic). pk 1184 / sk 2400.
 #[no_mangle]
 pub unsafe extern "C" fn mt_mlkem_keypair_from_seed(
     seed: *const u8,
@@ -433,7 +433,7 @@ pub unsafe extern "C" fn mt_mlkem_decaps(
     })
 }
 
-/// 24-словная мнемоника -> app_kem_key (ML-KEM-768) через роль "mt-app-encryption-key". pk 1184 / sk 2400.
+/// 24-word mnemonic -> app_kem_key (ML-KEM-768) via role "mt-app-encryption-key". pk 1184 / sk 2400.
 #[no_mangle]
 pub unsafe extern "C" fn mt_app_kem_from_mnemonic(
     mnemonic_utf8: *const c_char,
@@ -460,8 +460,8 @@ pub unsafe extern "C" fn mt_app_kem_from_mnemonic(
     })
 }
 
-/// history_key = HKDF-SHA-256(salt=0×32, ikm=entropy_32, info="mt-history-key", 32) — Этап 10 мессенджера.
-/// `entropy` — 32 байта; `out` — 32 байта. SSOT для history_key всех клиентов.
+/// history_key = HKDF-SHA-256(salt=0×32, ikm=entropy_32, info="mt-history-key", 32) — messenger Stage 10.
+/// `entropy` — 32 bytes; `out` — 32 bytes. SSOT for history_key across all clients.
 #[no_mangle]
 pub unsafe extern "C" fn mt_history_key(entropy: *const u8, out: *mut u8) -> c_int {
     guard(|| {
@@ -477,8 +477,8 @@ pub unsafe extern "C" fn mt_history_key(entropy: *const u8, out: *mut u8) -> c_i
     })
 }
 
-/// media_key = HKDF-SHA-256(salt=0×32, ikm=entropy_32, info="mt-media-key", 32) — s.2 Этап 1.
-/// Отдельная ветвь сида для медиа at-rest (≠ history_key). `entropy`/`out` — 32 байта. SSOT для всех клиентов.
+/// media_key = HKDF-SHA-256(salt=0×32, ikm=entropy_32, info="mt-media-key", 32) — s.2 Stage 1.
+/// Separate seed branch for media at-rest (≠ history_key). `entropy`/`out` — 32 bytes. SSOT for all clients.
 #[no_mangle]
 pub unsafe extern "C" fn mt_media_key(entropy: *const u8, out: *mut u8) -> c_int {
     guard(|| {
@@ -494,13 +494,13 @@ pub unsafe extern "C" fn mt_media_key(entropy: *const u8, out: *mut u8) -> c_int
     })
 }
 
-// ═══ Этап 1 второго фронта — локальный архив «Монтана/Чаты/<чат>/» ═══
+// ═══ Stage 1 of the second front — local archive Montana/Chats/<chat>/ ═══
 
-/// Дописать одно сообщение в локальный архив: <base>/Чаты/<chat>/переписка.mtlog,
-/// sealed под history_key (Rust делает encode+seal+файл). base = папка «Монтана» приложения.
+/// Append a single message to the local archive: <base>/Chats/<chat>/conversation.mtlog,
+/// sealed under history_key (Rust does encode+seal+file). base = the app's Montana folder.
 ///
 /// # Safety
-/// `hk`/`account_id`/`conv_id` → 32 B; строки — валидный UTF-8 C-string; `content` → `content_len` B.
+/// `hk`/`account_id`/`conv_id` → 32 B; strings are valid UTF-8 C-strings; `content` → `content_len` B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_archive_append(
     base_path: *const c_char,
@@ -546,7 +546,7 @@ pub unsafe extern "C" fn mt_archive_append(
             Ok(s) => s,
             Err(_) => return crate::MT_ERR_IO,
         };
-        // Ядро назначает сквозной block_seq per-личность (seq.bin) — клиент не передаёт seq (нет повтора nonce).
+        // The core assigns a monotonic per-identity block_seq (seq.bin) — the client does not pass seq (no nonce reuse).
         match store.append_item(chat, &hk32, &acct, &conv, dir, send_time, &body) {
             Ok(_seq) => crate::MT_OK,
             Err(_) => crate::MT_ERR_IO,
@@ -554,11 +554,11 @@ pub unsafe extern "C" fn mt_archive_append(
     })
 }
 
-/// Зашифровать медиа под history_key и положить в <base>/Чаты/<chat>/Медиа/<blob_id_hex>.
-/// Другие приложения видят только шифртекст; расшифровывает только клиент по сиду.
+/// Encrypt media under history_key and place it into <base>/Chats/<chat>/Media/<blob_id_hex>.
+/// Other applications see only ciphertext; only the client can decrypt it using the seed.
 ///
 /// # Safety
-/// строки — валидный UTF-8 C-string; `hk`/`account_id` → 32 B; `blob` → `blob_len` B.
+/// strings are valid UTF-8 C-strings; `hk`/`account_id` → 32 B; `blob` → `blob_len` B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_archive_put_media(
     base_path: *const c_char,
@@ -611,11 +611,11 @@ pub unsafe extern "C" fn mt_archive_put_media(
     })
 }
 
-/// Прочитать и расшифровать медиа. Возвращает длину plaintext (>=0) либо код ошибки (<0).
-/// `out_cap` мал → MT_ERR_BUFFER_TOO_SMALL; файла нет / расшифровка не прошла → MT_ERR_IO.
+/// Read and decrypt media. Returns the plaintext length (>=0) or an error code (<0).
+/// `out_cap` too small → MT_ERR_BUFFER_TOO_SMALL; file missing / decryption failed → MT_ERR_IO.
 ///
 /// # Safety
-/// строки — валидный UTF-8; `hk`/`account_id` → 32 B; `out` → `out_cap` B.
+/// strings are valid UTF-8; `hk`/`account_id` → 32 B; `out` → `out_cap` B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_archive_get_media(
     base_path: *const c_char,

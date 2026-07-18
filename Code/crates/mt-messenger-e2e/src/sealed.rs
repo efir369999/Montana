@@ -1,5 +1,5 @@
-//! Этап 7 — запечатанный конверт первого контакта (sealed-sender).
-//! Крипта — через crate::crypto (cfg-развилка).
+//! Stage 7 — sealed envelope of first contact (sealed-sender).
+//! Crypto — via crate::crypto (cfg fork).
 
 use sha2::{Digest, Sha256};
 
@@ -166,7 +166,7 @@ mod tests {
 
     #[test]
     fn seal_and_pot_spec_kat() {
-        // Привязка боевых функций к hex спеки (Этап 7, «Тест-векторы»), не пере-вывод формул
+        // Binding production functions to spec hex (Stage 7, "Test vectors"), not re-deriving formulas
         let (k, n) = seal_key_nonce(&[0x44; 32]);
         assert_eq!(
             hex::encode(k),

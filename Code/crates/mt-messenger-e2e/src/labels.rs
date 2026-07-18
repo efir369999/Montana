@@ -1,6 +1,6 @@
-//! Этап 7 — слепая доставка: вращающиеся метки очередей.
-//! routing_secret из корня сессии; сессионная метка вращается каждое окно τ₁;
-//! инбокс-метка стабильна (f от account_id) — даёт wake-push.
+//! Stage 7 — blind delivery: rotating queue labels.
+//! routing_secret from the session root; the session label rotates every τ₁ window;
+//! the inbox label is stable (f of account_id) — provides wake-push.
 
 use sha2::{Digest, Sha256};
 
@@ -20,7 +20,7 @@ pub fn routing_secret(initial_root_key: &[u8; 32]) -> [u8; 32] {
     out
 }
 
-/// Оконный индекс W = ⌊unix_time / 60⌋.
+/// Window index W = ⌊unix_time / 60⌋.
 pub fn window_index(unix_time: u64) -> u64 {
     unix_time / TAU1_SECONDS
 }
@@ -37,7 +37,7 @@ pub fn session_label(routing_secret: &[u8; 32], dir: u8, window: u64) -> [u8; LA
     out
 }
 
-/// inbox_label(account_id) = SHA-256("mt-inbox"‖0x00‖account_id)[0..16]. Стабильна.
+/// inbox_label(account_id) = SHA-256("mt-inbox"‖0x00‖account_id)[0..16]. Stable.
 pub fn inbox_label(account_id: &[u8; 32]) -> [u8; LABEL_LEN] {
     let mut h = Sha256::new();
     h.update(b"mt-inbox");
@@ -84,7 +84,7 @@ mod tests {
 
     #[test]
     fn route_label_spec_kat() {
-        // Привязка боевых функций к hex спеки (Этап 7, «Тест-векторы»), не пере-вывод формул
+        // Bind production functions to spec hex (Stage 7, "Test vectors"), not re-deriving formulas
         let rs = routing_secret(&[0xAB; 32]);
         assert_eq!(
             hex::encode(rs),
