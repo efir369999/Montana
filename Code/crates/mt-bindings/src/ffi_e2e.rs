@@ -1,5 +1,5 @@
-//! C-ABI движка E2E (mt-messenger-e2e) для iOS. Переменная длина выходов —
-//! owned-буфер: функция аллоцирует, отдаёт (ptr,len); клиент освобождает mt_e2e_free.
+//! E2E engine C-ABI (mt-messenger-e2e) for iOS. Variable-length outputs use an
+//! owned buffer: the function allocates and returns (ptr,len); the client frees via mt_e2e_free.
 
 use core::slice;
 use std::os::raw::c_int;
@@ -16,10 +16,10 @@ unsafe fn write_out(data: Vec<u8>, out_ptr: *mut *mut u8, out_len: *mut usize) {
     std::mem::forget(boxed);
 }
 
-/// Освободить буфер, выданный функциями mt_e2e_*.
+/// Free the buffer produced by the mt_e2e_* functions.
 ///
 /// # Safety
-/// `ptr`/`len` — ровно то, что вернула mt_e2e_* через out-параметры; вызывать однократно.
+/// `ptr`/`len` are exactly what mt_e2e_* returned via out-parameters; call once.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() && len > 0 {
@@ -27,10 +27,10 @@ pub unsafe extern "C" fn mt_e2e_free(ptr: *mut u8, len: usize) {
     }
 }
 
-/// RatchetEncrypt через непрозрачный блоб сессии. Возвращает новый блоб сессии + сообщение.
+/// RatchetEncrypt over an opaque session blob. Returns a new session blob + message.
 ///
 /// # Safety
-/// Все указатели валидны на свою длину; `rng_seed` — 64 байта; out-указатели ненулевые.
+/// All pointers are valid for their length; `rng_seed` is 64 bytes; out-pointers are non-null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_encrypt(
     session: *const u8,
@@ -72,10 +72,10 @@ pub unsafe extern "C" fn mt_e2e_encrypt(
     })
 }
 
-/// RatchetDecrypt через непрозрачный блоб сессии. Возвращает новый блоб + открытый текст.
+/// RatchetDecrypt over an opaque session blob. Returns a new blob + plaintext.
 ///
 /// # Safety
-/// Все указатели валидны на свою длину; out-указатели ненулевые.
+/// All pointers are valid for their length; out-pointers are non-null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_decrypt(
     session: *const u8,
@@ -110,16 +110,16 @@ pub unsafe extern "C" fn mt_e2e_decrypt(
 use mt_messenger_e2e::handshake::{
     build_handshake, process_handshake, RecipientBundle, RecipientKeys,
 };
-// DSSOT-3: размеры — из авторитетных констант крейта (SSOT), не magic numbers.
+// DSSOT-3: sizes come from the crate's authoritative constants (SSOT), not magic numbers.
 const MLDSA_PUB: usize = crate::MT_MLDSA_PUBKEY_SIZE;
 const MLKEM_PUB: usize = crate::MT_MLKEM_PUBKEY_SIZE;
 const MLKEM_SK: usize = crate::MT_MLKEM_SECKEY_SIZE;
 
-/// Сторона Алисы: рукопожатие + инициализация сессии. Возвращает InitialHandshake
-/// + блоб сессии инициатора. `account_seed` — 32 байта (сид ML-DSA личности).
+/// Alice side: handshake + session initialization. Returns InitialHandshake
+/// + the initiator session blob. `account_seed` is 32 bytes (ML-DSA identity seed).
 ///
 /// # Safety
-/// Все ключевые указатели валидны на размеры спеки; opk_* читаются лишь при opk_flag=1.
+/// All key pointers are valid for the spec sizes; opk_* are read only when opk_flag=1.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn mt_e2e_build_handshake(
@@ -203,10 +203,10 @@ pub unsafe extern "C" fn mt_e2e_build_handshake(
     })
 }
 
-/// Сторона Боба: обработка рукопожатия + инициализация сессии получателя.
+/// Bob side: handshake processing + recipient session initialization.
 ///
 /// # Safety
-/// Все ключевые указатели валидны на размеры спеки; opk_* читаются лишь при opk_flag=1.
+/// All key pointers are valid for the spec sizes; opk_* are read only when opk_flag=1.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn mt_e2e_process_handshake(
@@ -288,11 +288,11 @@ use mt_messenger_e2e::media::{
     blob_id as media_blob_id, open_blob, pad_len as media_pad_len, seal_blob,
 };
 
-/// Запечатать медиа-блоб: sealed_blob = nonce || Seal(blob_key, nonce, input, AD=mt-media).
-/// out — owned-буфер (освободить mt_e2e_free). `input` — уже финальный (паддинг pad_len до вызова).
+/// Seal a media blob: sealed_blob = nonce || Seal(blob_key, nonce, input, AD=mt-media).
+/// out is an owned buffer (free via mt_e2e_free). `input` is already final (pad_len padding applied before the call).
 ///
 /// # Safety
-/// blob_key — 32 байта, nonce — 12 байт, input — input_len байт; out_ptr/out_len ненулевые.
+/// blob_key is 32 bytes, nonce is 12 bytes, input is input_len bytes; out_ptr/out_len are non-null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_seal_blob(
     blob_key: *const u8,
@@ -325,10 +325,10 @@ pub unsafe extern "C" fn mt_e2e_seal_blob(
     })
 }
 
-/// blob_id = SHA-256(sealed_blob) -> out32 (32 байта).
+/// blob_id = SHA-256(sealed_blob) -> out32 (32 bytes).
 ///
 /// # Safety
-/// sealed_blob — len байт; out32 — 32 байта.
+/// sealed_blob is len bytes; out32 is 32 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_blob_id(
     sealed_blob: *const u8,
@@ -350,10 +350,10 @@ pub unsafe extern "C" fn mt_e2e_blob_id(
     })
 }
 
-/// Расшифровать блоб -> padded plaintext (owned; усечь до size вызывающему). Ошибка -> MT_ERR_KEM_FAILED.
+/// Decrypt a blob -> padded plaintext (owned; caller truncates to size). Error -> MT_ERR_KEM_FAILED.
 ///
 /// # Safety
-/// blob_key — 32 байта; sealed_blob — len байт; out_ptr/out_len ненулевые.
+/// blob_key is 32 bytes; sealed_blob is len bytes; out_ptr/out_len are non-null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_open_blob(
     blob_key: *const u8,
@@ -387,17 +387,17 @@ pub unsafe extern "C" fn mt_e2e_open_blob(
     })
 }
 
-/// pad_len(n) — целевой размер после паддинга (скрытие размера).
+/// pad_len(n) is the target size after padding (size hiding).
 #[no_mangle]
 pub extern "C" fn mt_e2e_pad_len(n: usize) -> usize {
     media_pad_len(n)
 }
 
-/// safety_number(id_A, id_B) → 60 ASCII-цифр (Этап 8). Оба указателя — 32 байта account_id;
-/// выход — owned-буфер (60 байт), освобождать mt_e2e_free.
+/// safety_number(id_A, id_B) -> 60 ASCII digits (Stage 8). Both pointers are 32-byte account_id;
+/// output is an owned buffer (60 bytes), freed via mt_e2e_free.
 ///
 /// # Safety
-/// `id_a`/`id_b` валидны на 32 байта; out-указатели ненулевые.
+/// `id_a`/`id_b` are valid for 32 bytes; out-pointers are non-null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_safety_number(
     id_a: *const u8,
@@ -417,10 +417,10 @@ pub unsafe extern "C" fn mt_e2e_safety_number(
     })
 }
 
-/// party_code(account_id) → 30 ASCII-цифр (Этап 8). Указатель — 32 байта; выход owned.
+/// party_code(account_id) -> 30 ASCII digits (Stage 8). The pointer is 32 bytes; output is owned.
 ///
 /// # Safety
-/// `id` валиден на 32 байта; out-указатели ненулевые.
+/// `id` is valid for 32 bytes; out-pointers are non-null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_party_code(
     id: *const u8,
@@ -438,11 +438,11 @@ pub unsafe extern "C" fn mt_e2e_party_code(
     })
 }
 
-/// call_key/sframe_key (Этап 13, PQ-медиа-слой звонка). `call_seed` — 32 байта (из E2E-сигнала);
-/// out — 64 байта: call_key(32) ‖ sframe_key(32).
+/// call_key/sframe_key (Stage 13, PQ media layer of a call). `call_seed` is 32 bytes (from the E2E signal);
+/// out is 64 bytes: call_key(32) || sframe_key(32).
 ///
 /// # Safety
-/// `call_seed` валиден на 32 байта; `out` — на 64 байта.
+/// `call_seed` is valid for 32 bytes; `out` is valid for 64 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn mt_e2e_call_key(call_seed: *const u8, out: *mut u8) -> c_int {
     guard(|| {

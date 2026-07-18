@@ -1,12 +1,12 @@
-//! C-ABI сетевого моста (Montana P2P Network, Этап 6): синхронные обёртки над сетевым
-//! ядром (mt-postman/rendezvous/bootstrap) для Swift/Kotlin. Native-only —
-//! tokio/quinn не компилируются в wasm. Модель: глобальный tokio-рантайм, блокирующие
-//! FFI-вызовы (block_on). Паника через C-границу = UB, поэтому все ошибки —
-//! через NULL/код возврата, без unwrap/panic на пути FFI.
+//! C-ABI of the network bridge (Montana P2P Network, Stage 6): synchronous wrappers over the
+//! network core (mt-postman/rendezvous/bootstrap) for Swift/Kotlin. Native-only —
+//! tokio/quinn do not compile to wasm. Model: global tokio runtime, blocking
+//! FFI calls (block_on). A panic across the C boundary = UB, so all errors are
+//! reported via NULL/return code, without unwrap/panic on the FFI path.
 //!
-//! Thread-safety: хэндлы (MtPostman/MtClient/MtMdns) — Send+Sync, безопасны для
-//! передачи и использования из любого потока. Одновременные вызовы на ОДНОМ хэндле
-//! допустимы (Sync), но порядок операций между потоками не гарантирован.
+//! Thread-safety: handles (MtPostman/MtClient/MtMdns) are Send+Sync, safe to
+//! pass and use from any thread. Concurrent calls on the SAME handle
+//! are allowed (Sync), but the ordering of operations across threads is not guaranteed.
 
 use std::collections::VecDeque;
 use std::ffi::{CStr, CString};
@@ -26,14 +26,14 @@ fn rt() -> Option<&'static tokio::runtime::Runtime> {
         .as_ref()
 }
 
-/// N-1: паника future не должна пробивать C-границу (UB). Оборачиваем block_on в
-/// catch_unwind; паника → None → код ошибки FFI.
+/// N-1: a future panic must not cross the C boundary (UB). Wrap block_on in
+/// catch_unwind; panic → None → FFI error code.
 fn ffi_catch<R>(f: impl FnOnce() -> R) -> Option<R> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).ok()
 }
 
-/// Opaque-хэндл живого почтальона для FFI. Держит адрес, задачу цикла (для остановки)
-/// и MuqState (маршруты курьера).
+/// Opaque handle to a live postman for FFI. Holds the address, the loop task (for shutdown)
+/// and MuqState (courier routes).
 pub struct MtPostman {
     addr: SocketAddr,
     task: tokio::task::JoinHandle<()>,
@@ -41,7 +41,7 @@ pub struct MtPostman {
 }
 
 /// # Safety
-/// `bind` — валидный C-string (null-terminated) или null. Вызывающий владеет им.
+/// `bind` is a valid C string (null-terminated) or null. The caller owns it.
 unsafe fn cstr_to_socketaddr(bind: *const c_char) -> Option<SocketAddr> {
     if bind.is_null() {
         return None;
@@ -49,12 +49,12 @@ unsafe fn cstr_to_socketaddr(bind: *const c_char) -> Option<SocketAddr> {
     CStr::from_ptr(bind).to_str().ok()?.parse().ok()
 }
 
-/// Запустить почтальон на `bind` (например "0.0.0.0:0"). При успехе записывает реальный
-/// адрес (host:port) в `out_addr` (буфер ёмкости `out_cap`, null-terminated) и возвращает
-/// opaque-хэндл; при ошибке — null. Хэндл освобождается `mt_postman_stop`.
+/// Start a postman on `bind` (for example "0.0.0.0:0"). On success writes the real
+/// address (host:port) into `out_addr` (a buffer of capacity `out_cap`, null-terminated) and returns
+/// an opaque handle; on error, null. The handle is freed by `mt_postman_stop`.
 ///
 /// # Safety
-/// `bind` — валидный C-string; `out_addr` — буфер ≥ `out_cap` байт или null.
+/// `bind` is a valid C string; `out_addr` is a buffer ≥ `out_cap` bytes or null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_postman_start(
     bind: *const c_char,
@@ -75,9 +75,9 @@ pub unsafe extern "C" fn mt_postman_start(
     };
     let muq = server.muq().clone();
 
-    // Self-host (спека §534, «SELF-HOST абсолют против сговора»): телефон-узел = courier+host,
-    // self-route host_overlay → loopback → принимает депозит в СВОЮ очередь без центрального
-    // сервера. host_overlay = SHA-256(host_kem_pk) (тот же вывод, что клиент/манифест).
+    // Self-host (spec §534, "SELF-HOST absolute against collusion"): a phone-node = courier+host,
+    // self-routes host_overlay → loopback → accepts a deposit into ITS OWN queue without a central
+    // server. host_overlay = SHA-256(host_kem_pk) (the same derivation as client/manifest).
     {
         let host_kem = muq.host_kem_pubkey();
         let overlay = mt_crypto::sha256_raw(&host_kem.as_bytes()[..]);
@@ -88,7 +88,7 @@ pub unsafe extern "C" fn mt_postman_start(
 
     let task = rt.spawn(server.run());
 
-    // записать реальный адрес в out_addr, если запрошен
+    // write the real address into out_addr if requested
     if !out_addr.is_null() && out_cap > 0 {
         if let Ok(cs) = CString::new(real_addr.to_string()) {
             let bytes = cs.as_bytes_with_nul();
@@ -105,10 +105,10 @@ pub unsafe extern "C" fn mt_postman_start(
     }))
 }
 
-/// Остановить почтальон и освободить хэндл. После вызова `h` невалиден.
+/// Stop the postman and free the handle. After the call `h` is invalid.
 ///
 /// # Safety
-/// `h` — хэндл из `mt_postman_start` либо null; не использовать повторно.
+/// `h` is a handle from `mt_postman_start` or null; do not reuse.
 #[no_mangle]
 pub unsafe extern "C" fn mt_postman_stop(h: *mut MtPostman) {
     if h.is_null() {
@@ -116,13 +116,13 @@ pub unsafe extern "C" fn mt_postman_stop(h: *mut MtPostman) {
     }
     let postman = Box::from_raw(h);
     postman.task.abort();
-    // Box drop освобождает MtPostman; muq (Arc) убывает.
+    // Box drop frees MtPostman; muq (Arc) refcount decreases.
 }
 
-/// Порт живого почтальона (0 при null-хэндле) — для диагностики/теста.
+/// Port of a live postman (0 for a null handle) — for diagnostics/testing.
 ///
 /// # Safety
-/// `h` — валидный хэндл из `mt_postman_start` либо null.
+/// `h` is a valid handle from `mt_postman_start` or null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_postman_port(h: *const MtPostman) -> u16 {
     if h.is_null() {
@@ -131,11 +131,11 @@ pub unsafe extern "C" fn mt_postman_port(h: *const MtPostman) -> u16 {
     (*h).addr.port()
 }
 
-/// Добавить маршрут курьера: `overlay` (32 B оверлей-адрес хоста) → физический `target`
-/// (host:port). Возвращает 0 при успехе, -1 при ошибке аргументов. Модель relay Этапа 3.
+/// Add a courier route: `overlay` (32 B host overlay address) → physical `target`
+/// (host:port). Returns 0 on success, -1 on argument error. Stage 3 relay model.
 ///
 /// # Safety
-/// `h` — валидный хэндл; `overlay` — указатель на 32 байта; `target` — C-string.
+/// `h` is a valid handle; `overlay` is a pointer to 32 bytes; `target` is a C string.
 #[no_mangle]
 pub unsafe extern "C" fn mt_postman_add_route(
     h: *const MtPostman,
@@ -154,11 +154,11 @@ pub unsafe extern "C" fn mt_postman_add_route(
     0
 }
 
-/// Записать ML-KEM pubkey почтальона (1184 B) в `out` (ёмкость `out_cap`). Клиент
-/// использует его для sealed-депозита. Возвращает записанные байты (0 при ошибке).
+/// Write the postman's ML-KEM pubkey (1184 B) into `out` (capacity `out_cap`). The client
+/// uses it for a sealed deposit. Returns the number of bytes written (0 on error).
 ///
 /// # Safety
-/// `h` — валидный хэндл; `out` — буфер ≥ `out_cap` байт.
+/// `h` is a valid handle; `out` is a buffer ≥ `out_cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn mt_postman_kem_pubkey(
     h: *const MtPostman,
@@ -177,20 +177,20 @@ pub unsafe extern "C" fn mt_postman_kem_pubkey(
     bytes.len()
 }
 
-/// Opaque-хэндл клиента (живое QUIC-соединение к почтальону/курьеру).
-/// `pending` — буфер хвоста пакетной выборки: `subscribe_via_courier` отдаёт ВЕСЬ батч
-/// очереди разом (peek — не дропает; дроп по `mt_client_ack`, DEV-049(a) drop-on-ack),
-/// поэтому FFI обязан сохранить весь batch и выдавать по одному, иначе items[1..] теряются
-/// (§206 «буфер никогда не теряет сообщение»).
+/// Opaque client handle (a live QUIC connection to the postman/courier).
+/// `pending` is the tail buffer of a batch fetch: `subscribe_via_courier` returns the ENTIRE queue
+/// batch at once (peek does not drop; drop happens on `mt_client_ack`, DEV-049(a) drop-on-ack),
+/// so the FFI must keep the whole batch and hand it out one at a time, otherwise items[1..] are lost
+/// (§206 "the buffer never loses a message").
 pub struct MtClient {
     inner: MuqClient,
     pending: Mutex<VecDeque<QueueItem>>,
 }
 
-/// Подключиться к почтальону по адресу `addr` (host:port). Возвращает хэндл или null.
+/// Connect to a postman at address `addr` (host:port). Returns a handle or null.
 ///
 /// # Safety
-/// `addr` — валидный C-string.
+/// `addr` is a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn mt_client_connect(addr: *const c_char) -> *mut MtClient {
     let Some(a) = cstr_to_socketaddr(addr) else {
@@ -208,12 +208,12 @@ pub unsafe extern "C" fn mt_client_connect(addr: *const c_char) -> *mut MtClient
     }
 }
 
-/// Зарегистрировать очередь на хосте `host_overlay` (32 B) через курьер, к которому
-/// подключён клиент. `host_kem` — 1184 B pubkey хоста; `queue` — сериализованный Queue
-/// (`queue_len` байт). Возвращает 0 при успехе, -1 при ошибке.
+/// Register a queue on the host `host_overlay` (32 B) via the courier the
+/// client is connected to. `host_kem` is the host's 1184 B pubkey; `queue` is a serialized Queue
+/// (`queue_len` bytes). Returns 0 on success, -1 on error.
 ///
 /// # Safety
-/// `client` — валидный хэндл; `host_overlay` → 32 B; `host_kem` → 1184 B; `queue` → `queue_len` B.
+/// `client` is a valid handle; `host_overlay` → 32 B; `host_kem` → 1184 B; `queue` → `queue_len` B.
 #[no_mangle]
 pub unsafe extern "C" fn mt_client_register(
     client: *const MtClient,
@@ -244,9 +244,9 @@ pub unsafe extern "C" fn mt_client_register(
     }
 }
 
-/// Node hello (serverless-автомат): подключиться к узлу `addr`, получить его capability —
-/// host_kem (1184 B в out_kem) + send_id (32 B в out_send_id). Отправитель по mDNS находит
-/// узел собеседника и через hello узнаёт куда/чем депонировать, без карты. 0=успех, -1=ошибка.
+/// Node hello (serverless state machine): connect to node `addr`, obtain its capability —
+/// host_kem (1184 B into out_kem) + send_id (32 B into out_send_id). The sender finds the peer's
+/// node via mDNS and via hello learns where/how to deposit, without a map. 0=success, -1=error.
 ///
 /// # Safety
 /// `addr` — C-string; `out_kem` — 1184 B; `out_send_id` — 32 B.
@@ -275,10 +275,10 @@ pub unsafe extern "C" fn mt_node_hello(
     }
 }
 
-/// Освободить хэндл клиента (закрывает соединение).
+/// Free the client handle (closes the connection).
 ///
 /// # Safety
-/// `c` — хэндл из `mt_client_connect` либо null; не использовать повторно.
+/// `c` is a handle from `mt_client_connect` or null; do not reuse.
 #[no_mangle]
 pub unsafe extern "C" fn mt_client_free(c: *mut MtClient) {
     if !c.is_null() {
@@ -286,10 +286,10 @@ pub unsafe extern "C" fn mt_client_free(c: *mut MtClient) {
     }
 }
 
-/// SAFETY-хелпер: собрать SecretKey из FFI-указателя (4032 B). None при null.
+/// SAFETY helper: build a SecretKey from an FFI pointer (4032 B). None if null.
 ///
 /// # Safety
-/// `ptr` — указатель на `SECRET_KEY_SIZE` байт или null.
+/// `ptr` is a pointer to `SECRET_KEY_SIZE` bytes or null.
 unsafe fn secret_from_ptr(ptr: *const u8) -> Option<SecretKey> {
     if ptr.is_null() {
         return None;
@@ -297,16 +297,16 @@ unsafe fn secret_from_ptr(ptr: *const u8) -> Option<SecretKey> {
     let mut arr = [0u8; SECRET_KEY_SIZE];
     std::ptr::copy_nonoverlapping(ptr, arr.as_mut_ptr(), SECRET_KEY_SIZE);
     let sk = SecretKey::from_array(arr);
-    arr.zeroize(); // [u8; N] — Copy: from_array зачистил свою копию, не наш стек-остаток
+    arr.zeroize(); // [u8; N] is Copy: from_array zeroized its own copy, not our stack remainder
     Some(sk)
 }
 
-/// Отправить сообщение `msg` в очередь `send_id` на хосте `host_overlay` через курьер
-/// (двуххоп-депозит, sealed к ML-KEM хоста). Собирает HostDeposit+подпись+seal внутри.
-/// Одиночный shard. Возвращает 0 при успехе, -1 при ошибке.
+/// Send message `msg` to queue `send_id` on host `host_overlay` via the courier
+/// (two-hop deposit, sealed to the host's ML-KEM). Builds HostDeposit+signature+seal internally.
+/// Single shard. Returns 0 on success, -1 on error.
 ///
 /// # Safety
-/// `client` валиден; `host_overlay`→32; `host_kem`→1184; `send_id`→32; `send_sk`→4032;
+/// `client` is valid; `host_overlay`→32; `host_kem`→1184; `send_id`→32; `send_sk`→4032;
 /// `msg_id`→16; `msg`→`msg_len`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
@@ -377,12 +377,12 @@ pub unsafe extern "C" fn mt_client_send(
     }
 }
 
-/// Забрать одно сообщение из очереди `recv_id` на хосте `host_overlay` через курьер.
-/// Пишет ct первого конверта в `out` (ёмкость `out_cap`), возвращает его длину;
-/// 0 если очередь пуста или ошибка.
+/// Fetch one message from queue `recv_id` on host `host_overlay` via the courier.
+/// Writes the ct of the first envelope into `out` (capacity `out_cap`), returns its length;
+/// 0 if the queue is empty or on error.
 ///
 /// # Safety
-/// `client` валиден; `host_overlay`→32; `host_kem`→1184; `recv_id`→32; `recv_sk`→4032;
+/// `client` is valid; `host_overlay`→32; `host_kem`→1184; `recv_id`→32; `recv_sk`→4032;
 /// `out`→`out_cap`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
@@ -398,9 +398,9 @@ pub unsafe extern "C" fn mt_client_recv(
     if client.is_null() || out.is_null() {
         return 0;
     }
-    // Б3: сначала отдаём из буфера хвоста прошлой пакетной выборки — items[1..] не теряются.
-    // Возврат: 0 = очередь пуста; need > out_cap = буфер мал (элемент сохранён, перевыдели
-    // out_cap ≥ need и повтори); need ≤ out_cap = записано need байт.
+    // B3: first serve from the tail buffer of the previous batch fetch — items[1..] are not lost.
+    // Return: 0 = queue empty; need > out_cap = buffer too small (item retained, reallocate
+    // out_cap ≥ need and retry); need ≤ out_cap = need bytes written.
     {
         let mut pending = (*client).pending.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(item) = pending.front() {
@@ -413,8 +413,8 @@ pub unsafe extern "C" fn mt_client_recv(
             return need;
         }
     }
-    // Буфер пуст — тянем новую пачку через курьер: subscribe отдаёт ВЕСЬ батч разом
-    // (peek — дроп только по mt_client_ack, DEV-049(a)), поэтому сохраняем весь batch.
+    // Buffer empty — pull a new batch via the courier: subscribe returns the ENTIRE batch at once
+    // (peek — drop only on mt_client_ack, DEV-049(a)), so we keep the whole batch.
     if host_overlay.is_null() || host_kem.is_null() || recv_id.is_null() {
         return 0;
     }
@@ -458,10 +458,10 @@ pub unsafe extern "C" fn mt_client_recv(
     need
 }
 
-/// Подтвердить приём (DEV-049(a) §593): хост дропает буфер очереди recv_id. 0 = успех.
+/// Acknowledge receipt (DEV-049(a) §593): the host drops the recv_id queue buffer. 0 = success.
 ///
 /// # Safety
-/// `client` валиден; `host_overlay`→32; `host_kem`→1184; `recv_id`→32; `recv_sk`→4032.
+/// `client` is valid; `host_overlay`→32; `host_kem`→1184; `recv_id`→32; `recv_sk`→4032.
 #[no_mangle]
 pub unsafe extern "C" fn mt_client_ack(
     client: *const MtClient,
@@ -493,13 +493,13 @@ pub unsafe extern "C" fn mt_client_ack(
     }
 }
 
-/// DEV-049(b): RS(k,n) multi-host отправка — дробит `msg` на `n` осколков и депонирует
-/// по одному на каждый из `n` хостов. Хосты — конкатенированные массивы: `host_overlays`
-/// (n*32), `host_kems` (n*1184). Возврат: число успешных депозитов (durability при >= k),
-/// -1 при ошибке.
+/// DEV-049(b): RS(k,n) multi-host send — splits `msg` into `n` shards and deposits
+/// one to each of the `n` hosts. Hosts are concatenated arrays: `host_overlays`
+/// (n*32), `host_kems` (n*1184). Return: number of successful deposits (durability when >= k),
+/// -1 on error.
 ///
 /// # Safety
-/// `client` валиден; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `send_id`→32;
+/// `client` is valid; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `send_id`→32;
 /// `send_sk`→4032; `msg_id`→16; `msg`→`msg_len`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
@@ -559,12 +559,12 @@ pub unsafe extern "C" fn mt_client_send_erasure(
     }
 }
 
-/// DEV-049(b): RS(k,n) multi-host выборка — собирает осколки с `n` хостов и реконструирует
-/// из любых `k`. Пишет реконструированный ct в `out`; возврат — длина (0 если собрано < k /
-/// ошибка; need > out_cap = буфер мал).
+/// DEV-049(b): RS(k,n) multi-host fetch — collects shards from `n` hosts and reconstructs
+/// from any `k`. Writes the reconstructed ct into `out`; return is the length (0 if fewer than k
+/// collected / on error; need > out_cap = buffer too small).
 ///
 /// # Safety
-/// `client` валиден; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `recv_id`→32;
+/// `client` is valid; `host_overlays`→`n*32`; `host_kems`→`n*1184`; `recv_id`→32;
 /// `recv_sk`→4032; `out`→`out_cap`.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
@@ -635,16 +635,16 @@ mod tests {
         let mut buf = [0u8; 64];
         let h =
             unsafe { mt_postman_start(bind.as_ptr(), buf.as_mut_ptr() as *mut c_char, buf.len()) };
-        assert!(!h.is_null(), "почтальон запущен");
+        assert!(!h.is_null(), "postman started");
         let port = unsafe { mt_postman_port(h) };
-        assert!(port != 0, "реальный порт присвоен");
-        // out_addr содержит 127.0.0.1:<port>
+        assert!(port != 0, "real port assigned");
+        // out_addr contains 127.0.0.1:<port>
         let reported = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) }
             .to_str()
             .unwrap();
         assert!(
             reported.starts_with("127.0.0.1:"),
-            "адрес записан: {reported}"
+            "address recorded: {reported}"
         );
         unsafe { mt_postman_stop(h) };
     }
@@ -660,13 +660,13 @@ mod tests {
             unsafe { mt_postman_add_route(h, overlay.as_ptr(), target.as_ptr()) },
             0
         );
-        // мусорный target → -1
+        // garbage target → -1
         let bad = CString::new("xxx").unwrap();
         assert_eq!(
             unsafe { mt_postman_add_route(h, overlay.as_ptr(), bad.as_ptr()) },
             -1
         );
-        // null-хэндл → -1
+        // null handle → -1
         assert_eq!(
             unsafe { mt_postman_add_route(std::ptr::null(), overlay.as_ptr(), target.as_ptr()) },
             -1
@@ -684,22 +684,22 @@ mod tests {
         assert!(!host.is_null() && !courier.is_null());
         let host_port = unsafe { mt_postman_port(host) };
         let courier_port = unsafe { mt_postman_port(courier) };
-        // маршрут курьер → host
+        // route courier → host
         let host_overlay = [0xA0u8; 32];
         let host_addr = CString::new(format!("127.0.0.1:{host_port}")).unwrap();
         assert_eq!(
             unsafe { mt_postman_add_route(courier, host_overlay.as_ptr(), host_addr.as_ptr()) },
             0
         );
-        // ML-KEM pubkey хоста через FFI
+        // host's ML-KEM pubkey via FFI
         let mut kem = [0u8; 1184];
         let n = unsafe { mt_postman_kem_pubkey(host, kem.as_mut_ptr(), kem.len()) };
         assert_eq!(n, 1184);
-        // клиент подключается к курьеру
+        // client connects to the courier
         let courier_addr = CString::new(format!("127.0.0.1:{courier_port}")).unwrap();
         let client = unsafe { mt_client_connect(courier_addr.as_ptr()) };
-        assert!(!client.is_null(), "клиент подключён к курьеру");
-        // собрать Queue (эфемерные ключи очереди)
+        assert!(!client.is_null(), "client connected to courier");
+        // build a Queue (ephemeral queue keys)
         let ((recv_pk, _), (send_pk, _)) = derive_queue_keypairs(&[0x42u8; 32], 0).unwrap();
         let q = Queue {
             recv_id: [0x71u8; 32],
@@ -710,7 +710,7 @@ mod tests {
             quota: 64,
         };
         let qb = q.to_bytes();
-        // регистрация через курьер (host видит курьера, не клиента)
+        // registration via the courier (the host sees the courier, not the client)
         let rc = unsafe {
             mt_client_register(
                 client,
@@ -720,7 +720,7 @@ mod tests {
                 qb.len(),
             )
         };
-        assert_eq!(rc, 0, "FFI-клиент зарегистрировал очередь через FFI-курьер");
+        assert_eq!(rc, 0, "FFI client registered queue via FFI courier");
         unsafe {
             mt_client_free(client);
             mt_postman_stop(host);
@@ -743,7 +743,7 @@ mod tests {
         unsafe { mt_postman_kem_pubkey(host, kem.as_mut_ptr(), kem.len()) };
         let courier_addr = CString::new(format!("127.0.0.1:{courier_port}")).unwrap();
 
-        // ключи очереди
+        // queue keys
         let ((recv_pk, recv_sk), (send_pk, send_sk)) =
             derive_queue_keypairs(&[0x42u8; 32], 0).unwrap();
         let recv_id = [0x71u8; 32];
@@ -758,7 +758,7 @@ mod tests {
         };
         let qb = q.to_bytes();
 
-        // B регистрирует очередь через курьер
+        // B registers the queue via the courier
         let b = unsafe { mt_client_connect(courier_addr.as_ptr()) };
         assert_eq!(
             unsafe {
@@ -773,7 +773,7 @@ mod tests {
             0
         );
 
-        // A отправляет сообщение через курьер
+        // A sends a message via the courier
         let a = unsafe { mt_client_connect(courier_addr.as_ptr()) };
         let msg = b"privet cherez FFI most";
         let msg_id = [0x5Au8; 16];
@@ -789,9 +789,9 @@ mod tests {
                 msg.len(),
             )
         };
-        assert_eq!(rc, 0, "A отправил через FFI");
+        assert_eq!(rc, 0, "A sent via FFI");
 
-        // B забирает через курьер → байт-в-байт то же сообщение
+        // B fetches via the courier → byte-for-byte the same message
         let b2 = unsafe { mt_client_connect(courier_addr.as_ptr()) };
         let mut out = [0u8; 256];
         let n = unsafe {
@@ -805,7 +805,7 @@ mod tests {
                 out.len(),
             )
         };
-        assert_eq!(&out[..n], msg, "B получил сообщение A через FFI-мост");
+        assert_eq!(&out[..n], msg, "B received A message via FFI bridge");
 
         unsafe {
             mt_client_free(a);
@@ -818,8 +818,8 @@ mod tests {
 
     #[test]
     fn ffi_recv_preserves_full_batch() {
-        // Б3-регрессия: A шлёт 3, B забирает 3 — items[1..] не теряются (§206). До fix
-        // host дропал ВЕСЬ batch, а FFI возвращал только первый → #2/#3 терялись.
+        // B3 regression: A sends 3, B fetches 3 — items[1..] are not lost (§206). Before the fix
+        // the host dropped the ENTIRE batch while the FFI returned only the first → #2/#3 were lost.
         use mt_overlay::muq::{derive_queue_keypairs, Queue};
         let loop0 = CString::new("127.0.0.1:0").unwrap();
         let host = unsafe { mt_postman_start(loop0.as_ptr(), std::ptr::null_mut(), 0) };
@@ -860,7 +860,7 @@ mod tests {
             0
         );
 
-        // A шлёт 3 сообщения (разные msg_id + контент)
+        // A sends 3 messages (different msg_id + content)
         let a = unsafe { mt_client_connect(courier_addr.as_ptr()) };
         let msgs: [&[u8]; 3] = [b"soobshenie odin", b"soobshenie dva.", b"soobshenie tri!"];
         for (i, m) in msgs.iter().enumerate() {
@@ -877,10 +877,10 @@ mod tests {
                     m.len(),
                 )
             };
-            assert_eq!(rc, 0, "A отправил #{i}");
+            assert_eq!(rc, 0, "A sent #{i}");
         }
 
-        // B забирает — ВСЕ 3 (регрессия: до fix получал только #1)
+        // B fetches — ALL 3 (regression: before the fix it got only #1)
         let b2 = unsafe { mt_client_connect(courier_addr.as_ptr()) };
         let mut got: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
         for _ in 0..3 {
@@ -896,19 +896,19 @@ mod tests {
                     out.len(),
                 )
             };
-            assert!(n > 0, "получен непустой конверт");
+            assert!(n > 0, "received non-empty envelope");
             got.insert(out[..n].to_vec());
         }
         assert_eq!(
             got.len(),
             3,
-            "все 3 сообщения получены, ни одно не потеряно"
+            "all 3 messages received, none lost"
         );
         for m in msgs {
-            assert!(got.contains(m), "batch содержит сообщение");
+            assert!(got.contains(m), "batch contains message");
         }
 
-        // DEV-049(a): подтверждаем приём — хост дропает буфер очереди
+        // DEV-049(a): acknowledge receipt — the host drops the queue buffer
         assert_eq!(
             unsafe {
                 mt_client_ack(
@@ -921,7 +921,7 @@ mod tests {
             },
             0
         );
-        // 4-й recv — очередь опустошена
+        // 4th recv — the queue is drained
         let mut out = [0u8; 256];
         let n = unsafe {
             mt_client_recv(
@@ -934,7 +934,7 @@ mod tests {
                 out.len(),
             )
         };
-        assert_eq!(n, 0, "очередь пуста после выборки всех");
+        assert_eq!(n, 0, "queue empty after draining all");
 
         unsafe {
             mt_client_free(a);
@@ -949,8 +949,8 @@ mod tests {
     fn bad_bind_returns_null() {
         let bad = CString::new("not-an-addr").unwrap();
         let h = unsafe { mt_postman_start(bad.as_ptr(), std::ptr::null_mut(), 0) };
-        assert!(h.is_null(), "мусорный адрес → null");
-        // null-хэндлы безопасны
+        assert!(h.is_null(), "garbage address -> null");
+        // null handles are safe
         assert_eq!(unsafe { mt_postman_port(std::ptr::null()) }, 0);
         unsafe { mt_postman_stop(std::ptr::null_mut()) };
     }

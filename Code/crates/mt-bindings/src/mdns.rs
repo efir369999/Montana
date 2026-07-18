@@ -1,7 +1,7 @@
-//! mDNS-обнаружение узлов Montana в локальной сети (Montana P2P Network, Этап 6, п.3):
-//! `_montana._udp.local`. Под-режим A′ Этапа 5 — два телефона в одной Wi-Fi находят
-//! друг друга без конфига и без DHT. Discovery-слой: адрес из mDNS проверяется дальше
-//! (E2E / overlay), компрометация mDNS = неверный адрес → detected, не breach.
+//! mDNS discovery of Montana nodes on the local network (Montana P2P Network, Stage 6, item 3):
+//! `_montana._udp.local`. Sub-mode A′ of Stage 5 — two phones on the same Wi-Fi find
+//! each other without configuration and without DHT. Discovery layer: an address from mDNS is verified further
+//! (E2E / overlay), mDNS compromise = wrong address → detected, not breach.
 
 use std::ffi::CString;
 use std::os::raw::c_char;
@@ -11,16 +11,16 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 
 const SERVICE_TYPE: &str = "_montana._udp.local.";
 
-/// Opaque-хэндл mDNS-демона (держит регистрацию сервиса живой).
+/// Opaque handle to the mDNS daemon (keeps the service registration alive).
 pub struct MtMdns {
     daemon: ServiceDaemon,
 }
 
-/// Анонсировать свой почтальон в локальной сети на порту `port`. Возвращает хэндл
-/// (демон держит анонс живым) или null. `instance` — C-string имя экземпляра.
+/// Advertise this node's postman on the local network on port `port`. Returns a handle
+/// (the daemon keeps the advertisement alive) or null. `instance` — C-string instance name.
 ///
 /// # Safety
-/// `instance` — валидный C-string или null.
+/// `instance` — valid C-string or null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_mdns_advertise(port: u16, instance: *const c_char) -> *mut MtMdns {
     let name = if instance.is_null() {
@@ -38,19 +38,19 @@ pub unsafe extern "C" fn mt_mdns_advertise(port: u16, instance: *const c_char) -
     let Ok(info) = ServiceInfo::new(SERVICE_TYPE, &name, &host, "", port, None) else {
         return std::ptr::null_mut();
     };
-    let info = info.enable_addr_auto(); // авто-адреса интерфейсов
+    let info = info.enable_addr_auto(); // auto interface addresses
     if daemon.register(info).is_err() {
         return std::ptr::null_mut();
     }
     Box::into_raw(Box::new(MtMdns { daemon }))
 }
 
-/// Найти узлы Montana в локальной сети за `timeout_ms`. Пишет найденные адреса в `out`
-/// как "ip:port\n"-разделённый ASCII (ёмкость `out_cap`, null-terminated), возвращает
-/// число найденных узлов (0 если никого / ошибка).
+/// Find Montana nodes on the local network within `timeout_ms`. Writes found addresses into `out`
+/// as "ip:port\n"-separated ASCII (capacity `out_cap`, null-terminated), returns
+/// the number of nodes found (0 if none / error).
 ///
 /// # Safety
-/// `out` — буфер ≥ `out_cap` байт или null.
+/// `out` — buffer ≥ `out_cap` bytes or null.
 #[no_mangle]
 pub unsafe extern "C" fn mt_mdns_browse(timeout_ms: u32, out: *mut u8, out_cap: usize) -> usize {
     let Ok(daemon) = ServiceDaemon::new() else {
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn mt_mdns_browse(timeout_ms: u32, out: *mut u8, out_cap: 
     };
     let deadline = Duration::from_millis(timeout_ms as u64);
     let mut found: Vec<String> = Vec::new();
-    // собираем ServiceResolved до дедлайна
+    // collect ServiceResolved until the deadline
     let start = std::time::Instant::now();
     while start.elapsed() < deadline {
         let remaining = deadline.saturating_sub(start.elapsed());
@@ -93,10 +93,10 @@ pub unsafe extern "C" fn mt_mdns_browse(timeout_ms: u32, out: *mut u8, out_cap: 
     found.len()
 }
 
-/// Остановить анонс и освободить хэндл.
+/// Stop the advertisement and free the handle.
 ///
 /// # Safety
-/// `h` — хэндл из `mt_mdns_advertise` либо null; не использовать повторно.
+/// `h` — handle from `mt_mdns_advertise` or null; do not reuse.
 #[no_mangle]
 pub unsafe extern "C" fn mt_mdns_stop(h: *mut MtMdns) {
     if h.is_null() {
@@ -114,17 +114,17 @@ mod tests {
     fn advertise_handle_and_stop() {
         let instance = CString::new("test-node").unwrap();
         let h = unsafe { mt_mdns_advertise(8444, instance.as_ptr()) };
-        assert!(!h.is_null(), "mDNS-анонс запущен");
+        assert!(!h.is_null(), "mDNS announce started");
         unsafe { mt_mdns_stop(h) };
-        // null безопасен
+        // null is safe
         unsafe { mt_mdns_stop(std::ptr::null_mut()) };
     }
 
     #[test]
     fn browse_short_timeout_no_crash() {
-        // короткий browse не должен паниковать; count ≥ 0 (в sandbox обычно 0)
+        // short browse must not panic; count ≥ 0 (usually 0 in sandbox)
         let mut out = [0u8; 512];
         let n = unsafe { mt_mdns_browse(300, out.as_mut_ptr(), out.len()) };
-        let _ = n; // в CI/sandbox multicast может быть недоступен — важно, что нет паники
+        let _ = n; // multicast may be unavailable in CI/sandbox — the point is no panic
     }
 }

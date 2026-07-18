@@ -182,7 +182,7 @@ mod tests {
         let n = unsafe {
             mt_deeplink_bootstrap_endpoint(blink.as_ptr(), 1_000_000, out.as_mut_ptr(), out.len())
         };
-        assert!(n > 0, "global endpoint резолвится");
+        assert!(n > 0, "global endpoint resolves");
         assert!(std::str::from_utf8(&out[..n])
             .unwrap()
             .contains("2606:4700"));

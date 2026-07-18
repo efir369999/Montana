@@ -1,6 +1,6 @@
-//! WASM-bindings — веб-клиент. Крипта на pure-Rust ml-dsa/ml-kem (OpenSSL в браузер
-//! не собирается). Байт-идентичность нативу гарантируется FIPS 203/204 KAT:
-//! account_id от нулевой мнемоники == 9f199584…131a21 (см. mt-bindings KAT).
+//! WASM bindings — web client. Crypto on pure-Rust ml-dsa/ml-kem (OpenSSL does not
+//! build into the browser). Byte-identity to native is guaranteed by FIPS 203/204 KAT:
+//! account_id from the zero mnemonic == 9f199584…131a21 (see mt-bindings KAT).
 #![cfg(all(target_arch = "wasm32", feature = "wasm"))]
 
 use wasm_bindgen::prelude::*;
@@ -35,8 +35,8 @@ pub fn mnemonic_to_master_seed_js(mnemonic: &str) -> Result<Vec<u8>, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("{e:?}")))
 }
 
-/// 24 слова → pk(1952) ‖ acc_seed(32) ‖ account_id(32) = 2016 байт.
-/// acc_seed (ξ) — локальный секрет; хранить на устройстве, подписывать через `sign`.
+/// 24 words → pk(1952) ‖ acc_seed(32) ‖ account_id(32) = 2016 bytes.
+/// acc_seed (ξ) — local secret; store on the device, sign via `sign`.
 #[wasm_bindgen]
 pub fn account_from_mnemonic(mnemonic: &str) -> Result<Vec<u8>, JsValue> {
     let master = mnemonic_to_master_seed(mnemonic)
@@ -53,8 +53,8 @@ pub fn account_from_mnemonic(mnemonic: &str) -> Result<Vec<u8>, JsValue> {
     Ok(out)
 }
 
-/// 24 слова -> app_kem_key (ML-KEM-768) через роль "mt-app-encryption-key".
-/// Возврат: pk(1184) ‖ sk(2400). Байт-идентично нативу (OpenSSL) по кросс-бэкенд KAT.
+/// 24 words -> app_kem_key (ML-KEM-768) via role "mt-app-encryption-key".
+/// Returns: pk(1184) ‖ sk(2400). Byte-identical to native (OpenSSL) by cross-backend KAT.
 #[wasm_bindgen]
 pub fn app_kem_from_mnemonic(mnemonic: &str) -> Result<Vec<u8>, JsValue> {
     use ml_kem::{EncodedSizeUser, KemCore, MlKem768, B32 as KemB32};
@@ -70,7 +70,7 @@ pub fn app_kem_from_mnemonic(mnemonic: &str) -> Result<Vec<u8>, JsValue> {
     Ok(out)
 }
 
-/// ML-KEM-768 KeyGen из 64-байтного сида (FIPS 203, deterministic). Возврат pk(1184) ‖ sk(2400).
+/// ML-KEM-768 KeyGen from a 64-byte seed (FIPS 203, deterministic). Returns pk(1184) ‖ sk(2400).
 #[wasm_bindgen]
 pub fn mlkem_keypair_from_seed(seed: &[u8]) -> Result<Vec<u8>, JsValue> {
     use ml_kem::{EncodedSizeUser, KemCore, MlKem768, B32 as KemB32};
@@ -112,7 +112,7 @@ pub fn account_id_to_address(account_id: &[u8]) -> Result<String, JsValue> {
     Ok(crate::account_id_to_address(&id))
 }
 
-// ── Движок E2E (mt-messenger-e2e) для веба ──────────────────────────────
+// ── E2E engine (mt-messenger-e2e) for the web ──────────────────────────────
 use mt_messenger_e2e::handshake::{
     build_handshake, process_handshake, RecipientBundle, RecipientKeys,
 };
@@ -145,8 +145,8 @@ fn seed32(s: &[u8]) -> Result<[u8; 32], JsValue> {
         .map_err(|_| JsValue::from_str("seed must be 32 bytes"))
 }
 
-/// Алиса: рукопожатие + сессия. a = InitialHandshake, b = блоб сессии инициатора.
-/// `opk_pub` пуст (len 0) — без одноразового пре-ключа.
+/// Alice: handshake + session. a = InitialHandshake, b = initiator session blob.
+/// `opk_pub` is empty (len 0) — no one-time pre-key.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn e2e_build_handshake(
@@ -203,7 +203,7 @@ pub fn e2e_build_handshake(
     })
 }
 
-/// Боб: обработка рукопожатия -> блоб сессии получателя.
+/// Bob: process handshake -> recipient session blob.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn e2e_process_handshake(
@@ -256,7 +256,7 @@ pub fn e2e_process_handshake(
     Ok(session.to_bytes())
 }
 
-/// a = новый блоб сессии, b = сообщение на провод.
+/// a = new session blob, b = message for the wire.
 #[wasm_bindgen]
 pub fn e2e_encrypt(session: &[u8], pt: &[u8], rng_seed: &[u8]) -> Result<E2ePair, JsValue> {
     let mut st = SessionState::from_bytes(session).map_err(|_| JsValue::from_str("session"))?;
@@ -270,7 +270,7 @@ pub fn e2e_encrypt(session: &[u8], pt: &[u8], rng_seed: &[u8]) -> Result<E2ePair
     })
 }
 
-/// a = новый блоб сессии, b = открытый текст.
+/// a = new session blob, b = plaintext.
 #[wasm_bindgen]
 pub fn e2e_decrypt(session: &[u8], msg: &[u8]) -> Result<E2ePair, JsValue> {
     let mut st = SessionState::from_bytes(session).map_err(|_| JsValue::from_str("session"))?;
