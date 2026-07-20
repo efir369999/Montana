@@ -601,6 +601,182 @@ pub unsafe extern "C" fn mt_archive_root(
     })
 }
 
+/// writer_tag = SHA-256("mt-history-writer" ‖ 0x00 ‖ device_id)[0:4] — Stage 1 nonce split per writer.
+///
+/// # Safety
+/// `device_id` → 16 B; `out` → 4 B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_writer_tag(device_id: *const u8, out: *mut u8) -> c_int {
+    guard(|| {
+        if device_id.is_null() || out.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let mut dev = [0u8; 16];
+        dev.copy_from_slice(slice::from_raw_parts(device_id, 16));
+        let wt = mt_messenger_e2e::archive::writer_tag(&dev);
+        slice::from_raw_parts_mut(out, 4).copy_from_slice(&wt);
+        MT_OK
+    })
+}
+
+/// (writer_tag, block_seq) identity of a sealed block — from the stored nonce prefix (no decrypt).
+///
+/// # Safety
+/// `sealed` → `sealed_len` B; `out_writer_tag` → 4 B; `out_block_seq` → valid u64 pointer.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_block_id(
+    sealed: *const u8,
+    sealed_len: usize,
+    out_writer_tag: *mut u8,
+    out_block_seq: *mut u64,
+) -> c_int {
+    guard(|| {
+        if sealed.is_null() || out_writer_tag.is_null() || out_block_seq.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let s = slice::from_raw_parts(sealed, sealed_len);
+        let (Some(wt), Some(seq)) = (
+            mt_messenger_e2e::archive::block_writer_tag(s),
+            mt_messenger_e2e::archive::block_seq_of(s),
+        ) else {
+            return crate::MT_ERR_DECODE;
+        };
+        slice::from_raw_parts_mut(out_writer_tag, 4).copy_from_slice(&wt);
+        *out_block_seq = seq;
+        MT_OK
+    })
+}
+
+/// Export this writer's sealed blocks of one chat with block_seq >= from_seq as a length-prefixed
+/// stream (u32 LE ‖ sealed)×N — replication push source (Stage 3/4). Returns bytes written (>=0)
+/// or an error code; MT_ERR_BUFFER_TOO_SMALL if `out_cap` is insufficient (cap = log size fits).
+///
+/// # Safety
+/// strings are valid UTF-8 C-strings; `writer_tag` → 4 B; `out` → `out_cap` B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_export(
+    base_path: *const c_char,
+    chat_name: *const c_char,
+    writer_tag: *const u8,
+    from_seq: u64,
+    out: *mut u8,
+    out_cap: usize,
+) -> isize {
+    let r = guard(|| {
+        if base_path.is_null()
+            || chat_name.is_null()
+            || writer_tag.is_null()
+            || (out.is_null() && out_cap != 0)
+        {
+            return MT_ERR_NULL_PTR;
+        }
+        let base = match CStr::from_ptr(base_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let chat = match CStr::from_ptr(chat_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let mut wt = [0u8; 4];
+        wt.copy_from_slice(slice::from_raw_parts(writer_tag, 4));
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        let stream = match store.export_mine(chat, &wt, from_seq) {
+            Ok(v) => v,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        if stream.len() > out_cap {
+            return crate::MT_ERR_BUFFER_TOO_SMALL;
+        }
+        slice::from_raw_parts_mut(out, stream.len()).copy_from_slice(&stream);
+        stream.len() as c_int
+    });
+    r as isize
+}
+
+/// Ingest a replicated sealed block as-stored into the chat's log (Stage 4): AEAD-authenticate,
+/// dedup by (writer_tag, block_seq), append unchanged. Returns 1 appended, 0 duplicate, <0 error.
+///
+/// # Safety
+/// strings are valid UTF-8 C-strings; `hk`/`account_id` → 32 B; `sealed` → `sealed_len` B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_ingest(
+    base_path: *const c_char,
+    chat_name: *const c_char,
+    hk: *const u8,
+    account_id: *const u8,
+    sealed: *const u8,
+    sealed_len: usize,
+) -> c_int {
+    guard(|| {
+        if base_path.is_null()
+            || chat_name.is_null()
+            || hk.is_null()
+            || account_id.is_null()
+            || sealed.is_null()
+        {
+            return MT_ERR_NULL_PTR;
+        }
+        let base = match CStr::from_ptr(base_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let chat = match CStr::from_ptr(chat_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let mut hk32 = [0u8; 32];
+        hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
+        let mut acct = [0u8; 32];
+        acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let s = slice::from_raw_parts(sealed, sealed_len);
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
+            Ok(st) => st,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        match store.ingest_block(chat, &hk32, &acct, s) {
+            Ok(true) => 1,
+            Ok(false) => 0,
+            Err(e) if e.kind() == std::io::ErrorKind::InvalidData => crate::MT_ERR_DECODE,
+            Err(_) => crate::MT_ERR_IO,
+        }
+    })
+}
+
+/// conv_id (32 B) of a sealed block — decrypt under history_key, first item's conv (routing).
+///
+/// # Safety
+/// `hk`/`account_id` → 32 B; `sealed` → `sealed_len` B; `out` → 32 B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_peek_conv(
+    hk: *const u8,
+    account_id: *const u8,
+    sealed: *const u8,
+    sealed_len: usize,
+    out: *mut u8,
+) -> c_int {
+    guard(|| {
+        if hk.is_null() || account_id.is_null() || sealed.is_null() || out.is_null() {
+            return MT_ERR_NULL_PTR;
+        }
+        let mut hk32 = [0u8; 32];
+        hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
+        let mut acct = [0u8; 32];
+        acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let s = slice::from_raw_parts(sealed, sealed_len);
+        match mt_messenger_e2e::archive::peek_conv(&hk32, &acct, s) {
+            Some(conv) => {
+                slice::from_raw_parts_mut(out, 32).copy_from_slice(&conv);
+                MT_OK
+            },
+            None => crate::MT_ERR_DECODE,
+        }
+    })
+}
+
 /// Encrypt media under history_key and place it into <base>/Chats/<chat>/Media/<blob_id_hex>.
 /// Other applications see only ciphertext; only the client can decrypt it using the seed.
 ///

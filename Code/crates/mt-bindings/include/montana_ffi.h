@@ -755,6 +755,18 @@ int32_t mt_archive_append(const char *base_path, const char *chat_name,
 // Этап 2 — ArchiveRoot над всем локальным архивом (отпечаток для якоря/сходимости), 32 байта в out
 int32_t mt_archive_root(const char *base_path, const uint8_t *hk,
                         const uint8_t *account_id, uint8_t *out);
+// Этапы 3-4 — block-репликация архива (сходимость ArchiveRoot между устройствами)
+int32_t mt_writer_tag(const uint8_t *device_id, uint8_t *out);
+int32_t mt_archive_block_id(const uint8_t *sealed, size_t sealed_len,
+                            uint8_t *out_writer_tag, uint64_t *out_block_seq);
+intptr_t mt_archive_export(const char *base_path, const char *chat_name,
+                           const uint8_t *writer_tag, uint64_t from_seq,
+                           uint8_t *out, size_t out_cap);
+int32_t mt_archive_ingest(const char *base_path, const char *chat_name,
+                          const uint8_t *hk, const uint8_t *account_id,
+                          const uint8_t *sealed, size_t sealed_len);
+int32_t mt_archive_peek_conv(const uint8_t *hk, const uint8_t *account_id,
+                             const uint8_t *sealed, size_t sealed_len, uint8_t *out);
 int32_t mt_archive_put_media(const char *base_path, const char *chat_name,
                              const char *blob_id_hex, const uint8_t *hk, const uint8_t *account_id,
                              const uint8_t *blob, size_t blob_len);

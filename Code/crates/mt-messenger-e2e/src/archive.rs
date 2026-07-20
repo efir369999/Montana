@@ -233,6 +233,14 @@ pub fn block_hash(b: &HistoryBlock) -> [u8; 32] {
     Sha256::digest(encode_block(b)).into()
 }
 
+/// conv_id of a sealed block (decrypt + first item). One block — exactly one conv_id (Stage 1
+/// invariant), so the first item identifies the chat for routing. None on decrypt failure or an
+/// empty block.
+pub fn peek_conv(history_key: &[u8; 32], account_id: &[u8; 32], sealed: &[u8]) -> Option<[u8; 32]> {
+    let b = open_block(history_key, account_id, sealed)?;
+    b.items.first().map(|it| it.conv_id)
+}
+
 // ============ ArchiveStore — local hierarchy "Montana/Chats/<chat name>/" ============
 // Mirrors the app structure: <base>/Chats/<label>/conversation.mtlog + <base>/Chats/<label>/Media/<blob_ref>.
 // Label (folder name) is user-navigable; log contents are sealed (at-rest, seed required).
@@ -391,6 +399,58 @@ impl ArchiveStore {
         self.chat_dir(chat_name)
             .join(MEDIA_DIR)
             .join(sanitize(blob_ref))
+    }
+
+    /// Export this writer's sealed blocks of one chat with block_seq >= from_seq, as the on-disk
+    /// length-prefixed stream (u32 LE ‖ sealed)×N — transport framing for block replication (Stage 3/4).
+    pub fn export_mine(
+        &self,
+        chat_name: &str,
+        writer_tag: &[u8; 4],
+        from_seq: u64,
+    ) -> io::Result<Vec<u8>> {
+        let mut out = Vec::new();
+        for sealed in self.read_blocks(chat_name)? {
+            let (Some(wt), Some(seq)) = (block_writer_tag(&sealed), block_seq_of(&sealed)) else {
+                continue;
+            };
+            if &wt == writer_tag && seq >= from_seq {
+                out.extend_from_slice(&(sealed.len() as u32).to_le_bytes());
+                out.extend_from_slice(&sealed);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Ingest a replicated sealed block as-stored (Stage 4): AEAD-authenticate under history_key,
+    /// dedup by (writer_tag, block_seq) within the chat's log, append unchanged (identity preserved —
+    /// ArchiveRoot converges across devices). Ok(true)=appended, Ok(false)=duplicate.
+    pub fn ingest_block(
+        &self,
+        chat_name: &str,
+        history_key: &[u8; 32],
+        account_id: &[u8; 32],
+        sealed: &[u8],
+    ) -> io::Result<bool> {
+        if open_block(history_key, account_id, sealed).is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "sealed block does not authenticate",
+            ));
+        }
+        let (Some(wt), Some(seq)) = (block_writer_tag(sealed), block_seq_of(sealed)) else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "short sealed block",
+            ));
+        };
+        for existing in self.read_blocks(chat_name)? {
+            if block_writer_tag(&existing) == Some(wt) && block_seq_of(&existing) == Some(seq) {
+                return Ok(false);
+            }
+        }
+        self.append_block(chat_name, sealed)?;
+        Ok(true)
     }
 
     /// ArchiveRoot over the whole local archive (all chat logs under Chats/): ingest every sealed block
@@ -694,7 +754,6 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-
     #[test]
     fn store_archive_root_over_all_chats() {
         let tmp = std::env::temp_dir().join("mt_archive_root_test");
@@ -704,12 +763,83 @@ mod tests {
         let acct = [0x33u8; 32];
         let dev = [0x44u8; 16];
         assert_eq!(st.archive_root(&hk, &acct).unwrap(), None); // empty → not anchored
-        st.append_item("Alice", &hk, &acct, &dev, &[0x01u8; 32], DIR_OUT, 1000, b"hi").unwrap();
-        st.append_item("Bob", &hk, &acct, &dev, &[0x02u8; 32], DIR_OUT, 1001, b"yo").unwrap();
+        st.append_item(
+            "Alice",
+            &hk,
+            &acct,
+            &dev,
+            &[0x01u8; 32],
+            DIR_OUT,
+            1000,
+            b"hi",
+        )
+        .unwrap();
+        st.append_item("Bob", &hk, &acct, &dev, &[0x02u8; 32], DIR_OUT, 1001, b"yo")
+            .unwrap();
         let r1 = st.archive_root(&hk, &acct).unwrap();
         assert!(r1.is_some());
         // deterministic: recomputing yields the same root
         assert_eq!(st.archive_root(&hk, &acct).unwrap(), r1);
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn export_ingest_replication_converges() {
+        let ta = std::env::temp_dir().join("mt_arch_repl_a");
+        let tb = std::env::temp_dir().join("mt_arch_repl_b");
+        let _ = fs::remove_dir_all(&ta);
+        let _ = fs::remove_dir_all(&tb);
+        let a = ArchiveStore::open(&ta).unwrap();
+        let b = ArchiveStore::open(&tb).unwrap();
+        let hk = history_key(&[0x55u8; 32]);
+        let acct = [0x33u8; 32];
+        let dev_a = [0x01u8; 16];
+        let dev_b = [0x02u8; 16];
+        let conv = [0x07u8; 32];
+        // A writes two blocks, B writes one — different writers, same chat.
+        a.append_item("Chat", &hk, &acct, &dev_a, &conv, DIR_OUT, 1000, b"a0")
+            .unwrap();
+        a.append_item("Chat", &hk, &acct, &dev_a, &conv, DIR_IN, 1001, b"a1")
+            .unwrap();
+        b.append_item("Chat", &hk, &acct, &dev_b, &conv, DIR_IN, 1002, b"b0")
+            .unwrap();
+        // Exchange: push A's blocks into B, B's into A (as-stored frames).
+        let wt_a = writer_tag(&dev_a);
+        let wt_b = writer_tag(&dev_b);
+        let frames_a = a.export_mine("Chat", &wt_a, 0).unwrap();
+        let frames_b = b.export_mine("Chat", &wt_b, 0).unwrap();
+        for (src, dst) in [(&frames_a, &b), (&frames_b, &a)] {
+            let mut off = 0usize;
+            while off + 4 <= src.len() {
+                let len = u32::from_le_bytes(src[off..off + 4].try_into().unwrap()) as usize;
+                off += 4;
+                let sealed = &src[off..off + len];
+                off += len;
+                assert!(dst.ingest_block("Chat", &hk, &acct, sealed).unwrap());
+                // re-ingest → duplicate
+                assert!(!dst.ingest_block("Chat", &hk, &acct, sealed).unwrap());
+            }
+        }
+        // Convergence: identical ArchiveRoot on both devices.
+        let ra = a.archive_root(&hk, &acct).unwrap();
+        let rb = b.archive_root(&hk, &acct).unwrap();
+        assert!(ra.is_some());
+        assert_eq!(ra, rb, "union of writers must converge to one ArchiveRoot");
+        // peek_conv routes replicated blocks to the right chat.
+        let mut off = 0usize;
+        let len = u32::from_le_bytes(frames_a[off..off + 4].try_into().unwrap()) as usize;
+        off += 4;
+        assert_eq!(peek_conv(&hk, &acct, &frames_a[off..off + len]), Some(conv));
+    }
+
+    #[test]
+    fn ingest_rejects_garbage() {
+        let tmp = std::env::temp_dir().join("mt_arch_ingest_bad");
+        let _ = fs::remove_dir_all(&tmp);
+        let st = ArchiveStore::open(&tmp).unwrap();
+        let hk = history_key(&[0x55u8; 32]);
+        let acct = [0x33u8; 32];
+        assert!(st.ingest_block("Chat", &hk, &acct, &[0u8; 40]).is_err());
         let _ = fs::remove_dir_all(&tmp);
     }
 }
