@@ -749,8 +749,12 @@ int32_t mt_node_hello(const char *addr, uint8_t *out_kem, uint8_t *out_send_id);
 // Этап 1 второго фронта — локальный архив «Монтана/Чаты/<чат>/»
 int32_t mt_archive_append(const char *base_path, const char *chat_name,
                           const uint8_t *hk, const uint8_t *account_id,
+                          const uint8_t *device_id,
                           const uint8_t *conv_id, uint8_t dir,
                           uint64_t send_time, const uint8_t *content, size_t content_len);
+// Этап 2 — ArchiveRoot над всем локальным архивом (отпечаток для якоря/сходимости), 32 байта в out
+int32_t mt_archive_root(const char *base_path, const uint8_t *hk,
+                        const uint8_t *account_id, uint8_t *out);
 int32_t mt_archive_put_media(const char *base_path, const char *chat_name,
                              const char *blob_id_hex, const uint8_t *hk, const uint8_t *account_id,
                              const uint8_t *blob, size_t blob_len);

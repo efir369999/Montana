@@ -507,6 +507,7 @@ pub unsafe extern "C" fn mt_archive_append(
     chat_name: *const c_char,
     hk: *const u8,
     account_id: *const u8,
+    device_id: *const u8,
     conv_id: *const u8,
     dir: u8,
     send_time: u64,
@@ -518,6 +519,7 @@ pub unsafe extern "C" fn mt_archive_append(
             || chat_name.is_null()
             || hk.is_null()
             || account_id.is_null()
+            || device_id.is_null()
             || conv_id.is_null()
             || (content.is_null() && content_len != 0)
         {
@@ -537,6 +539,8 @@ pub unsafe extern "C" fn mt_archive_append(
         acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
         let mut conv = [0u8; 32];
         conv.copy_from_slice(slice::from_raw_parts(conv_id, 32));
+        let mut dev = [0u8; 16];
+        dev.copy_from_slice(slice::from_raw_parts(device_id, 16));
         let body = if content_len == 0 {
             Vec::new()
         } else {
@@ -547,12 +551,53 @@ pub unsafe extern "C" fn mt_archive_append(
             Err(_) => return crate::MT_ERR_IO,
         };
         // The core assigns a monotonic per-identity block_seq (seq.bin) — the client does not pass seq (no nonce reuse).
-        // Single-writer device_id (multi-device linking threads the real DeviceRegistry device_id — Stage 3 integration).
-        let device_id = [0u8; 16];
-        match store.append_item(chat, &hk32, &acct, &device_id, &conv, dir, send_time, &body) {
+        // device_id (16 B) → writer_tag: separates the nonce space across this seed's devices (Stage 1).
+        match store.append_item(chat, &hk32, &acct, &dev, &conv, dir, send_time, &body) {
             Ok(_seq) => crate::MT_OK,
             Err(_) => crate::MT_ERR_IO,
         }
+    })
+}
+
+/// ArchiveRoot (Stage 2) over the whole local archive: reads every chat log under <base>/Chats/,
+/// ingests sealed blocks by (writer_tag, block_seq), folds the Merkle root. Writes 32 bytes to `out`
+/// and returns MT_OK; returns MT_ERR_IO on read failure; an empty archive yields all-zero out + MT_OK.
+///
+/// # Safety
+/// `base_path` is a valid UTF-8 C-string; `hk`/`account_id` → 32 B; `out` → 32 B.
+#[no_mangle]
+pub unsafe extern "C" fn mt_archive_root(
+    base_path: *const c_char,
+    hk: *const u8,
+    account_id: *const u8,
+    out: *mut u8,
+) -> c_int {
+    guard(|| {
+        if base_path.is_null() || hk.is_null() || account_id.is_null() || out.is_null() {
+            return crate::MT_ERR_NULL_PTR;
+        }
+        let base = match CStr::from_ptr(base_path).to_str() {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_INVALID_UTF8,
+        };
+        let mut hk32 = [0u8; 32];
+        hk32.copy_from_slice(slice::from_raw_parts(hk, 32));
+        let mut acct = [0u8; 32];
+        acct.copy_from_slice(slice::from_raw_parts(account_id, 32));
+        let store = match mt_messenger_e2e::archive::ArchiveStore::open(base) {
+            Ok(s) => s,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        let root = match store.archive_root(&hk32, &acct) {
+            Ok(r) => r,
+            Err(_) => return crate::MT_ERR_IO,
+        };
+        let out_slice = slice::from_raw_parts_mut(out, 32);
+        match root {
+            Some(r) => out_slice.copy_from_slice(&r),
+            None => out_slice.fill(0),
+        }
+        crate::MT_OK
     })
 }
 

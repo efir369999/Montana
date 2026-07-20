@@ -393,6 +393,33 @@ impl ArchiveStore {
             .join(sanitize(blob_ref))
     }
 
+    /// ArchiveRoot over the whole local archive (all chat logs under Chats/): ingest every sealed block
+    /// into an index keyed by (writer_tag, block_seq), fold the Merkle root (Stage 2). None when empty.
+    /// This is the local archive fingerprint the app anchors and compares across devices for convergence.
+    pub fn archive_root(
+        &self,
+        history_key: &[u8; 32],
+        account_id: &[u8; 32],
+    ) -> io::Result<Option<[u8; 32]>> {
+        let mut idx = crate::reconcile::ArchiveIndex::new();
+        let chats = self.base.join(CHATS_DIR);
+        let dir = match fs::read_dir(&chats) {
+            Ok(d) => d,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        for entry in dir.flatten() {
+            let label = match entry.file_name().into_string() {
+                Ok(l) => l,
+                Err(_) => continue,
+            };
+            for sealed in self.read_blocks(&label)? {
+                idx.ingest_sealed(history_key, account_id, &sealed);
+            }
+        }
+        Ok(idx.archive_root())
+    }
+
     /// Migrate the chat folder when the label is renamed (conversation identity = conv_address, not the label).
     pub fn rename_chat(&self, old_label: &str, new_label: &str) -> io::Result<()> {
         let so = sanitize(old_label);
@@ -664,6 +691,25 @@ mod tests {
             Some(b"\x89PNG demo".to_vec())
         );
 
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+
+    #[test]
+    fn store_archive_root_over_all_chats() {
+        let tmp = std::env::temp_dir().join("mt_archive_root_test");
+        let _ = fs::remove_dir_all(&tmp);
+        let st = ArchiveStore::open(&tmp).unwrap();
+        let hk = history_key(&[0x55u8; 32]);
+        let acct = [0x33u8; 32];
+        let dev = [0x44u8; 16];
+        assert_eq!(st.archive_root(&hk, &acct).unwrap(), None); // empty → not anchored
+        st.append_item("Alice", &hk, &acct, &dev, &[0x01u8; 32], DIR_OUT, 1000, b"hi").unwrap();
+        st.append_item("Bob", &hk, &acct, &dev, &[0x02u8; 32], DIR_OUT, 1001, b"yo").unwrap();
+        let r1 = st.archive_root(&hk, &acct).unwrap();
+        assert!(r1.is_some());
+        // deterministic: recomputing yields the same root
+        assert_eq!(st.archive_root(&hk, &acct).unwrap(), r1);
         let _ = fs::remove_dir_all(&tmp);
     }
 }
