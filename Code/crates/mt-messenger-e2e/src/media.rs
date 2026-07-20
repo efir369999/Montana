@@ -13,6 +13,11 @@ pub const MAX_BLOB: u64 = 2_147_483_648; // 2 GiB — logical file ceiling
 pub const MAX_BLOB_CHUNK: usize = 16_777_216; // 16 MiB — upload/allocation/PoT unit
 pub const THUMB_MAX: usize = 16_384; // 16 KiB
 pub const BLOB_POT_STEPS: u32 = 1_048_576;
+// Stage 8 (second front) — holder durability: a content-addressed blob lives while any holder (a
+// recipient who downloaded it) keeps it. T_BLOB_RETAIN / BLOB_GRACE are RELAY transit policy only —
+// they do not apply to a holder (spec §282).
+pub const T_BLOB_RETAIN: u64 = 2_592_000; // 30 days — central relay transit retention, not a holder
+pub const BLOB_GRACE: u64 = 3600; // life of an unreferenced chunk until delivery (transit, not archive)
 
 pub const MEDIA_IMAGE: u8 = 0x01;
 pub const MEDIA_VIDEO: u8 = 0x02;
@@ -239,5 +244,22 @@ mod tests {
         assert_eq!(pad_len(255), 256);
         assert_eq!(pad_len(256), 256); // bit_length(256)=9, step=1<<4=16, ceil(256/16)*16=256
         assert!(pad_len(1000) >= 1000 && pad_len(1000) < 1000 + 1000 / 16 + 64);
+    }
+
+    #[test]
+    fn holder_durability_dedup_by_blob_id() {
+        // One upload, N downloads → N holders; identical content → identical blob_id (dedup in the swarm).
+        let a = seal_blob(&[0x66; 32], &[0u8; 12], b"montana-media");
+        let b = seal_blob(&[0x66; 32], &[0u8; 12], b"montana-media");
+        assert_eq!(
+            blob_id(&a),
+            blob_id(&b),
+            "same content → same blob_id (holder dedup)"
+        );
+        let c = seal_blob(&[0x66; 32], &[0u8; 12], b"other-media");
+        assert_ne!(blob_id(&a), blob_id(&c));
+        // integrity: the address IS the hash of the sealed blob.
+        let d: [u8; 32] = Sha256::digest(&a).into();
+        assert_eq!(blob_id(&a), d);
     }
 }

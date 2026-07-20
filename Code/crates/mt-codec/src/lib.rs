@@ -115,6 +115,8 @@ pub mod domain {
     pub const MSG_MSG_LEAF: &[u8] = b"mt-msg-leaf"; // ArchiveRoot leaf (s.2 St.2)
     pub const MSG_MSG_NODE: &[u8] = b"mt-msg-node"; // ArchiveRoot node (s.2 St.2)
     pub const MSG_ARCHIVE_SYNC: &[u8] = b"mt-archive-sync"; // ArchiveSyncRequest sig (s.2 St.3)
+    pub const MSG_RECOVER_REQ: &[u8] = b"mt-recover-req"; // RecoveryRequest sig (s.2 St.6)
+    pub const MSG_COMPACT: &[u8] = b"mt-compact"; // CompactionManifest sig (s.2 St.10)
     pub const MSG_MEDIA_KEY: &[u8] = b"mt-media-key"; // HKDF info для media_key (s.2 Этап 1)
     pub const MSG_MEDIA_VAULT: &[u8] = b"mt-media-vault"; // AD медиа at-rest vault (s.2 Этап 1)
     pub const MSG_DEVICE_LINK: &[u8] = b"montana-link"; // обёртка ключа при QR-привязке устройства

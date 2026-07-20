@@ -77,6 +77,111 @@ pub fn app_id() -> [u8; 32] {
     h.finalize().into()
 }
 
+/// Stage 7 — MerklePath for partial verification: a recovered thread (Stage 6) is checked against the
+/// sub-tree of its leaves, not the whole root. Layout: leaf_index u64 LE ‖ path_len 1 ‖ siblings[32×len]
+/// (bottom-up). Sibling side is derived from leaf_index (even → sibling right, odd → sibling left); an odd
+/// level duplicates the last node (identical to `archive_root`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MerklePath {
+    pub leaf_index: u64,
+    pub siblings: Vec<[u8; 32]>,
+}
+
+pub fn encode_path(p: &MerklePath) -> Option<Vec<u8>> {
+    if p.siblings.len() > 255 {
+        return None;
+    }
+    let mut o = Vec::with_capacity(9 + 32 * p.siblings.len());
+    o.extend_from_slice(&p.leaf_index.to_le_bytes());
+    o.push(p.siblings.len() as u8);
+    for s in &p.siblings {
+        o.extend_from_slice(s);
+    }
+    Some(o)
+}
+
+pub fn decode_path(buf: &[u8]) -> Option<MerklePath> {
+    if buf.len() < 9 {
+        return None;
+    }
+    let leaf_index = u64::from_le_bytes(buf[0..8].try_into().ok()?);
+    let path_len = buf[8] as usize;
+    if buf.len() != 9 + 32 * path_len {
+        return None;
+    }
+    let mut siblings = Vec::with_capacity(path_len);
+    for i in 0..path_len {
+        let off = 9 + 32 * i;
+        let mut s = [0u8; 32];
+        s.copy_from_slice(&buf[off..off + 32]);
+        siblings.push(s);
+    }
+    Some(MerklePath {
+        leaf_index,
+        siblings,
+    })
+}
+
+/// Fold a leaf value with its siblings bottom-up: even index → node(cur, sib), odd → node(sib, cur).
+fn fold_path(leaf: &[u8; 32], leaf_index: u64, siblings: &[[u8; 32]]) -> [u8; 32] {
+    let mut cur = *leaf;
+    let mut idx = leaf_index;
+    for sib in siblings {
+        cur = if idx & 1 == 0 {
+            node(&cur, sib)
+        } else {
+            node(sib, &cur)
+        };
+        idx >>= 1;
+    }
+    cur
+}
+
+/// Verify a block against an anchor ArchiveRoot via its MerklePath: recompute the leaf from H(block),
+/// fold, compare to root. A single-leaf archive (N=1, empty path) verifies leaf == root.
+pub fn verify_path(block_hash: &[u8; 32], path: &MerklePath, root: &[u8; 32]) -> bool {
+    &fold_path(&leaf(block_hash), path.leaf_index, &path.siblings) == root
+}
+
+/// Build the MerklePath for the block at `index` in the ordered set (same canonical order and odd-dup
+/// rule as `archive_root`). None if index is out of range.
+pub fn merkle_path(block_hashes_ordered: &[[u8; 32]], index: usize) -> Option<MerklePath> {
+    let n = block_hashes_ordered.len();
+    if index >= n {
+        return None;
+    }
+    let mut level: Vec<[u8; 32]> = block_hashes_ordered.iter().map(leaf).collect();
+    let mut idx = index;
+    let mut siblings = Vec::new();
+    while level.len() > 1 {
+        let sib_idx = idx ^ 1;
+        let sib = if sib_idx < level.len() {
+            level[sib_idx]
+        } else {
+            level[idx] // odd level → last node duplicated
+        };
+        siblings.push(sib);
+        let mut next = Vec::with_capacity((level.len() + 1) / 2);
+        let mut i = 0;
+        while i < level.len() {
+            let l = level[i];
+            let r = if i + 1 < level.len() {
+                level[i + 1]
+            } else {
+                level[i]
+            };
+            next.push(node(&l, &r));
+            i += 2;
+        }
+        level = next;
+        idx >>= 1;
+    }
+    Some(MerklePath {
+        leaf_index: index as u64,
+        siblings,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +244,60 @@ mod tests {
         assert_ne!(archive_root(&[aa, bb]), archive_root(&[bb, aa]));
         // but identical input → identical root (determinism)
         assert_eq!(archive_root(&[aa, bb]), archive_root(&[aa, bb]));
+    }
+
+    #[test]
+    fn merkle_path_kat() {
+        // spec §274: N=2 tree (aa, bb). Path of leaf 0 = {index=0, siblings=[leaf_1]}; fold == root.
+        let aa = [0xaau8; 32];
+        let bb = [0xbbu8; 32];
+        let root = archive_root(&[aa, bb]).unwrap();
+        let path = merkle_path(&[aa, bb], 0).unwrap();
+        assert_eq!(path.leaf_index, 0);
+        assert_eq!(path.siblings, vec![leaf(&bb)]);
+        assert!(verify_path(&aa, &path, &root));
+        // path of leaf 1
+        let path1 = merkle_path(&[aa, bb], 1).unwrap();
+        assert!(verify_path(&bb, &path1, &root));
+        // encode/decode roundtrip
+        let enc = encode_path(&path).unwrap();
+        assert_eq!(enc.len(), 9 + 32);
+        assert_eq!(decode_path(&enc), Some(path));
+    }
+
+    #[test]
+    fn merkle_path_odd_tree() {
+        // N=3 (aa, bb, cc) — the duplicated last leaf (index 2) must verify.
+        let aa = [0xaau8; 32];
+        let bb = [0xbbu8; 32];
+        let cc = [0xccu8; 32];
+        let leaves = [aa, bb, cc];
+        let root = archive_root(&leaves).unwrap();
+        for (i, h) in leaves.iter().enumerate() {
+            let path = merkle_path(&leaves, i).unwrap();
+            assert!(
+                verify_path(h, &path, &root),
+                "leaf {i} must verify against root"
+            );
+        }
+        // wrong block_hash does not verify
+        let path0 = merkle_path(&leaves, 0).unwrap();
+        assert!(!verify_path(&[0x00u8; 32], &path0, &root));
+    }
+
+    #[test]
+    fn merkle_path_single_leaf() {
+        // N=1: root = leaf_0, empty path verifies.
+        let aa = [0xaau8; 32];
+        let root = archive_root(&[aa]).unwrap();
+        let path = merkle_path(&[aa], 0).unwrap();
+        assert!(path.siblings.is_empty());
+        assert!(verify_path(&aa, &path, &root));
+    }
+
+    #[test]
+    fn merkle_path_out_of_range() {
+        assert_eq!(merkle_path(&[[0xaau8; 32]], 1), None);
+        assert!(decode_path(&[0u8; 8]).is_none());
     }
 }
