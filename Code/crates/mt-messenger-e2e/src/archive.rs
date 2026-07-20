@@ -1,8 +1,9 @@
 //! Stage 1 (second front — data decentralization) — history archive.
 //! HistoryBlock = block_seq u64 LE ‖ item_count u32 LE
 //!   ‖ [ conv_id 32 ‖ dir 1 ‖ send_time u64 LE ‖ content_len u32 LE ‖ Content ]×item_count
-//! sealed = nonce(block_seq_le8 ‖ 0x00000000) ‖ ChaCha20-Poly1305(history_key, nonce, block,
-//!                                                                 AD = "mt-history" ‖ 0x00 ‖ account_id).
+//! writer_tag = SHA-256("mt-history-writer" ‖ 0x00 ‖ device_id)[0:4] — splits nonce across writers under one history_key.
+//! nonce  = block_seq_le8 (8) ‖ writer_tag (4) = 12 B; sealed = nonce ‖ ChaCha20-Poly1305(history_key, nonce, block,
+//!          AD = "mt-history" ‖ 0x00 ‖ account_id).  H(HistoryBlock) = SHA-256(open block) — stable across reseal (Stage 2/6).
 //! history_key = HKDF-SHA-256(0×32, entropy_32, "mt-history-key", 32) — SSOT (first front, Stage 12).
 //! media_key   = HKDF-SHA-256(0×32, entropy_32, "mt-media-key", 32)  — separate seed branch (≠ history_key).
 //! block_seq — global counter per-identity (seq.bin in base), not per-chat: otherwise nonce reuse (spec s.2 v0.3.1).
@@ -10,7 +11,9 @@
 
 use crate::kdf::hkdf_sha256;
 use crate::ratchet::{open, seal};
-use mt_codec::domain::{MSG_HISTORY, MSG_HISTORY_KEY, MSG_MEDIA_KEY, MSG_MEDIA_VAULT};
+use mt_codec::domain::{
+    MSG_HISTORY, MSG_HISTORY_KEY, MSG_HISTORY_WRITER, MSG_MEDIA_KEY, MSG_MEDIA_VAULT,
+};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, Write};
@@ -103,9 +106,22 @@ pub fn decode_block(buf: &[u8]) -> Option<HistoryBlock> {
     Some(HistoryBlock { block_seq, items })
 }
 
-fn block_nonce(block_seq: u64) -> [u8; 12] {
+/// writer_tag = SHA-256("mt-history-writer" ‖ 0x00 ‖ device_id)[0:4]. Splits the nonce space across
+/// writers sharing one history_key (multiple devices of one seed, DeviceRegistry): different writers
+/// differ by writer_tag, one writer stays monotonic by block_seq → nonce reuse is impossible.
+pub fn writer_tag(device_id: &[u8; 16]) -> [u8; 4] {
+    let mut h = Sha256::new();
+    h.update(MSG_HISTORY_WRITER);
+    h.update([0x00]);
+    h.update(device_id);
+    let d: [u8; 32] = h.finalize().into();
+    [d[0], d[1], d[2], d[3]]
+}
+
+fn block_nonce(block_seq: u64, writer_tag: &[u8; 4]) -> [u8; 12] {
     let mut n = [0u8; 12];
     n[0..8].copy_from_slice(&block_seq.to_le_bytes());
+    n[8..12].copy_from_slice(writer_tag);
     n
 }
 
@@ -116,8 +132,13 @@ fn history_ad(account_id: &[u8; 32]) -> Vec<u8> {
     ad
 }
 
-pub fn seal_block(history_key: &[u8; 32], account_id: &[u8; 32], b: &HistoryBlock) -> Vec<u8> {
-    let nonce = block_nonce(b.block_seq);
+pub fn seal_block(
+    history_key: &[u8; 32],
+    account_id: &[u8; 32],
+    device_id: &[u8; 16],
+    b: &HistoryBlock,
+) -> Vec<u8> {
+    let nonce = block_nonce(b.block_seq, &writer_tag(device_id));
     let pt = encode_block(b);
     let ct = seal(history_key, &nonce, &pt, &history_ad(account_id));
     let mut out = Vec::with_capacity(12 + ct.len());
@@ -138,7 +159,9 @@ pub fn open_block(
     nonce.copy_from_slice(&sealed[..12]);
     let pt = open(history_key, &nonce, &sealed[12..], &history_ad(account_id))?;
     let block = decode_block(&pt)?;
-    if block_nonce(block.block_seq) != nonce {
+    // Self-consistency: the block_seq half of the nonce must match the decoded block_seq.
+    // The writer_tag half (nonce[8..12]) is stored as-is — read back without recomputation.
+    if nonce[0..8] != block.block_seq.to_le_bytes() {
         return None;
     }
     Some(block)
@@ -184,6 +207,30 @@ pub fn open_media(media_key: &[u8; 32], account_id: &[u8; 32], sealed: &[u8]) ->
 
 pub fn sealed_block_id(sealed: &[u8]) -> [u8; 32] {
     Sha256::digest(sealed).into()
+}
+
+/// writer_tag of a sealed block (nonce[8..12]) — the block's writer identity for (writer_tag, block_seq)
+/// dedup/order (Stage 2/4). None if the buffer is shorter than the 12-byte nonce.
+pub fn block_writer_tag(sealed: &[u8]) -> Option<[u8; 4]> {
+    if sealed.len() < 12 {
+        return None;
+    }
+    Some([sealed[8], sealed[9], sealed[10], sealed[11]])
+}
+
+/// block_seq of a sealed block (nonce[0..8], u64 LE). None if the buffer is shorter than the nonce.
+pub fn block_seq_of(sealed: &[u8]) -> Option<u64> {
+    if sealed.len() < 12 {
+        return None;
+    }
+    Some(u64::from_le_bytes(sealed[0..8].try_into().ok()?))
+}
+
+/// H(HistoryBlock) = SHA-256(open block) — over the canonical encoding of the open block, before seal.
+/// Stable across reseal (Stage 6): ArchiveRoot (Stage 2) and anchor check (Stage 7) do not depend on
+/// which device's key sealed the slice. Feeds the Merkle leaf ("mt-msg-leaf" ‖ 0x00 ‖ H(HistoryBlock)).
+pub fn block_hash(b: &HistoryBlock) -> [u8; 32] {
+    Sha256::digest(encode_block(b)).into()
 }
 
 // ============ ArchiveStore — local hierarchy "Montana/Chats/<chat name>/" ============
@@ -252,6 +299,7 @@ impl ArchiveStore {
         chat_name: &str,
         history_key: &[u8; 32],
         account_id: &[u8; 32],
+        device_id: &[u8; 16],
         conv_id: &[u8; 32],
         dir: u8,
         send_time: u64,
@@ -267,7 +315,7 @@ impl ArchiveStore {
                 content: content.to_vec(),
             }],
         };
-        let sealed = seal_block(history_key, account_id, &block);
+        let sealed = seal_block(history_key, account_id, device_id, &block);
         self.append_block(chat_name, &sealed)?;
         Ok(seq)
     }
@@ -365,6 +413,8 @@ impl ArchiveStore {
 mod tests {
     use super::*;
 
+    const DEV: [u8; 16] = [0x44u8; 16];
+
     fn sample_block() -> HistoryBlock {
         HistoryBlock {
             block_seq: 0,
@@ -421,7 +471,7 @@ mod tests {
         let hk = history_key(&[0x55u8; 32]);
         let acct = [0x33u8; 32];
         let b = sample_block();
-        let sealed = seal_block(&hk, &acct, &b);
+        let sealed = seal_block(&hk, &acct, &DEV, &b);
         assert_eq!(open_block(&hk, &acct, &sealed), Some(b));
     }
 
@@ -430,14 +480,17 @@ mod tests {
         let hk = history_key(&[0x55u8; 32]);
         let acct = [0x33u8; 32];
         let b = sample_block();
-        assert_eq!(seal_block(&hk, &acct, &b), seal_block(&hk, &acct, &b));
+        assert_eq!(
+            seal_block(&hk, &acct, &DEV, &b),
+            seal_block(&hk, &acct, &DEV, &b)
+        );
     }
 
     #[test]
     fn open_wrong_account_fails() {
         let hk = history_key(&[0x55u8; 32]);
         let b = sample_block();
-        let sealed = seal_block(&hk, &[0x33u8; 32], &b);
+        let sealed = seal_block(&hk, &[0x33u8; 32], &DEV, &b);
         assert_eq!(open_block(&hk, &[0x44u8; 32], &sealed), None);
     }
 
@@ -463,18 +516,68 @@ mod tests {
     }
 
     #[test]
+    fn writer_tag_kat() {
+        // spec §79/§81: device_id=44×16 → writer_tag=0efd9315.
+        assert_eq!(hex::encode(writer_tag(&[0x44u8; 16])), "0efd9315");
+    }
+
+    #[test]
     fn history_block_kat() {
+        // spec §81: entropy=55×32; block_seq=0, one item conv_id=22×32, dir=0x00, send_time=1000,
+        // Content=text(msg_id=11×16, sent_at=2000, reply_to=0×16, "montana"); account_id=33×32;
+        // device_id=44×16 → writer_tag=0efd9315 → nonce=00000000000000000efd9315; sealed 137 B.
         let hk = history_key(&[0x55u8; 32]);
         let acct = [0x33u8; 32];
-        let sealed = seal_block(&hk, &acct, &sample_block());
-        // KAT: SHA-256(sealed) is deterministic (nonce from block_seq).
-        // block = header(12) + item(conv32+dir1+time8+len4+"montana"7 = 52) = 64; sealed = nonce12 + ct(64+16) = 92
-        assert_eq!(sealed.len(), 12 + 64 + 16);
-        let id = hex::encode(sealed_block_id(&sealed));
+        let content = crate::content::encode_text(&[0x11u8; 16], 2000, &[0x00u8; 16], b"montana");
+        let block = HistoryBlock {
+            block_seq: 0,
+            items: vec![HistoryItem {
+                conv_id: [0x22u8; 32],
+                dir: DIR_OUT,
+                send_time: 1000,
+                content,
+            }],
+        };
+        let sealed = seal_block(&hk, &acct, &[0x44u8; 16], &block);
         assert_eq!(
-            id,
-            "3fed8b1489157d0ec1a2dbb0d291e5c201627d5133f76da40eff12a386b2a17d"
+            &sealed[..12],
+            &hex::decode("00000000000000000efd9315").unwrap()[..]
         );
+        assert_eq!(sealed.len(), 137);
+        assert_eq!(
+            hex::encode(sealed_block_id(&sealed)),
+            "fcbbe5c859fdc99d564c22ea9e4519cf58183f43e7456320aacbb9481bbfcd73"
+        );
+        // open round-trips, and (writer_tag, block_seq) are recoverable from the sealed prefix.
+        assert_eq!(open_block(&hk, &acct, &sealed).as_ref(), Some(&block));
+        assert_eq!(block_writer_tag(&sealed), Some([0x0e, 0xfd, 0x93, 0x15]));
+        assert_eq!(block_seq_of(&sealed), Some(0));
+    }
+
+    #[test]
+    fn two_writers_no_nonce_reuse() {
+        // Same history_key, same block_seq, different device → different nonce (writer_tag differs).
+        let hk = history_key(&[0x55u8; 32]);
+        let acct = [0x33u8; 32];
+        let b = sample_block();
+        let sa = seal_block(&hk, &acct, &[0x01u8; 16], &b);
+        let sb = seal_block(&hk, &acct, &[0x02u8; 16], &b);
+        assert_ne!(&sa[..12], &sb[..12], "writer_tag must split the nonce");
+        assert_ne!(block_writer_tag(&sa), block_writer_tag(&sb));
+        assert_eq!(block_seq_of(&sa), block_seq_of(&sb)); // same seq, safe under distinct writer_tag
+    }
+
+    #[test]
+    fn block_hash_stable_over_open_block() {
+        // H(HistoryBlock) = SHA-256(open block) — independent of which device sealed it.
+        let hk = history_key(&[0x55u8; 32]);
+        let acct = [0x33u8; 32];
+        let b = sample_block();
+        let h = block_hash(&b);
+        let s1 = seal_block(&hk, &acct, &[0x01u8; 16], &b);
+        let s2 = seal_block(&hk, &acct, &[0x02u8; 16], &b);
+        assert_eq!(block_hash(&open_block(&hk, &acct, &s1).unwrap()), h);
+        assert_eq!(block_hash(&open_block(&hk, &acct, &s2).unwrap()), h);
     }
 
     #[test]
@@ -500,10 +603,10 @@ mod tests {
         let conv_b = [0x02u8; 32];
         // chat A first message → seq 0; chat B first → seq 1 (NOT 0 — no nonce reuse)
         let s0 = st
-            .append_item("Alice", &hk, &acct, &conv_a, DIR_OUT, 1000, b"hi")
+            .append_item("Alice", &hk, &acct, &DEV, &conv_a, DIR_OUT, 1000, b"hi")
             .unwrap();
         let s1 = st
-            .append_item("Bob", &hk, &acct, &conv_b, DIR_OUT, 1001, b"yo")
+            .append_item("Bob", &hk, &acct, &DEV, &conv_b, DIR_OUT, 1001, b"yo")
             .unwrap();
         assert_eq!(s0, 0);
         assert_eq!(s1, 1);
@@ -524,7 +627,7 @@ mod tests {
         let mk = media_key(&[0x55u8; 32]);
         let acct = [0x33u8; 32];
 
-        let sealed = seal_block(&hk, &acct, &sample_block());
+        let sealed = seal_block(&hk, &acct, &DEV, &sample_block());
         st.append_block("Alice", &sealed).unwrap();
         st.put_media("Alice", "voice_ref", &mk, &acct, b"\x89PNG demo")
             .unwrap();
@@ -551,7 +654,11 @@ mod tests {
 
         // folder migration on rename
         st.rename_chat("Alice", "Alice Smith").unwrap();
-        assert!(tmp.join("Chats").join("Alice Smith").join(LOG_FILE).exists());
+        assert!(tmp
+            .join("Chats")
+            .join("Alice Smith")
+            .join(LOG_FILE)
+            .exists());
         assert_eq!(
             st.get_media("Alice Smith", "voice_ref", &mk, &acct),
             Some(b"\x89PNG demo".to_vec())

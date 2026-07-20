@@ -12,6 +12,7 @@
 //! - `device_registry` — Stage 10: signed device registry (multi-device).
 
 pub mod archive;
+pub mod archive_sync;
 pub mod call;
 pub mod contacts;
 pub mod content;
@@ -21,8 +22,10 @@ pub mod handshake;
 pub mod kdf;
 pub mod labels;
 pub mod media;
+pub mod merkle;
 pub mod pqxdh;
 pub mod ratchet;
+pub mod reconcile;
 pub mod safety;
 pub mod sealed;
 pub mod session;

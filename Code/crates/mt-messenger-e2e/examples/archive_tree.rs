@@ -11,6 +11,7 @@ fn main() {
     let hk = history_key(&[0x55u8; 32]);
     let mk = media_key(&[0x55u8; 32]);
     let acct = [0x33u8; 32];
+    let device_id = [0x01u8; 16]; // one writer for this demo device
 
     for (chat, conv, msgs) in [
         (
@@ -30,6 +31,7 @@ fn main() {
                     chat,
                     &hk,
                     &acct,
+                    &device_id,
                     &conv,
                     *dir,
                     1000 + i as u64,

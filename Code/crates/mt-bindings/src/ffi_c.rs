@@ -547,7 +547,9 @@ pub unsafe extern "C" fn mt_archive_append(
             Err(_) => return crate::MT_ERR_IO,
         };
         // The core assigns a monotonic per-identity block_seq (seq.bin) — the client does not pass seq (no nonce reuse).
-        match store.append_item(chat, &hk32, &acct, &conv, dir, send_time, &body) {
+        // Single-writer device_id (multi-device linking threads the real DeviceRegistry device_id — Stage 3 integration).
+        let device_id = [0u8; 16];
+        match store.append_item(chat, &hk32, &acct, &device_id, &conv, dir, send_time, &body) {
             Ok(_seq) => crate::MT_OK,
             Err(_) => crate::MT_ERR_IO,
         }
