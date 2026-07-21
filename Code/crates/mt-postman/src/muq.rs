@@ -186,11 +186,7 @@ async fn handle_register<S: AsyncRead + AsyncWrite + Unpin>(
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .register_queue(q, current_window());
-            if accepted {
-                OK
-            } else {
-                ERR // DEV-050(d): first-write-wins — hijack (перезапись recv_pubkey) отвергнут
-            }
+            if accepted { OK } else { ERR }
         },
         Err(_) => ERR,
     };
