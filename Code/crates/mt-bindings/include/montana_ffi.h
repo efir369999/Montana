@@ -204,6 +204,18 @@ int32_t mt_client_register(const MtClient *client,
                            size_t queue_len);
 
 /**
+ * Register a queue DIRECTLY on the connected node (TAG_QUEUE_REGISTER, no courier). Self-host uses
+ * this against its own node (loopback): the queue registers locally without any self-connection.
+ * `queue` — serialized Queue (`queue_len` bytes). Returns 0 on success, -1 on error.
+ *
+ * # Safety
+ * `client` — handle from `mt_client_connect`; `queue` → `queue_len` bytes.
+ */
+int32_t mt_client_register_direct(const MtClient *client,
+                                  const uint8_t *queue,
+                                  size_t queue_len);
+
+/**
  * Освободить хэндл клиента (закрывает соединение).
  *
  * # Safety

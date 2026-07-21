@@ -244,6 +244,35 @@ pub unsafe extern "C" fn mt_client_register(
     }
 }
 
+/// Register a queue DIRECTLY on the connected node (TAG_QUEUE_REGISTER, no courier). Self-host uses
+/// this against its OWN node (loopback): the queue registers locally via `handle_register` without any
+/// self-connection (the courier path opens a socket to itself, which fails for a self-host node).
+/// `queue` is a serialized Queue (`queue_len` bytes). Returns 0 on success, -1 on error.
+///
+/// # Safety
+/// `client` is a valid handle from `mt_client_connect`; `queue` → `queue_len` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn mt_client_register_direct(
+    client: *const MtClient,
+    queue: *const u8,
+    queue_len: usize,
+) -> i32 {
+    if client.is_null() || queue.is_null() {
+        return -1;
+    }
+    let Some(rt) = rt() else {
+        return -1;
+    };
+    let q_slice = std::slice::from_raw_parts(queue, queue_len);
+    let Ok(q) = Queue::decode(q_slice) else {
+        return -1;
+    };
+    match ffi_catch(|| rt.block_on((*client).inner.register_queue(&q))) {
+        Some(Ok(true)) => 0,
+        _ => -1,
+    }
+}
+
 /// Node hello (serverless state machine): connect to node `addr`, obtain its capability —
 /// host_kem (1184 B into out_kem) + send_id (32 B into out_send_id). The sender finds the peer's
 /// node via mDNS and via hello learns where/how to deposit, without a map. 0=success, -1=error.
@@ -899,11 +928,7 @@ mod tests {
             assert!(n > 0, "received non-empty envelope");
             got.insert(out[..n].to_vec());
         }
-        assert_eq!(
-            got.len(),
-            3,
-            "all 3 messages received, none lost"
-        );
+        assert_eq!(got.len(), 3, "all 3 messages received, none lost");
         for m in msgs {
             assert!(got.contains(m), "batch contains message");
         }
