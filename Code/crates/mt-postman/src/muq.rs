@@ -112,7 +112,10 @@ impl MuqState {
 
     /// send_id зарегистрированной очереди (self-host: одна) — для hello-обмена.
     pub fn primary_send_id(&self) -> Option<QueueId> {
-        self.host.lock().unwrap_or_else(|p| p.into_inner()).any_send_id()
+        self.host
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .any_send_id()
     }
 
     /// Публичный ML-KEM ключ хоста — клиент запечатывает sealed к нему (курьер крипто-слеп).
@@ -186,7 +189,11 @@ async fn handle_register<S: AsyncRead + AsyncWrite + Unpin>(
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
                 .register_queue(q, current_window());
-            if accepted { OK } else { ERR }
+            if accepted {
+                OK
+            } else {
+                ERR
+            }
         },
         Err(_) => ERR,
     };
