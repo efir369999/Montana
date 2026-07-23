@@ -26,7 +26,14 @@ fn smoke_local_selfhost_register() {
     let (mut rpk, mut rsk) = ([0u8; 1952], [0u8; 4032]);
     let (mut spk, mut ssk) = ([0u8; 1952], [0u8; 4032]);
     let rc = unsafe {
-        mt_muq_derive_queue_keys(rs.as_ptr(), 0, rpk.as_mut_ptr(), rsk.as_mut_ptr(), spk.as_mut_ptr(), ssk.as_mut_ptr())
+        mt_muq_derive_queue_keys(
+            rs.as_ptr(),
+            0,
+            rpk.as_mut_ptr(),
+            rsk.as_mut_ptr(),
+            spk.as_mut_ptr(),
+            ssk.as_mut_ptr(),
+        )
     };
     assert_eq!(rc, 0, "derive keys");
     let (mut recv_id, mut send_id) = ([0u8; 32], [0u8; 32]);
@@ -36,7 +43,16 @@ fn smoke_local_selfhost_register() {
     }
     let mut qw = [0u8; 4096];
     let qn = unsafe {
-        mt_muq_queue_serialize(recv_id.as_ptr(), send_id.as_ptr(), rpk.as_ptr(), std::ptr::null(), 1, 64, qw.as_mut_ptr(), qw.len())
+        mt_muq_queue_serialize(
+            recv_id.as_ptr(),
+            send_id.as_ptr(),
+            rpk.as_ptr(),
+            std::ptr::null(),
+            1,
+            64,
+            qw.as_mut_ptr(),
+            qw.len(),
+        )
     };
     eprintln!("QUEUE WIRE LEN = {qn}");
     assert!(qn > 0, "serialize qn>0");

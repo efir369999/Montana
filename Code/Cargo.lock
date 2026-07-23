@@ -2009,6 +2009,7 @@ dependencies = [
  "mt-crypto",
  "mt-messenger-e2e",
  "mt-mnemonic",
+ "mt-noise-pq",
  "mt-overlay",
  "mt-postman",
  "mt-rendezvous",

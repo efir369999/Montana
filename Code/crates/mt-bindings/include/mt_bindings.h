@@ -100,6 +100,18 @@ int mt_e2e_safety_number(const uint8_t *id_a, const uint8_t *id_b, uint8_t **out
 int mt_e2e_party_code(const uint8_t *id, uint8_t **out_ptr, size_t *out_len);
 int mt_e2e_call_key(const uint8_t *call_seed, uint8_t *out);   /* out = call_key(32) || sframe_key(32) */
 
+/* Noise_PQ XX handshake (spec s.3 section 5.0). Opaque state handles keep secret keys in Rust.
+   Wire sizes: msg1=2272, msg2=6349, msg3=5261. Session output: sk_i_to_r[32], sk_r_to_i[32],
+   channel_hash[32]. node_id_seed = 32-byte ephemeral ML-DSA node identity seed. */
+int mt_noise_initiator_msg1(const uint8_t *responder_kem_pk, const uint8_t *node_id_seed, uint8_t *out_msg1, void **out_state);
+int mt_noise_initiator_msg2(void *state, const uint8_t *msg2, void **out_state2);
+int mt_noise_initiator_msg3(void *state2, uint8_t *out_msg3, uint8_t *out_sk_i_to_r, uint8_t *out_sk_r_to_i, uint8_t *out_channel_hash);
+int mt_noise_responder_msg1(const uint8_t *responder_kem_sk, const uint8_t *node_id_seed, const uint8_t *msg1, uint8_t *out_msg2, void **out_state);
+int mt_noise_responder_msg3(void *state, const uint8_t *msg3, uint8_t *out_sk_i_to_r, uint8_t *out_sk_r_to_i, uint8_t *out_channel_hash);
+void mt_noise_state_free_initiator1(void *state);
+void mt_noise_state_free_initiator2(void *state);
+void mt_noise_state_free_responder(void *state);
+
 #ifdef __cplusplus
 }
 #endif
